@@ -23,6 +23,7 @@ async def get_response(prompt, history=None):
         ]
 
     try:
+        print(messages)
         response = await client.chat.completions.create(
             model=MODEL,
             messages=messages,

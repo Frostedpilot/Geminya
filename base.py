@@ -5,7 +5,7 @@ from typing import Any
 
 from discord.ext import commands
 from utils.ai_utils import get_response
-from constants import DISCORD_TOKEN, MODEL
+from constants import DISCORD_TOKEN, MODEL, ACTIVE_SERVERS
 from cogs import COMMANDS, EVENT_HANDLERS
 
 

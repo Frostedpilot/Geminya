@@ -1,4 +1,5 @@
 import discord
+import re
 from discord.ext import commands
 from constants import MAX_HISTORY_LENGTH
 
@@ -9,11 +10,7 @@ from utils.utils import split_response, get_prompt
 class OnMessage(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.history = {}
         self.max_history_length = MAX_HISTORY_LENGTH
-        for channel in bot.get_all_channels():
-            if isinstance(channel, discord.TextChannel):
-                self.history[channel.id] = []
 
     async def get_response(self, message):
         prompt = message.content.replace(f"<@{self.bot.user.id}>", "Geminya").strip()
@@ -22,31 +19,56 @@ class OnMessage(commands.Cog):
 
         prompt = get_prompt(prompt)
 
-        response = await get_response(prompt, self.history[message.channel.id])
+        prompt = f"From: {message.author.name}#{message.author.discriminator} (aka {message.author.nick})\n{prompt}"
 
-        if response:
-            self.history[message.channel.id].append(
-                {
-                    "role": "assistant",
-                    "content": f"Geminya: {response}",
-                }
-            )
+        async with message.channel.typing():
+            response = await get_response(prompt, self.bot.history[message.channel.id])
 
-            chunks = split_response(response)
-            for chunk in chunks:
-                if chunk:
-                    await message.channel.send(chunk)
+            if response:
+                self.bot.history[message.channel.id].append(
+                    {
+                        "role": "assistant",
+                        "content": f"Geminya: {response}",
+                    }
+                )
+
+                chunks = split_response(response)
+                for chunk in chunks:
+                    if chunk:
+                        await message.channel.send(chunk)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        self.history[message.channel.id].append(
-            {
-                "role": "user",
-                "content": f"From: {message.author.name}#{message.author.discriminator} ({message.author.id})\n{message.content}",
-            }
+        author = message.author
+        last_message = (
+            self.bot.history[message.channel.id][-1]
+            if message.channel.id in self.bot.history
+            and self.bot.history[message.channel.id]
+            else None
         )
-        if len(self.history[message.channel.id]) > self.max_history_length:
-            self.history[message.channel.id] = self.history[message.channel.id][
+        if (
+            last_message
+            and last_message["role"] == "user"
+            and re.search(
+                rf"From: {re.escape(author.name)}#{re.escape(author.discriminator)}",
+                last_message["content"],
+                re.IGNORECASE,
+            )
+        ):
+            # Same author as last message, append to last message
+            self.bot.history[message.channel.id][-1][
+                "content"
+            ] += f"\n{message.content}"
+        else:
+            self.bot.history[message.channel.id].append(
+                {
+                    "role": "user",
+                    "content": f"From: {message.author.name}#{message.author.discriminator} (aka {message.author.nick})\n{message.content}",
+                }
+            )
+
+        if len(self.bot.history[message.channel.id]) > self.max_history_length:
+            self.bot.history[message.channel.id] = self.bot.history[message.channel.id][
                 -self.max_history_length :
             ]
 
@@ -70,7 +92,7 @@ class OnMessage(commands.Cog):
             )
             check_prompt = "In the following message, is the user asking for a response from Geminya? Respond with 'yes' or 'no'.\n\n"
 
-            for line in self.history[message.channel.id]:
+            for line in self.bot.history[message.channel.id]:
                 check_prompt += f"{line["content"]}\n"
 
             check_result = await get_check_response(check_prompt)
