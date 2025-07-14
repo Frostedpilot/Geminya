@@ -5,13 +5,13 @@ from typing import Any
 
 from discord.ext import commands
 from utils.ai_utils import get_response
-from constants import DISCORD_TOKEN, MODEL, ACTIVE_SERVERS
+from constants import DISCORD_TOKEN
 from cogs import COMMANDS, EVENT_HANDLERS
 
 
 class GeminyaBot(commands.Bot):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.model = MODEL
+        self.model = {}
         super().__init__(*args, **kwargs)
 
     async def setup_hook(self):

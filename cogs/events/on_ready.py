@@ -3,6 +3,8 @@ from itertools import cycle
 import discord
 from discord.ext import commands
 
+from constants import DEFAULT_MODEL
+
 
 class OnReady(commands.Cog):
     def __init__(self, bot):
@@ -27,6 +29,17 @@ class OnReady(commands.Cog):
                 discord.client._log.info(
                     f"Initialized history for channel {channel.name} ({channel.id})"
                 )
+
+        self.bot.model = {}
+
+        for guild in self.bot.guilds:
+            server_id = str(guild.id)
+            self.bot.model[server_id] = DEFAULT_MODEL
+            discord.client._log.info(
+                f"Set default model for server {guild.name} ({server_id}) to {DEFAULT_MODEL}"
+            )
+
+        discord.client._log.info("Bot is ready to receive messages!")
 
 
 async def setup(bot):

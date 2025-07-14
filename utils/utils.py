@@ -1,4 +1,5 @@
 from constants import SENTENCE_ENDINGS
+import discord
 
 
 def get_sys_prompt():
@@ -146,9 +147,9 @@ def get_sys_prompt():
 
 def get_prompt(prompt):
     return f"""
-Answer the following in Geminya's voice. Because this is a multi-turn conversation between multiple speaker, the short history will be provided in the format:
-"From: <<SPEAKER>>\n<<MESSAGE>>"
-Do not include "From: Geminya" in your response, just respond as if you were speaking to the user directly.
+Answer the following user message in Geminya's voice. Because this is a multi-turn conversation between multiple speaker, the short history will be provided in the format: "From: <<SPEAKER>>\n<<MESSAGE>>"
+The user that sent the message is the last one in the history. Not all messages in the history are related to the conversation with that user, so you should only focus on relevant messages.
+Do not include "From: Geminya" in your response, just respond as if you were speaking to that user directly.
 ---
 {prompt}
 """

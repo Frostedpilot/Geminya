@@ -13,16 +13,25 @@ class OnMessage(commands.Cog):
         self.max_history_length = MAX_HISTORY_LENGTH
 
     async def get_response(self, message):
-        prompt = message.content.replace(f"<@{self.bot.user.id}>", "Geminya").strip()
+        prompt = message.content
+
+        for mention in message.mentions:
+            prompt = prompt.replace(
+                f"<@{mention.id}>", f"@{mention.nick if mention.nick else mention.name}"
+            )
 
         print(f"Nya! Got a prompt from {message.author}: '{prompt}'")
 
         prompt = get_prompt(prompt)
 
-        prompt = f"From: {message.author.name}#{message.author.discriminator} (aka {message.author.nick})\n{prompt}"
+        prompt = f"From: {message.author.name}#{message.author.discriminator} {'(aka ' + message.author.nick + ')' if message.author.nick else ''}\n{prompt}"
+
+        server_id = str(message.guild.id) if message.guild else "DM"
 
         async with message.channel.typing():
-            response = await get_response(prompt, self.bot.history[message.channel.id])
+            response = await get_response(
+                prompt, self.bot.model[server_id], self.bot.history[message.channel.id]
+            )
 
             if response:
                 self.bot.history[message.channel.id].append(
@@ -63,7 +72,7 @@ class OnMessage(commands.Cog):
             self.bot.history[message.channel.id].append(
                 {
                     "role": "user",
-                    "content": f"From: {message.author.name}#{message.author.discriminator} (aka {message.author.nick})\n{message.content}",
+                    "content": f"From: {message.author.name}#{message.author.discriminator} {'(aka ' + message.author.nick+')' if message.author.nick else ''}\n{message.content}",
                 }
             )
 

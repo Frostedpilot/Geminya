@@ -1,6 +1,6 @@
 import asyncio
 from openai import AsyncOpenAI
-from constants import OPENROUTER_API_KEY, MODEL, CHECK_MODEL
+from constants import OPENROUTER_API_KEY, CHECK_MODEL
 from utils.utils import get_sys_prompt
 
 client = AsyncOpenAI(
@@ -9,7 +9,7 @@ client = AsyncOpenAI(
 )
 
 
-async def get_response(prompt, history=None):
+async def get_response(prompt, model, history=None):
     if history:
         messages = [
             {"role": "system", "content": get_sys_prompt()},
@@ -23,9 +23,8 @@ async def get_response(prompt, history=None):
         ]
 
     try:
-        print(messages)
         response = await client.chat.completions.create(
-            model=MODEL,
+            model=model,
             messages=messages,
         )
     except Exception as e:
