@@ -1,10 +1,7 @@
 import discord
-import os
-import json
 from typing import Any
 
 from discord.ext import commands
-from utils.ai_utils import get_response
 from constants import DISCORD_TOKEN
 from cogs import COMMANDS, EVENT_HANDLERS
 
