@@ -1,4 +1,5 @@
 import discord
+import logging
 import re
 from discord.ext import commands
 from constants import MAX_HISTORY_LENGTH
@@ -12,19 +13,37 @@ class OnMessage(commands.Cog):
         self.bot = bot
         self.max_history_length = MAX_HISTORY_LENGTH
 
-    async def get_response(self, message):
+    async def get_response(self, message, logger):
         prompt = message.content
 
         for mention in message.mentions:
+            try:
+                mention_nick = mention.nick
+            except AttributeError:
+                logger.error(f"AttributeError: {mention} has no attribute 'nick'")
+                mention_nick = None
+            except Exception as e:
+                logger.error(f"Error getting nick for {mention}: {e}")
+                mention_nick = None
+
             prompt = prompt.replace(
-                f"<@{mention.id}>", f"@{mention.nick if mention.nick else mention.name}"
+                f"<@{mention.id}>", f"@{mention_nick if mention_nick else mention.name}"
             )
 
         print(f"Nya! Got a prompt from {message.author}: '{prompt}'")
 
         prompt = get_prompt(prompt)
 
-        prompt = f"From: {message.author.name}#{message.author.discriminator} {'(aka ' + message.author.nick + ')' if message.author.nick else ''}\n{prompt}"
+        try:
+            nick = message.author.nick
+        except AttributeError:
+            logger.error(f"AttributeError: {message.author} has no attribute 'nick'")
+            nick = None
+        except Exception as e:
+            logger.error(f"Error getting nick for {message.author}: {e}")
+            nick = None
+
+        prompt = f"From: {message.author.name}#{message.author.discriminator} {'(aka ' + nick + ')' if nick else ''}\n{prompt}"
 
         server_id = str(message.guild.id) if message.guild else "DM"
 
@@ -48,7 +67,19 @@ class OnMessage(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
+        logging.basicConfig(filename="logs/on_message.log", level=logging.INFO)
+        logger = logging.getLogger("geminya.on_message")
+
+        logger.info(f"Received message: {message.content} from {message.author}")
         author = message.author
+        try:
+            nick = author.nick
+        except AttributeError:
+            logger.error(f"AttributeError: {author} has no attribute 'nick'")
+            nick = None
+        except Exception as e:
+            logger.error(f"Error getting nick for {author}: {e}")
+            nick = None
         last_message = (
             self.bot.history[message.channel.id][-1]
             if message.channel.id in self.bot.history
@@ -68,13 +99,17 @@ class OnMessage(commands.Cog):
             self.bot.history[message.channel.id][-1][
                 "content"
             ] += f"\n{message.content}"
+            logger.info(
+                f"Appending to last message from {author.name}#{author.discriminator}"
+            )
         else:
             self.bot.history[message.channel.id].append(
                 {
                     "role": "user",
-                    "content": f"From: {message.author.name}#{message.author.discriminator} {'(aka ' + message.author.nick+')' if message.author.nick else ''}\n{message.content}",
+                    "content": f"From: {message.author.name}#{message.author.discriminator} {'(aka ' + nick+')' if nick else ''}\n{message.content}",
                 }
             )
+            logger.info(f"Adding new message from {author.name}#{author.discriminator}")
 
         if len(self.bot.history[message.channel.id]) > self.max_history_length:
             self.bot.history[message.channel.id] = self.bot.history[message.channel.id][
@@ -93,7 +128,7 @@ class OnMessage(commands.Cog):
             flag = "mention"
 
         if flag == "mention":
-            await self.get_response(message)
+            await self.get_response(message, logger=logger)
 
         elif flag == "check":
             print(
@@ -108,7 +143,7 @@ class OnMessage(commands.Cog):
 
             if "yes" in check_result:
                 print("Nya! User is asking for a response, generating...")
-                await self.get_response(message)
+                await self.get_response(message, logger=logger)
 
 
 async def setup(bot):
