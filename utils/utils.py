@@ -7,7 +7,7 @@ lang_data = load_language_file()
 
 def get_sys_prompt():
     personality = lang_data.get("personality")
-    sys_prompt = personality.get("Geminya_V2")
+    sys_prompt = personality.get("Geminya_Exp")
     return sys_prompt
 
 

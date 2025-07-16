@@ -14,7 +14,7 @@ if not os.path.exists(lang_file):
 
 
 def load_language_file():
-    with open(lang_file, "r") as file:
+    with open(lang_file, "r", encoding="utf-8") as file:
         lang_data = json.load(file)
 
     return lang_data
