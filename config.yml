@@ -1,1 +1,22 @@
-LANGUAGE: en
+# Geminya Bot Configuration
+# This file provides default settings for the bot
+# You can override these with environment variables
+
+# Language setting
+language: "en"
+
+# Bot behavior
+max_history_length: 7
+debug: false
+max_response_length: 1999
+
+# AI Model settings (can be overridden by server-specific settings)
+default_model: "deepseek/deepseek-chat-v3-0324:free"
+check_model: "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+
+# Server restrictions (empty list means no restrictions)
+# Add server IDs here to restrict bot to specific servers
+active_servers:
+  []
+  # - "1393258849867272325"
+  # - "700261922259599420"

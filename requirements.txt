@@ -9,6 +9,9 @@ openai>=1.0.0,<2.0.0             # OpenAI-compatible API client for OpenRouter
 aiohttp>=3.8.0,<4.0.0            # Async HTTP client for external APIs
 PyYAML>=6.0,<7.0                 # YAML configuration file parsing
 
+# Enhanced logging and error handling
+coloredlogs>=15.0                # Colored console output for better debugging
+
 # Optional development dependencies
 # Uncomment these lines if you plan to develop or contribute to the bot
 

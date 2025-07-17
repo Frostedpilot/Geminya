@@ -1,37 +1,129 @@
 import discord
+import asyncio
+import sys
 from typing import Any
 
 from discord.ext import commands
-from constants import DISCORD_TOKEN
+
+# Import new configuration and service systems
+from config import Config, ConfigError
+from services.container import ServiceContainer
 from cogs import COMMANDS, EVENT_HANDLERS
 
 
 class GeminyaBot(commands.Bot):
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.model = {}
+    """Enhanced Geminya bot with dependency injection and service management."""
+
+    def __init__(
+        self, config: Config, services: ServiceContainer, *args: Any, **kwargs: Any
+    ) -> None:
+        self.config = config
+        self.services = services
+        self.logger = services.get_logger("bot")
+
+        # Initialize Discord bot
         super().__init__(*args, **kwargs)
 
+        self.logger.info("GeminyaBot initialized with new architecture")
+
     async def setup_hook(self):
-        for cog in COMMANDS:
-            cog_name = cog.split(".")[-1]
-            discord.client._log.info(f"Loaded Command {cog_name}")
-            await self.load_extension(f"{cog}")
-        for cog in EVENT_HANDLERS:
-            cog_name = cog.split(".")[-1]
-            discord.client._log.info(f"Loaded Event Handler {cog_name}")
-            await self.load_extension(f"{cog}")
-        print(
-            "If syncing commands is taking longer than usual you are being ratelimited"
+        """Setup hook called when the bot is starting."""
+        self.logger.info("Starting bot setup...")
+
+        try:
+            # Initialize all services
+            await self.services.initialize_all()
+
+            # Load command cogs
+            for cog in COMMANDS:
+                cog_name = cog.split(".")[-1]
+                try:
+                    await self.load_extension(f"{cog}")
+                    self.logger.info(f"Loaded command cog: {cog_name}")
+                except Exception as e:
+                    self.logger.error(f"Failed to load command cog {cog_name}: {e}")
+
+            # Load event handler cogs
+            for cog in EVENT_HANDLERS:
+                cog_name = cog.split(".")[-1]
+                try:
+                    await self.load_extension(f"{cog}")
+                    self.logger.info(f"Loaded event handler: {cog_name}")
+                except Exception as e:
+                    self.logger.error(f"Failed to load event handler {cog_name}: {e}")
+
+            # Sync commands
+            self.logger.info("Syncing application commands...")
+            if len(self.tree.get_commands()) > 0:
+                self.logger.info(
+                    "Command syncing may take a moment due to Discord rate limits"
+                )
+                await self.tree.sync()
+
+            self.logger.info(
+                f"Bot setup completed. Loaded {len(self.commands)} commands"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Critical error during bot setup: {e}")
+            await self.services.cleanup_all()
+            raise
+
+    async def close(self):
+        """Cleanup when the bot is shutting down."""
+        self.logger.info("Bot is shutting down...")
+
+        try:
+            await self.services.cleanup_all()
+        except Exception as e:
+            self.logger.error(f"Error during service cleanup: {e}")
+
+        await super().close()
+        self.logger.info("Bot shutdown completed")
+
+
+async def main():
+    """Main entry point with proper error handling."""
+    try:
+        # Load configuration
+        config = Config.create()
+        config.validate()
+
+        # Create service container
+        services = ServiceContainer(config)
+        logger = services.get_logger("main")
+
+        logger.info("Starting Geminya bot...")
+        logger.info(f"Configuration: {config.to_dict()}")
+
+        # Configure Discord intents
+        intents = discord.Intents.default()
+        intents.message_content = True
+
+        # Create bot instance
+        bot = GeminyaBot(
+            config=config,
+            services=services,
+            command_prefix=[],  # Using slash commands
+            intents=intents,
+            help_command=None,
         )
-        await self.tree.sync()
-        discord.client._log.info(f"Loaded {len(self.commands)} commands")
+
+        # Start the bot
+        async with bot:
+            await bot.start(config.discord_token)
+
+    except ConfigError as e:
+        print(f"Configuration error: {e}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print("\nShutdown requested by user")
+        sys.exit(0)
+    except Exception as e:
+        print(f"Fatal error: {e}")
+        sys.exit(1)
 
 
-intents = discord.Intents.default()
-intents.message_content = True
-bot = GeminyaBot(command_prefix=[], intents=intents, help_command=None)
-
-if DISCORD_TOKEN is None:
-    raise ValueError("DISCORD_BOT_TOKEN is not set in secrets.json")
-
-bot.run(DISCORD_TOKEN, reconnect=True)
+if __name__ == "__main__":
+    # Run the bot
+    asyncio.run(main())

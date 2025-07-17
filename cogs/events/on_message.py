@@ -1,164 +1,274 @@
 import discord
-import logging
 import re
 from discord.ext import commands
-from constants import MAX_HISTORY_LENGTH
 
-from utils.ai_utils import get_response, get_check_response
+from cogs.base_event import BaseEventHandler
+from services.container import ServiceContainer
 from utils.utils import split_response
 
 
-class OnMessage(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.max_history_length = MAX_HISTORY_LENGTH
-
-    async def get_response(self, message: discord.Message, logger: logging.Logger):
-        assert isinstance(
-            message, discord.Message
-        ), "message must be a discord.Message instance"
-
-        discord.client._log.info(
-            f"Nya! Got a prompt from {message.author}: '{message.content}'"
-        )
-
-        server_id = str(message.guild.id) if message.guild else "DM"
-
-        async with message.channel.typing():
-            response = await get_response(
-                message,
-                self.bot.model[server_id],
-                self.bot.history[message.channel.id],
-                self.bot.lore_book,
-            )
-
-            discord.client._log.info(
-                f"Generated response for {message.author.name}#{message.author.discriminator}"
-            )
-
-            if response:
-                self.bot.history[message.channel.id].append(
-                    {
-                        "author": self.bot.user.id,
-                        "name": self.bot.user.name,
-                        "nick": (
-                            self.bot.user.nick
-                            if hasattr(self.bot.user, "nick")
-                            else None
-                        ),
-                        "content": response,
-                    }
-                )
-
-                chunks = split_response(response)
-
-                discord.client._log.info(
-                    f"Sending response in {len(chunks)} chunks to {message.author.name}#{message.author.discriminator}"
-                )
-
-                for chunk in chunks:
-                    if chunk:
-                        await message.channel.send(chunk)
-
-                discord.client._log.info(
-                    f"Response sent to {message.author.name}#{message.author.discriminator}"
-                )
+class OnMessage(BaseEventHandler):
+    def __init__(self, bot: commands.Bot, services: ServiceContainer):
+        super().__init__(bot, services)
+        self.message_logger = services.get_message_logger()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        logging.basicConfig(filename="logs/on_message.log", level=logging.DEBUG)
-        logger = logging.getLogger("geminya.on_message")
+        """Handle incoming messages for AI responses."""
 
-        logger.info(f"Received message: {message.content} from {message.author}")
-
-        # Extract author and nickname (if available)
-        author = message.author
-        try:
-            nick = author.nick
-        except AttributeError:
-            logger.error(f"AttributeError: {author} has no attribute 'nick'")
-            nick = None
-        except Exception as e:
-            logger.error(f"Error getting nick for {author}: {e}")
-            nick = None
-
-        # Replace mentions with nicknames or usernames
-        for mention in message.mentions:
-            try:
-                mention_nick = mention.nick
-            except AttributeError:
-                logger.error(f"AttributeError: {mention} has no attribute 'nick'")
-                mention_nick = None
-            except Exception as e:
-                logger.error(f"Error getting nick for {mention}: {e}")
-                mention_nick = None
-
-            message.content = message.content.replace(
-                f"<@{mention.id}>", f"@{mention_nick if mention_nick else mention.name}"
-            )
-
-        # Combine messages with the same author in the same block
-        last_message = (
-            self.bot.history[message.channel.id][-1]
-            if message.channel.id in self.bot.history
-            and self.bot.history[message.channel.id]
-            else None
-        )
-
-        if last_message and last_message["author"] == author.id:
-            # Same author as last message, append to last message
-            self.bot.history[message.channel.id][-1][
-                "content"
-            ] += f"\n{message.content}"
-            logger.info(
-                f"Appending to last message from {author.name}#{author.discriminator}"
-            )
-        else:
-            self.bot.history[message.channel.id].append(
-                {
-                    "author": author.id,
-                    "name": f"{author.name}#{author.discriminator}",
-                    "nick": nick,
-                    "content": message.content,
-                }
-            )
-            logger.info(f"Adding new message from {author.name}#{author.discriminator}")
-
-        # Trim history if it exceeds the maximum length
-        if len(self.bot.history[message.channel.id]) > self.max_history_length:
-            self.bot.history[message.channel.id] = self.bot.history[message.channel.id][
-                -self.max_history_length :
-            ]
-
-        if message.author == self.bot.user:
+        # Skip bot messages
+        if message.author.bot:
             return
 
-        flag = "None"
+        # Skip DMs for now (could be extended later)
+        if not message.guild:
+            return
 
-        if "geminya" in message.content.lower():
-            flag = "check"
+        # Skip if in restricted servers mode and this server isn't allowed
+        if (
+            self.config.active_servers
+            and str(message.guild.id) not in self.config.active_servers
+        ):
+            return
 
-        if self.bot.user.mentioned_in(message):
-            flag = "mention"
+        self.message_logger.info(
+            f"Processing message from {message.author} in {message.guild}: '{message.content}'"
+        )
 
-        if flag == "mention":
-            await self.get_response(message, logger=logger)
+        try:
+            # Process the message content (resolve mentions)
+            processed_content = self._process_message_content(message)
 
-        elif flag == "check":
-            print(
-                f"Nya! Got a prompt from {message.author}, checking if Geminya should respond..."
+            # Add to conversation history
+            self._add_to_history(message, processed_content)
+
+            # Determine if bot should respond
+            should_respond = await self._should_respond(message, processed_content)
+
+            if should_respond:
+                await self._generate_and_send_response(message)
+
+        except Exception as e:
+            self.logger.error(f"Error processing message from {message.author}: {e}")
+            self.services.get_error_logger().error(
+                f"Message processing error: {e}", exc_info=True
             )
-            check_prompt = "In the following message, is the user asking for a response from Geminya? Respond with 'yes' or 'no'.\n\n"
 
-            for line in self.bot.history[message.channel.id]:
-                check_prompt += f"From: {line['name']} {"aka " + line["nick"] if line["nick"] else ''} \n{line['content']}\n\n"
+    def _process_message_content(self, message: discord.Message) -> str:
+        """Process message content to resolve mentions and clean up text.
 
-            check_result = await get_check_response(check_prompt)
+        Args:
+            message: Discord message to process
 
-            if "yes" in check_result:
-                print("Nya! User is asking for a response, generating...")
-                await self.get_response(message, logger=logger)
+        Returns:
+            str: Processed message content
+        """
+        content = message.content
+
+        # Replace user mentions with readable names
+        for mention in message.mentions:
+            try:
+                # Try to get nickname first, fall back to username
+                display_name = getattr(mention, "nick", None) or mention.name
+                content = content.replace(f"<@{mention.id}>", f"@{display_name}")
+                content = content.replace(f"<@!{mention.id}>", f"@{display_name}")
+            except Exception as e:
+                self.logger.warning(f"Error processing mention for {mention}: {e}")
+                content = content.replace(f"<@{mention.id}>", f"@{mention.name}")
+                content = content.replace(f"<@!{mention.id}>", f"@{mention.name}")
+
+        return content.strip()
+
+    def _add_to_history(self, message: discord.Message, processed_content: str) -> None:
+        """Add message to conversation history.
+
+        Args:
+            message: Discord message
+            processed_content: Processed message content
+        """
+        author = message.author
+        nick = getattr(author, "nick", None)
+
+        # Add to state manager
+        self.state_manager.add_message(
+            channel_id=message.channel.id,
+            author_id=author.id,
+            author_name=f"{author.name}#{author.discriminator}",
+            nick=nick,
+            content=processed_content,
+        )
+
+    async def _should_respond(self, message: discord.Message, content: str) -> bool:
+        """Determine if the bot should respond to this message.
+
+        Args:
+            message: Discord message
+            content: Processed message content
+
+        Returns:
+            bool: True if bot should respond
+        """
+        # Direct mentions always get a response
+        if self.bot.user and self.bot.user.mentioned_in(message):
+            self.logger.debug(f"Responding to direct mention from {message.author}")
+            return True
+
+        # Check for bot name in message (case insensitive)
+        if "geminya" in content.lower():
+            # Use AI to determine if this warrants a response
+            should_respond = await self._check_if_should_respond(message)
+            if should_respond:
+                self.logger.debug(f"AI determined response needed for {message.author}")
+                return True
+
+        return False
+
+    async def _check_if_should_respond(self, message: discord.Message) -> bool:
+        """Use AI to check if bot should respond to a message mentioning its name.
+
+        Args:
+            message: Discord message to check
+
+        Returns:
+            bool: True if should respond
+        """
+        try:
+            # Build context for the check
+            history = self.state_manager.get_history(message.channel.id)
+
+            check_prompt = (
+                "In the following conversation, is the user asking for a response from Geminya? "
+                "Respond with 'yes' or 'no'.\n\n"
+            )
+
+            # Add recent history for context
+            for entry in history[-3:]:  # Last 3 messages for context
+                nick_part = f" (aka {entry['nick']})" if entry["nick"] else ""
+                check_prompt += (
+                    f"From: {entry['name']}{nick_part}\n{entry['content']}\n\n"
+                )
+
+            # Get AI response
+            response = await self.ai_service.get_check_response(check_prompt)
+
+            return "yes" in response.lower()
+
+        except Exception as e:
+            self.logger.error(f"Error in response check: {e}")
+            # Default to not responding if check fails
+            return False
+
+    async def _generate_and_send_response(self, message: discord.Message) -> None:
+        """Generate and send AI response to the message.
+
+        Args:
+            message: Discord message to respond to
+        """
+        server_id = str(message.guild.id) if message.guild else "DM"
+
+        try:
+            async with message.channel.typing():
+                # Generate response using AI service
+                response = await self.ai_service.get_response(message, server_id)
+
+                if not response:
+                    self.logger.warning(
+                        f"Empty response generated for {message.author}"
+                    )
+                    return
+
+                # Add bot's response to history
+                bot_user = self.bot.user
+                if bot_user:
+                    self.state_manager.add_message(
+                        channel_id=message.channel.id,
+                        author_id=bot_user.id,
+                        author_name=bot_user.name,
+                        nick=getattr(bot_user, "nick", None),
+                        content=response,
+                    )
+
+                # Split response if too long
+                chunks = split_response(response, self.config.max_response_length)
+
+                self.logger.info(
+                    f"Sending response to {message.author} in {len(chunks)} chunk(s)"
+                )
+
+                # Send response chunks
+                for chunk in chunks:
+                    if chunk.strip():
+                        await message.channel.send(chunk)
+
+                self.message_logger.info(
+                    f"Response sent to {message.author} ({len(response)} chars, {len(chunks)} chunks)"
+                )
+
+        except Exception as e:
+            self.logger.error(f"Error generating response for {message.author}: {e}")
+
+            # Send fallback message
+            try:
+                await message.channel.send(
+                    "Nya! Something went wrong while generating my response. Please try again later! (´･ω･`)"
+                )
+            except Exception as send_error:
+                self.logger.error(f"Failed to send error message: {send_error}")
 
 
-async def setup(bot):
-    await bot.add_cog(OnMessage(bot))
+async def setup(bot: commands.Bot):
+    # Get services from bot instance
+    if hasattr(bot, "services"):
+        await bot.add_cog(OnMessage(bot, bot.services))
+    else:
+        # Fallback for old architecture during transition
+        import logging
+        from constants import MAX_HISTORY_LENGTH
+        from utils.ai_utils import get_response, get_check_response
+
+        class LegacyOnMessage(commands.Cog):
+            def __init__(self, bot):
+                self.bot = bot
+                self.max_history_length = MAX_HISTORY_LENGTH
+
+            async def get_response(
+                self, message: discord.Message, logger: logging.Logger
+            ):
+                # Original legacy implementation
+                server_id = str(message.guild.id) if message.guild else "DM"
+
+                async with message.channel.typing():
+                    response = await get_response(
+                        message,
+                        self.bot.model[server_id],
+                        self.bot.history[message.channel.id],
+                        self.bot.lore_book,
+                    )
+
+                    if response:
+                        self.bot.history[message.channel.id].append(
+                            {
+                                "author": self.bot.user.id,
+                                "name": self.bot.user.name,
+                                "nick": getattr(self.bot.user, "nick", None),
+                                "content": response,
+                            }
+                        )
+
+                        chunks = split_response(response)
+                        for chunk in chunks:
+                            if chunk:
+                                await message.channel.send(chunk)
+
+            @commands.Cog.listener()
+            async def on_message(self, message: discord.Message):
+                if message.author == self.bot.user:
+                    return
+
+                # Legacy message processing logic would go here
+                # This is a simplified version for the transition period
+                if self.bot.user.mentioned_in(message):
+                    logger = logging.getLogger("geminya.legacy")
+                    await self.get_response(message, logger)
+
+        await bot.add_cog(LegacyOnMessage(bot))
