@@ -14,7 +14,7 @@ async def get_response(message: discord.Message, model, history=None, lore_book=
     assert isinstance(
         message, discord.Message
     ), "message must be a discord.Message instance"
-    prompt = build_prompt(message, model, history, lore_book)
+    prompt = build_prompt(message, history, lore_book)
 
     try:
         response = await client.chat.completions.create(
@@ -34,17 +34,13 @@ async def get_response(message: discord.Message, model, history=None, lore_book=
     return response_text
 
 
-def build_prompt(message: discord.Message, model, history=None, lore_book=None):
+def build_prompt(message: discord.Message, history=None, lore_book=None):
     assert isinstance(
         message, discord.Message
     ), "message must be a discord.Message instance"
     # Prepare the main prompt
     author = message.author
     author_name = author.name
-    author_discriminator = author.discriminator
-    author_nick = getattr(author, "nick", None)
-
-    main_prompt = f"From: {author_name}#{author_discriminator} {'(aka ' + author_nick + ')' if author_nick else ''}\n{message.content}"
 
     # The personality system prompt
     personality_prompt = get_sys_prompt()
@@ -88,10 +84,8 @@ Write Geminya's next reply in a fictional chat between Sakana and {message.autho
 {lore_prompt}
 [Start a new group chat. Group members: Geminya, {', '.join(authors)}]
 {history_prompt}
-{main_prompt}
 [Write the next reply only as Geminya.]
 """
-    print(f"Final prompt for model {model}:\n{final_prompt}\n")
 
     return final_prompt
 

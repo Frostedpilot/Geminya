@@ -17,22 +17,10 @@ class OnMessage(commands.Cog):
         assert isinstance(
             message, discord.Message
         ), "message must be a discord.Message instance"
-        # Replace mentions with nicknames or usernames
-        for mention in message.mentions:
-            try:
-                mention_nick = mention.nick
-            except AttributeError:
-                logger.error(f"AttributeError: {mention} has no attribute 'nick'")
-                mention_nick = None
-            except Exception as e:
-                logger.error(f"Error getting nick for {mention}: {e}")
-                mention_nick = None
 
-            message.content = message.content.replace(
-                f"<@{mention.id}>", f"@{mention_nick if mention_nick else mention.name}"
-            )
-
-        print(f"Nya! Got a prompt from {message.author}: '{message.content}'")
+        discord.client._log.info(
+            f"Nya! Got a prompt from {message.author}: '{message.content}'"
+        )
 
         server_id = str(message.guild.id) if message.guild else "DM"
 
@@ -42,6 +30,10 @@ class OnMessage(commands.Cog):
                 self.bot.model[server_id],
                 self.bot.history[message.channel.id],
                 self.bot.lore_book,
+            )
+
+            discord.client._log.info(
+                f"Generated response for {message.author.name}#{message.author.discriminator}"
             )
 
             if response:
@@ -59,9 +51,18 @@ class OnMessage(commands.Cog):
                 )
 
                 chunks = split_response(response)
+
+                discord.client._log.info(
+                    f"Sending response in {len(chunks)} chunks to {message.author.name}#{message.author.discriminator}"
+                )
+
                 for chunk in chunks:
                     if chunk:
                         await message.channel.send(chunk)
+
+                discord.client._log.info(
+                    f"Response sent to {message.author.name}#{message.author.discriminator}"
+                )
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -80,6 +81,21 @@ class OnMessage(commands.Cog):
         except Exception as e:
             logger.error(f"Error getting nick for {author}: {e}")
             nick = None
+
+        # Replace mentions with nicknames or usernames
+        for mention in message.mentions:
+            try:
+                mention_nick = mention.nick
+            except AttributeError:
+                logger.error(f"AttributeError: {mention} has no attribute 'nick'")
+                mention_nick = None
+            except Exception as e:
+                logger.error(f"Error getting nick for {mention}: {e}")
+                mention_nick = None
+
+            message.content = message.content.replace(
+                f"<@{mention.id}>", f"@{mention_nick if mention_nick else mention.name}"
+            )
 
         # Combine messages with the same author in the same block
         last_message = (
