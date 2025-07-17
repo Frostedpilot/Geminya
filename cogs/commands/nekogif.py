@@ -30,9 +30,24 @@ class NekoGifCog(commands.Cog):
 
                 image_url = results[0].get("url")
 
+                anime_name = None
+                artist_name = None
+                artist_href = None
+                try:
+                    anime_name = results[0].get("anime_name")
+                    artist_name = results[0].get("artist_name")
+                    artist_href = results[0].get("artist_href")
+                except KeyError:
+                    pass
+
+                msg = f"**Anime Name:** {anime_name}\n" if anime_name else ""
+                msg += f"**Artist Name:** {artist_name}\n" if artist_name else ""
+                msg += f"**Artist Link:** {artist_href}\n" if artist_href else ""
+
                 embed = discord.Embed(colour=0x141414)
                 embed.set_image(url=image_url)
                 await ctx.send(embed=embed)
+                await ctx.send(msg)
 
 
 async def setup(bot):
