@@ -11,11 +11,6 @@ def get_sys_prompt():
     return sys_prompt
 
 
-def get_prompt(prompt):
-    sys_prompt = lang_data.get("system_prompt")
-    return sys_prompt + "\n" + prompt
-
-
 def split_response(response: str, max_len=1999) -> list[str]:
     chunks = response.split("\n")
     shards = []

@@ -5,7 +5,7 @@ from discord.ext import commands
 from constants import MAX_HISTORY_LENGTH
 
 from utils.ai_utils import get_response, get_check_response
-from utils.utils import split_response, get_prompt
+from utils.utils import split_response
 
 
 class OnMessage(commands.Cog):
@@ -13,9 +13,11 @@ class OnMessage(commands.Cog):
         self.bot = bot
         self.max_history_length = MAX_HISTORY_LENGTH
 
-    async def get_response(self, message, logger):
-        prompt = message.content
-
+    async def get_response(self, message: discord.Message, logger: logging.Logger):
+        assert isinstance(
+            message, discord.Message
+        ), "message must be a discord.Message instance"
+        # Replace mentions with nicknames or usernames
         for mention in message.mentions:
             try:
                 mention_nick = mention.nick
@@ -26,37 +28,33 @@ class OnMessage(commands.Cog):
                 logger.error(f"Error getting nick for {mention}: {e}")
                 mention_nick = None
 
-            prompt = prompt.replace(
+            message.content = message.content.replace(
                 f"<@{mention.id}>", f"@{mention_nick if mention_nick else mention.name}"
             )
 
-        print(f"Nya! Got a prompt from {message.author}: '{prompt}'")
-
-        prompt = get_prompt(prompt)
-
-        try:
-            nick = message.author.nick
-        except AttributeError:
-            logger.error(f"AttributeError: {message.author} has no attribute 'nick'")
-            nick = None
-        except Exception as e:
-            logger.error(f"Error getting nick for {message.author}: {e}")
-            nick = None
-
-        prompt = f"From: {message.author.name}#{message.author.discriminator} {'(aka ' + nick + ')' if nick else ''}\n{prompt}"
+        print(f"Nya! Got a prompt from {message.author}: '{message.content}'")
 
         server_id = str(message.guild.id) if message.guild else "DM"
 
         async with message.channel.typing():
             response = await get_response(
-                prompt, self.bot.model[server_id], self.bot.history[message.channel.id]
+                message,
+                self.bot.model[server_id],
+                self.bot.history[message.channel.id],
+                self.bot.lore_book,
             )
 
             if response:
                 self.bot.history[message.channel.id].append(
                     {
-                        "role": "assistant",
-                        "content": f"Geminya: {response}",
+                        "author": self.bot.user.id,
+                        "name": self.bot.user.name,
+                        "nick": (
+                            self.bot.user.nick
+                            if hasattr(self.bot.user, "nick")
+                            else None
+                        ),
+                        "content": response,
                     }
                 )
 
@@ -67,10 +65,12 @@ class OnMessage(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        logging.basicConfig(filename="logs/on_message.log", level=logging.INFO)
+        logging.basicConfig(filename="logs/on_message.log", level=logging.DEBUG)
         logger = logging.getLogger("geminya.on_message")
 
         logger.info(f"Received message: {message.content} from {message.author}")
+
+        # Extract author and nickname (if available)
         author = message.author
         try:
             nick = author.nick
@@ -80,21 +80,16 @@ class OnMessage(commands.Cog):
         except Exception as e:
             logger.error(f"Error getting nick for {author}: {e}")
             nick = None
+
+        # Combine messages with the same author in the same block
         last_message = (
             self.bot.history[message.channel.id][-1]
             if message.channel.id in self.bot.history
             and self.bot.history[message.channel.id]
             else None
         )
-        if (
-            last_message
-            and last_message["role"] == "user"
-            and re.search(
-                rf"From: {re.escape(author.name)}#{re.escape(author.discriminator)}",
-                last_message["content"],
-                re.IGNORECASE,
-            )
-        ):
+
+        if last_message and last_message["author"] == author.id:
             # Same author as last message, append to last message
             self.bot.history[message.channel.id][-1][
                 "content"
@@ -105,12 +100,15 @@ class OnMessage(commands.Cog):
         else:
             self.bot.history[message.channel.id].append(
                 {
-                    "role": "user",
-                    "content": f"From: {message.author.name}#{message.author.discriminator} {'(aka ' + nick+')' if nick else ''}\n{message.content}",
+                    "author": author.id,
+                    "name": f"{author.name}#{author.discriminator}",
+                    "nick": nick,
+                    "content": message.content,
                 }
             )
             logger.info(f"Adding new message from {author.name}#{author.discriminator}")
 
+        # Trim history if it exceeds the maximum length
         if len(self.bot.history[message.channel.id]) > self.max_history_length:
             self.bot.history[message.channel.id] = self.bot.history[message.channel.id][
                 -self.max_history_length :
@@ -137,7 +135,7 @@ class OnMessage(commands.Cog):
             check_prompt = "In the following message, is the user asking for a response from Geminya? Respond with 'yes' or 'no'.\n\n"
 
             for line in self.bot.history[message.channel.id]:
-                check_prompt += f"{line["content"]}\n"
+                check_prompt += f"From: {line['name']} {"aka " + line["nick"] if line["nick"] else ''} \n{line['content']}\n\n"
 
             check_result = await get_check_response(check_prompt)
 

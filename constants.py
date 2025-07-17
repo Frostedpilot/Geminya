@@ -9,7 +9,7 @@ DEFAULT_MODEL = "deepseek/deepseek-chat-v3-0324:free"
 CHECK_MODEL = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
 
 SENTENCE_ENDINGS = (".", "!", "?")
-MAX_HISTORY_LENGTH = 5
+MAX_HISTORY_LENGTH = 7
 
 ACTIVE_SERVERS = ("1393258849867272325", "700261922259599420")
 

@@ -1,5 +1,5 @@
-import asyncio
 from itertools import cycle
+from utils.config_load import lore_book_load
 import discord
 from discord.ext import commands
 
@@ -38,6 +38,15 @@ class OnReady(commands.Cog):
             discord.client._log.info(
                 f"Set default model for server {guild.name} ({server_id}) to {DEFAULT_MODEL}"
             )
+
+        lore_book_load(self.bot)
+        if self.bot.lore_book:
+            discord.client._log.info(
+                "Lore book loaded successfully with trigger words and example responses."
+            )
+        else:
+            discord.client._log.warning("Lore book is empty or not loaded correctly.")
+            self.bot.lore_book = None
 
         discord.client._log.info("Bot is ready to receive messages!")
 
