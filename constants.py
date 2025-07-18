@@ -42,7 +42,7 @@ except Exception as e:
 
     DISCORD_TOKEN = secrets.get("DISCORD_BOT_TOKEN")
     OPENROUTER_API_KEY = secrets.get("OPENROUTER_API_KEY")
-    DEFAULT_MODEL = "deepseek/deepseek-chat-v3-0324:free"
+    DEFAULT_MODEL = "google/gemini-2.0-flash-exp:free"
     CHECK_MODEL = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
 
     SENTENCE_ENDINGS = (".", "!", "?")
@@ -55,4 +55,5 @@ except Exception as e:
         "Kimi K2": "moonshotai/kimi-k2:free",
         "DeepSeek Chimera": "tngtech/deepseek-r1t2-chimera:free",
         "DeepSeek R1 0528": "deepseek/deepseek-r1-0528:free",
+        "Hitler Nigger's supreme Model": "google/gemini-2.0-flash-exp:free"
     }
