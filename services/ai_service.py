@@ -202,7 +202,7 @@ Write Geminya's next reply in a fictional chat between participants and {author_
 {lore_prompt}
 [Start a new group chat. Group members: Geminya, {', '.join(authors)}]
 {history_prompt}
-[Write the next reply only as Geminya.]
+[Write the next reply only as Geminya. Only use information related to {author_name}'s message and only answer {author_name} directly.]
 """
 
         return final_prompt.strip()

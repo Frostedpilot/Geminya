@@ -4,7 +4,7 @@ A modern Discord bot with AI conversation capabilities, built with service-orien
 
 ## Features
 
-- 🤖 AI conversations via OpenRouter API  
+- 🤖 AI conversations via OpenRouter API
 - 🏗️ Service-oriented architecture with dependency injection
 - 📊 State management for models and conversation history
 - 🎯 Lore book integration for contextual responses
@@ -15,17 +15,20 @@ A modern Discord bot with AI conversation capabilities, built with service-orien
 ## Quick Start
 
 1. **Install dependencies:**
+
 ```bash
 pip install discord.py openai pyyaml
 ```
 
 2. **Configure:**
+
 ```bash
 cp config.yml.example config.yml
 # Edit config.yml with your tokens
 ```
 
 3. **Test & Run:**
+
 ```bash
 python test_architecture.py  # Validate setup
 python start.py              # Start bot
@@ -42,8 +45,9 @@ lang/            # Language files and personality
 ```
 
 **Key Components:**
+
 - `ServiceContainer`: Dependency injection container
-- `StateManager`: Conversation history and model preferences  
+- `StateManager`: Conversation history and model preferences
 - `AIService`: OpenRouter API integration
 - `ErrorHandler`: Centralized error management
 - `BaseCommand`/`BaseEventHandler`: Inheritance for cogs
@@ -55,10 +59,10 @@ lang/            # Language files and personality
 ```yaml
 discord:
   token: "${DISCORD_TOKEN}"
-  
+
 openrouter:
   api_key: "${OPENROUTER_API_KEY}"
-  
+
 models:
   default: "anthropic/claude-3-haiku"
   check: "anthropic/claude-3-haiku"
@@ -67,7 +71,7 @@ models:
 ## Commands
 
 - `/change_model <model>` - Change AI model
-- `/help` - Show help  
+- `/help` - Show help
 - `/nekogif` - Random cat GIF
 
 ## Development
@@ -121,6 +125,7 @@ services.logger_manager  # Logging system
 ## Adding New Features
 
 **Commands:**
+
 ```python
 from cogs.base_command import BaseCommand
 
@@ -131,6 +136,7 @@ class MyCommand(BaseCommand):
 ```
 
 **Events:**
+
 ```python
 from cogs.base_event import BaseEventHandler
 
@@ -143,12 +149,14 @@ class MyEvent(BaseEventHandler):
 ## Legacy Support
 
 Old imports continue working with deprecation warnings:
+
 ```python
 from constants import DISCORD_TOKEN  # Still works
 from utils.utils import split_response  # Still works
 ```
 
 Migrate to new patterns:
+
 ```python
 from config import Config
 config = Config.create()
