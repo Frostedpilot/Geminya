@@ -25,7 +25,10 @@ class StateManager:
         self.histories: Dict[int, List[Dict[str, Any]]] = defaultdict(
             list
         )  # channel_id -> messages
-        self.lore_book: Optional[Dict[str, Any]] = None
+
+        self.lore_books: Optional[Dict[str, Any]] = {}  # persona -> lore book data
+
+        self.persona: Dict[str, str] = {}  # server_id -> persona name
 
         # Cache for performance
         self._channel_cache: Set[int] = set()
@@ -34,8 +37,8 @@ class StateManager:
         """Initialize the state manager and load initial data."""
         self.logger.info("Initializing state manager...")
 
-        # Load lore book
-        await self._load_lore_book()
+        # Load lore books
+        self._load_lore_books()
 
         self.logger.info("State manager initialized successfully")
 
@@ -46,7 +49,7 @@ class StateManager:
         # Clear large objects
         self.histories.clear()
         self.models.clear()
-        self.lore_book = None
+        self.lore_books = None
         self._channel_cache.clear()
 
         self.logger.info("State manager cleanup completed")
@@ -59,6 +62,7 @@ class StateManager:
         """
         if server_id not in self.models:
             self.models[server_id] = self.config.default_model
+            self.persona[server_id] = self.config.default_persona
             self.logger.info(
                 f"Initialized server {server_id} with default model: {self.config.default_model}"
             )
@@ -152,13 +156,13 @@ class StateManager:
                 f"Trimmed history for channel {channel_id}, removed message from {removed['name']}"
             )
 
-    def get_lore_book(self) -> Optional[Dict[str, Any]]:
+    def get_lore_books(self) -> Optional[Dict[str, Any]]:
         """Get the current lore book data.
 
         Returns:
             Optional[Dict[str, Any]]: Lore book data or None if not loaded
         """
-        return self.lore_book
+        return self.lore_books
 
     def clear_channel_history(self, channel_id: int) -> None:
         """Clear conversation history for a specific channel.
@@ -185,61 +189,80 @@ class StateManager:
             "servers_configured": len(self.models),
             "channels_tracked": len(self.histories),
             "total_messages_stored": total_messages,
-            "lore_book_loaded": self.lore_book is not None,
+            "lore_books_loaded": self.lore_books is not None,
             "memory_channels": len(self._channel_cache),
         }
 
-        if self.lore_book:
-            stats["lore_book_entries"] = len(self.lore_book.get("trigger_words", {}))
-            stats["lore_book_triggers"] = len(
-                self.lore_book.get("quick_trigger_list", set())
+        if self.lore_books:
+            # Count categories across all personas
+            total_categories = sum(
+                len(
+                    [
+                        k
+                        for k, v in book.items()
+                        if isinstance(v, dict) and "keywords" in v
+                    ]
+                )
+                for book in self.lore_books.values()
             )
+            # Count total keywords across all personas
+            total_keywords = sum(
+                sum(
+                    len(v.get("keywords", []))
+                    for v in book.values()
+                    if isinstance(v, dict)
+                )
+                for book in self.lore_books.values()
+            )
+            stats["lore_book_categories"] = total_categories
+            stats["lore_book_keywords"] = total_keywords
 
         return stats
 
-    async def _load_lore_book(self) -> None:
-        """Load the lore book from the language file."""
+    def _load_lore_books(self) -> None:
+        """Load the lore books from the language file."""
         try:
             from utils.config_load import load_language_file
 
             lang_data = load_language_file()
-            lore_book_data = lang_data.get("lorebook", {})
+            characters = lang_data.get("characters", {})
 
-            if not lore_book_data:
-                self.logger.warning(
-                    "Lore book data is missing or empty in language file"
-                )
-                self.lore_book = None
+            if not characters:
+                self.logger.warning("No characters found in language file")
+                self.lore_books = {}
                 return
 
-            # Process lore book data
-            trigger_words = {}
-            example_responses = {}
+            for name, char in characters.items():
+                lore_book_data = char.get("lorebook", {})
 
-            for key, value in lore_book_data.items():
-                words = value.get("keywords", [])
-                for word in words:
-                    if word not in trigger_words:
-                        trigger_words[word] = []
-                    trigger_words[word].append(key)
+                if not lore_book_data:
+                    self.logger.warning(
+                        f"Lore book data is missing or empty for character '{name}'"
+                    )
+                    self.lore_books[name] = {}
+                    continue
 
-                example_responses[
-                    key
-                ] = f"""
-        {{user}}: {value.get("example_user", "")}
-        Geminya: {value.get("example", "")}
-        """
+                # Store lore book data directly (new structure)
+                self.lore_books[name] = lore_book_data
 
-            self.lore_book = {
-                "trigger_words": trigger_words,
-                "example_responses": example_responses,
-                "quick_trigger_list": set(trigger_words.keys()),
-            }
+                # Count categories for logging
+                categories = len(
+                    [
+                        k
+                        for k, v in lore_book_data.items()
+                        if isinstance(v, dict) and "keywords" in v
+                    ]
+                )
+                total_keywords = sum(
+                    len(v.get("keywords", []))
+                    for v in lore_book_data.values()
+                    if isinstance(v, dict)
+                )
 
-            self.logger.info(
-                f"Loaded lore book with {len(trigger_words)} trigger words and {len(example_responses)} examples"
-            )
+                self.logger.info(
+                    f"Loaded lore book with {categories} categories and {total_keywords} total keywords for character '{name}'"
+                )
 
         except Exception as e:
-            self.logger.error(f"Failed to load lore book: {e}")
-            self.lore_book = None
+            self.logger.error(f"Failed to load lore books: {e}")
+            self.lore_books = {}

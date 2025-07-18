@@ -7,12 +7,13 @@ language: "en"
 
 # Bot behavior
 max_history_length: 7
-debug: false
+debug: true
 max_response_length: 1999
 
 # AI Model settings (can be overridden by server-specific settings)
 default_model: "deepseek/deepseek-chat-v3-0324:free"
 check_model: "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+temperature: 0.6
 
 # Server restrictions (empty list means no restrictions)
 # Add server IDs here to restrict bot to specific servers

@@ -21,16 +21,13 @@ class ModelSelect(Select):
 
     async def callback(self, interaction: discord.Interaction):
         selected_model_name = self.values[0]
+
         model_id = self.config.available_models[selected_model_name]
         server_id = str(interaction.guild.id)
 
         # Use state manager to update model
         self.services.state_manager.set_model(server_id, model_id)
 
-        await interaction.response.send_message(
-            f"I've set the model to **{selected_model_name}**, nya! (´｡• ω •｡`)",
-            ephemeral=True,
-        )
         self.view.stop()
 
 
@@ -65,10 +62,18 @@ class ChangeModelCog(BaseCommand):
                 break
 
         view = ModelView(self.services)
-        await ctx.send(
+
+        msg = await ctx.send(
             f"The current model is **{current_model_name}**, nya! "
             f"Please choose a new one from the list below, nya! (o^▽^o)",
             view=view,
+        )
+
+        await view.wait()
+
+        await msg.edit(
+            content=f"I've set the model to **{self.services.config.quick_models_reverse.get(self.services.state_manager.get_model(server_id))}**, nya! (´｡• ω •｡`)",
+            view=None,  # Remove the view after selection
         )
 
         self.logger.info(f"Model selection sent to {ctx.guild.name} ({server_id})")
@@ -76,22 +81,4 @@ class ChangeModelCog(BaseCommand):
 
 async def setup(bot: commands.Bot):
     # Get services from bot instance
-    if hasattr(bot, "services"):
-        await bot.add_cog(ChangeModelCog(bot, bot.services))
-    else:
-        # Fallback for old architecture during transition
-        from constants import AVAILABLE_MODELS
-
-        class LegacyChangeModelCog(commands.Cog):
-            def __init__(self, bot):
-                self.bot = bot
-
-            @commands.hybrid_command(
-                name="changemodel", description="Change the model used by the bot."
-            )
-            async def change_model(self, ctx):
-                await ctx.send(
-                    "Model changing is temporarily unavailable during system upgrade, nya!"
-                )
-
-        await bot.add_cog(LegacyChangeModelCog(bot))
+    await bot.add_cog(ChangeModelCog(bot, bot.services))

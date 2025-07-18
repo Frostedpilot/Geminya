@@ -149,7 +149,7 @@ class OnMessage(BaseEventHandler):
                 )
 
             # Get AI response
-            response = await self.ai_service.get_check_response(check_prompt)
+            response = await self.ai_service.get_check_response(check_prompt, message)
 
             return "yes" in response.lower()
 
@@ -218,57 +218,4 @@ class OnMessage(BaseEventHandler):
 
 async def setup(bot: commands.Bot):
     # Get services from bot instance
-    if hasattr(bot, "services"):
-        await bot.add_cog(OnMessage(bot, bot.services))
-    else:
-        # Fallback for old architecture during transition
-        import logging
-        from constants import MAX_HISTORY_LENGTH
-        from utils.ai_utils import get_response, get_check_response
-
-        class LegacyOnMessage(commands.Cog):
-            def __init__(self, bot):
-                self.bot = bot
-                self.max_history_length = MAX_HISTORY_LENGTH
-
-            async def get_response(
-                self, message: discord.Message, logger: logging.Logger
-            ):
-                # Original legacy implementation
-                server_id = str(message.guild.id) if message.guild else "DM"
-
-                async with message.channel.typing():
-                    response = await get_response(
-                        message,
-                        self.bot.model[server_id],
-                        self.bot.history[message.channel.id],
-                        self.bot.lore_book,
-                    )
-
-                    if response:
-                        self.bot.history[message.channel.id].append(
-                            {
-                                "author": self.bot.user.id,
-                                "name": self.bot.user.name,
-                                "nick": getattr(self.bot.user, "nick", None),
-                                "content": response,
-                            }
-                        )
-
-                        chunks = split_response(response)
-                        for chunk in chunks:
-                            if chunk:
-                                await message.channel.send(chunk)
-
-            @commands.Cog.listener()
-            async def on_message(self, message: discord.Message):
-                if message.author == self.bot.user:
-                    return
-
-                # Legacy message processing logic would go here
-                # This is a simplified version for the transition period
-                if self.bot.user.mentioned_in(message):
-                    logger = logging.getLogger("geminya.legacy")
-                    await self.get_response(message, logger)
-
-        await bot.add_cog(LegacyOnMessage(bot))
+    await bot.add_cog(OnMessage(bot, bot.services))

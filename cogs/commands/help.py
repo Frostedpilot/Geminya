@@ -44,33 +44,4 @@ class HelpCog(BaseCommand):
 
 async def setup(bot: commands.Bot):
     # Get services from bot instance
-    if hasattr(bot, "services"):
-        await bot.add_cog(HelpCog(bot, bot.services))
-    else:
-        # Fallback for old architecture during transition
-        class LegacyHelpCog(commands.Cog):
-            def __init__(self, bot):
-                self.bot = bot
-
-            @commands.hybrid_command(
-                name="help", description="Display available commands."
-            )
-            async def help(self, ctx):
-                embed = discord.Embed(title="Bot Commands", color=0x03A64B)
-                if self.bot.user and self.bot.user.avatar:
-                    embed.set_thumbnail(url=self.bot.user.avatar.url)
-
-                command_tree = self.bot.commands
-                for command in command_tree:
-                    if command.hidden:
-                        continue
-                    command_description = (
-                        command.description or "Not implemented yet, nyaa!"
-                    )
-                    embed.add_field(
-                        name=command.name, value=command_description, inline=False
-                    )
-
-                await ctx.send(embed=embed)
-
-        await bot.add_cog(LegacyHelpCog(bot))
+    await bot.add_cog(HelpCog(bot, bot.services))

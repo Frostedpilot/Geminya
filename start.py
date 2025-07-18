@@ -29,7 +29,7 @@ def check_dependencies():
     required_packages = [
         "discord.py",
         "openai",
-        "pyyaml",
+        "yaml",
     ]
 
     missing = []

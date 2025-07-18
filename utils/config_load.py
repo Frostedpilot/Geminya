@@ -18,33 +18,3 @@ def load_language_file():
         lang_data = json.load(file)
 
     return lang_data
-
-
-def lore_book_load(bot):
-    lang_data = load_language_file()
-    lore_book = lang_data.get("lorebook", {})
-
-    if not lore_book:
-        raise ValueError("Lore book data is missing or empty in the language file.")
-
-    trigger_words = {}
-    example_responses = {}
-    for key, value in lore_book.items():
-        words = value.get("keywords", [])
-        for word in words:
-            if word not in trigger_words:
-                trigger_words[word] = []
-            trigger_words[word].append(key)
-
-        example_responses[
-            key
-        ] = f"""
-        {"{user}"}: {value.get("example_user")}
-        Geminya: {value.get("example")}
-        """
-
-    bot.lore_book = {
-        "trigger_words": trigger_words,
-        "example_responses": example_responses,
-        "quick_trigger_list": set(trigger_words.keys()),
-    }

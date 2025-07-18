@@ -59,16 +59,25 @@ class AIService:
             return "Nya! I'm not ready yet, please try again in a moment."
 
         try:
+            # Ensure server is initialized
+            self.state_manager.initialize_server(server_id)
+
             # Get model and history
             model = self.state_manager.get_model(server_id)
             history = self.state_manager.get_history(message.channel.id)
-            lore_book = self.state_manager.get_lore_book()
+
+            # Get persona-specific lore book
+            persona_name = self.state_manager.persona.get(
+                server_id, self.config.default_persona
+            )
+            lore_books = self.state_manager.get_lore_books()
+            lore_book = lore_books.get(persona_name) if lore_books else None
 
             # Build prompt
             prompt = self._build_prompt(message, history, lore_book)
 
             self.logger.debug(
-                f"Generating response for {message.author} using model {model}"
+                f"Generating response for {message.author} using model {model} and persona {persona_name}"
             )
 
             # Make API call
@@ -77,6 +86,11 @@ class AIService:
                 messages=[
                     {"role": "user", "content": prompt},
                 ],
+                temperature=(
+                    self.config.temperature
+                    if hasattr(self.config, "temperature")
+                    else 0.7
+                ),
             )
 
             if len(response.choices) == 0 or not response.choices[0].message.content:
@@ -95,11 +109,12 @@ class AIService:
             self.logger.error(f"Error generating AI response: {e}")
             return "Nya! Something went wrong, please try again later."
 
-    async def get_check_response(self, prompt: str) -> str:
+    async def get_check_response(self, prompt: str, message: discord.Message) -> str:
         """Get a check response using the check model.
 
         Args:
             prompt: Prompt text for the check
+            message: Discord message to check
 
         Returns:
             str: Check response (usually "yes" or "no")
@@ -108,6 +123,10 @@ class AIService:
             self.logger.error("AI client not initialized for check response")
             return "no"
 
+        # Ensure server is initialized
+        server_id = str(message.guild.id) if message.guild else "default"
+        self.state_manager.initialize_server(server_id)
+
         max_retries = 5
 
         for attempt in range(max_retries):
@@ -115,7 +134,10 @@ class AIService:
                 response = await self.client.chat.completions.create(
                     model=self.config.check_model,
                     messages=[
-                        {"role": "system", "content": self._get_personality_prompt()},
+                        {
+                            "role": "system",
+                            "content": self._get_personality_prompt(message),
+                        },
                         {"role": "user", "content": prompt},
                     ],
                 )
@@ -161,7 +183,7 @@ class AIService:
         author_name = author.name
 
         # Get personality prompt
-        personality_prompt = self._get_personality_prompt()
+        personality_prompt = self._get_personality_prompt(message)
 
         # Build history section
         history_prompt = ""
@@ -175,19 +197,20 @@ class AIService:
         # Build lore book section
         lore_prompt = ""
         if lore_book:
-            word_list = set(message.content.lower().split())
-            overlap = word_list.intersection(lore_book.get("quick_trigger_list", set()))
+            # Check each lore book category
+            for category_name, category_data in lore_book.items():
+                if isinstance(category_data, dict) and "keywords" in category_data:
+                    keywords = category_data.get("keywords", [])
 
-            if overlap:
-                lore_list = set()
-                for word in overlap:
-                    if word in lore_book.get("trigger_words", {}):
-                        lore_list.update(lore_book["trigger_words"][word])
-
-                for lore in lore_list:
-                    if lore in lore_book.get("example_responses", {}):
-                        example = lore_book["example_responses"][lore]
-                        lore_prompt += f"\n\n{example}"
+                    # Check if any keywords match the message
+                    if any(keyword in message.content.lower() for keyword in keywords):
+                        example = category_data.get("example", "")
+                        if example:
+                            lore_prompt += f"\n\n{example}"
+                            self.logger.debug(
+                                f"Added lore example from category: {category_name}"
+                            )
+                            break  # Only use the first matching category to avoid overwhelming the prompt
 
         # Collect all participants
         authors = {author_name}
@@ -207,8 +230,11 @@ Write Geminya's next reply in a fictional chat between participants and {author_
 
         return final_prompt.strip()
 
-    def _get_personality_prompt(self) -> str:
+    def _get_personality_prompt(self, message: discord.Message) -> str:
         """Get the personality system prompt.
+
+        Args:
+            message: Discord message to get persona for
 
         Returns:
             str: Personality prompt text
@@ -216,11 +242,28 @@ Write Geminya's next reply in a fictional chat between participants and {author_
         try:
             from utils.config_load import load_language_file
 
-            lang_data = load_language_file()
-            personality = lang_data.get("personality", {})
-            return personality.get(
-                "Geminya_Exp", "You are Geminya, a helpful AI assistant."
+            # Get server ID and ensure it's initialized
+            server_id = str(message.guild.id) if message.guild else "default"
+            self.state_manager.initialize_server(server_id)
+
+            # Get persona name for this server
+            persona_name = self.state_manager.persona.get(
+                server_id, self.config.default_persona
             )
+
+            # Load language data
+            lang_data = load_language_file()
+            characters = lang_data.get("characters", {})
+            character = characters.get(persona_name, {})
+
+            self.logger.debug(f"Using persona '{persona_name}' for server {server_id}")
+
+            personality = character.get(
+                "personality", "You are Geminya, a helpful AI assistant."
+            )
+
+            self.logger.debug(f"Personality prompt length: {len(personality)} chars")
+            return personality
 
         except Exception as e:
             self.logger.error(f"Failed to load personality prompt: {e}")

@@ -38,6 +38,8 @@ class Config:
     default_model: str = "deepseek/deepseek-chat-v3-0324:free"
     check_model: str = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
 
+    default_persona: str = "Geminya_Exp"
+
     # Response configuration
     sentence_endings: tuple = (".", "!", "?")
     max_response_length: int = 1999
@@ -54,6 +56,13 @@ class Config:
             "DeepSeek R1 0528": "deepseek/deepseek-r1-0528:free",
         }
     )
+
+    # Reverse mapping for quick access
+    quick_models_reverse: Dict[str, str] = field(init=False)
+
+    def __post_init__(self):
+        """Initialize reverse mapping for available models."""
+        self.quick_models_reverse = {v: k for k, v in self.available_models.items()}
 
     @classmethod
     def from_env(cls) -> "Config":

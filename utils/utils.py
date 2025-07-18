@@ -11,24 +11,6 @@ warnings.warn(
 )
 
 
-# Keep existing functions for backward compatibility
-def get_sys_prompt() -> str:
-    """Get system prompt from language file.
-
-    DEPRECATED: Use ai_service._get_personality_prompt() instead.
-    """
-    try:
-        from utils.config_load import load_language_file
-
-        lang_data = load_language_file()
-        personality = lang_data.get("personality", {})
-        return personality.get(
-            "Geminya_Exp", "You are Geminya, a helpful AI assistant."
-        )
-    except Exception:
-        return "You are Geminya, a helpful AI assistant."
-
-
 def split_response(response: str, max_len: int = 1999) -> List[str]:
     """Split a response into chunks that fit Discord's message limit.
 
