@@ -40,6 +40,9 @@ class StateManager:
         # Load lore books
         self._load_lore_books()
 
+        # Load persona list
+        self._load_persona_list()
+
         self.logger.info("State manager initialized successfully")
 
     async def cleanup(self) -> None:
@@ -101,6 +104,30 @@ class StateManager:
         self.logger.info(
             f"Changed model for server {server_id}: {old_model} -> {model_id}"
         )
+
+    def set_persona(self, server_id: str, persona_name: str) -> None:
+        """Set the persona for a server.
+
+        Args:
+            server_id: Discord server ID as string
+            persona_name: Name of the persona to set
+        """
+        old_persona = self.persona.get(server_id, "none")
+        self.persona[server_id] = persona_name
+        self.logger.info(
+            f"Changed persona for server {server_id}: {old_persona} -> {persona_name}"
+        )
+
+    def get_persona(self, server_id: str) -> str:
+        """Get the current persona for a server.
+
+        Args:
+            server_id: Discord server ID as string
+
+        Returns:
+            str: Persona name
+        """
+        return self.persona.get(server_id, self.config.default_persona)
 
     def get_history(self, channel_id: int) -> List[Dict[str, Any]]:
         """Get conversation history for a channel.
@@ -218,6 +245,19 @@ class StateManager:
             stats["lore_book_keywords"] = total_keywords
 
         return stats
+
+    def _load_persona_list(self) -> None:
+        """Load the list of available personas from the language file."""
+        try:
+            from utils.config_load import load_language_file
+
+            lang_data = load_language_file()
+            self.config.personas = lang_data.get("characters", {})
+            if not self.config.personas:
+                self.logger.warning("No personas found in language file")
+        except Exception as e:
+            self.logger.error(f"Failed to load personas: {e}")
+            self.config.personas = {}
 
     def _load_lore_books(self) -> None:
         """Load the lore books from the language file."""
