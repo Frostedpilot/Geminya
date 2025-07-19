@@ -35,7 +35,7 @@ class Config:
     debug: bool = False
 
     # Model configuration
-    default_model: str = "google/gemini-2.0-flash-exp:free"
+    default_model: str = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
     check_model: str = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
 
     default_persona: str = "Nigler"
@@ -54,7 +54,7 @@ class Config:
             "Kimi K2": "moonshotai/kimi-k2:free",
             "DeepSeek Chimera": "tngtech/deepseek-r1t2-chimera:free",
             "DeepSeek R1 0528": "deepseek/deepseek-r1-0528:free",
-            "Hitler Nigger's supreme Model": "google/gemini-2.0-flash-exp:free"
+            "Hitler Nigger's supreme Model": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
         }
     )
 
@@ -96,7 +96,7 @@ class Config:
             max_history_length=int(os.getenv("MAX_HISTORY_LENGTH", "7")),
             debug=os.getenv("DEBUG", "false").lower() == "true",
             default_model=os.getenv(
-                "DEFAULT_MODEL", "google/gemini-2.0-flash-exp:free"
+                "DEFAULT_MODEL", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
             ),
             check_model=os.getenv(
                 "CHECK_MODEL",
@@ -171,7 +171,7 @@ class Config:
             max_history_length=config_data.get("max_history_length", 7),
             debug=config_data.get("debug", False),
             default_model=config_data.get(
-                "default_model", "google/gemini-2.0-flash-exp:free"
+                "default_model", "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
 
             ),
             check_model=config_data.get(
