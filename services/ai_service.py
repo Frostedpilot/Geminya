@@ -181,6 +181,8 @@ class AIService:
         """
         author = message.author
         author_name = author.name
+        if author.nick:
+            author_name = f"{author.nick} ({author.name})"
 
         # Get personality prompt
         personality_prompt = self._get_personality_prompt(message)
@@ -218,15 +220,23 @@ class AIService:
             for entry in history:
                 authors.add(entry["name"])
 
+        # Collecr persona name
+        persona_name = self.state_manager.persona.get(
+            str(message.guild.id) if message.guild else "default",
+            self.config.default_persona,
+        )
+
         # Build final prompt
         final_prompt = f"""
-Write Geminya's next reply in a fictional chat between participants and {author_name}.
+Write {persona_name}'s next reply in a fictional chat between participants and {author_name}.
 {personality_prompt}
 {lore_prompt}
-[Start a new group chat. Group members: Geminya, {', '.join(authors)}]
+[Start a new group chat. Group members: {persona_name}, {', '.join(authors)}]
 {history_prompt}
-[Write the next reply only as Geminya. Only use information related to {author_name}'s message and only answer {author_name} directly.]
-"""
+[Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly. Do not start with "From {persona_name}:" or similar.]
+""".replace(
+            "{{user}}", author_name
+        )
 
         return final_prompt.strip()
 
