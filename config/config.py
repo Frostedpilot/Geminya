@@ -54,6 +54,7 @@ class Config:
             "Kimi K2": "moonshotai/kimi-k2:free",
             "DeepSeek Chimera": "tngtech/deepseek-r1t2-chimera:free",
             "DeepSeek R1 0528": "deepseek/deepseek-r1-0528:free",
+            "Gemini 2.3 Flash": "google/gemini-2.5-flash",
         }
     )
 
