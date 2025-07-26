@@ -61,16 +61,50 @@ def split_response(response: str, max_len: int = 1999) -> List[str]:
 
 
 def convert_tool_format(tool):
-    converted_tool = {
-        "type": "function",
-        "function": {
-            "name": tool.name,
-            "description": tool.description,
-            "parameters": {
-                "type": "object",
-                "properties": tool.inputSchema["properties"],
-                "required": tool.inputSchema["required"],
+    """Convert MCP tool to OpenAI function format with error handling."""
+    try:
+        # Extract properties and required fields safely
+        properties = {}
+        required = []
+
+        if hasattr(tool, "inputSchema") and tool.inputSchema:
+            if "properties" in tool.inputSchema:
+                properties = tool.inputSchema["properties"]
+            if "required" in tool.inputSchema:
+                required_field = tool.inputSchema["required"]
+                # Handle both list and string cases
+                if isinstance(required_field, list):
+                    required = required_field
+                elif isinstance(required_field, str):
+                    required = [required_field]
+                else:
+                    required = []
+
+        converted_tool = {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description or "",
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required,
+                },
             },
-        },
-    }
-    return converted_tool
+        }
+        return converted_tool
+
+    except Exception:
+        # Fallback to basic tool format
+        return {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": getattr(tool, "description", ""),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        }

@@ -12,7 +12,7 @@ from openai import AsyncOpenAI
 
 from config import Config
 from services.state_manager import StateManager
-from services.mcp_client import MCPClient
+from services.mcp_client import MCPClientManager
 
 
 class AIService:
@@ -23,7 +23,7 @@ class AIService:
         config: Config,
         state_manager: StateManager,
         logger: logging.Logger,
-        mcp_client: MCPClient,
+        mcp_client: MCPClientManager,
     ):
         self.config = config
         self.state_manager = state_manager
