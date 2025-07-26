@@ -1,14 +1,6 @@
 """Utility functions for the Geminya bot."""
 
 from typing import List
-import warnings
-
-# Issue deprecation warning for direct imports
-warnings.warn(
-    "Direct imports from utils.utils are deprecated. Use the service layer instead.",
-    DeprecationWarning,
-    stacklevel=2,
-)
 
 
 def split_response(response: str, max_len: int = 1999) -> List[str]:
@@ -36,11 +28,11 @@ def split_response(response: str, max_len: int = 1999) -> List[str]:
 
         # First, check the combined chunk length
         if len(tmp) > max_len:
-            # If it exceeds max_len, split at the last sentence ending and add to shards
+            # If it exceeds max_len, split at the last chunk ending and add to shards
             if current_chunk:
                 shards.append(current_chunk.strip())
 
-            # After added, assign the chunk to current_chunk (may be > max_len)
+            # After added, assign the chunk to current_chunk (may be > max_len) *a
             current_chunk = chunk + "\n"
         else:
             # If it fits, assign it to current_chunk (always less than max_len)
@@ -66,3 +58,19 @@ def split_response(response: str, max_len: int = 1999) -> List[str]:
         shards.append(current_chunk.strip())
 
     return [shard for shard in shards if shard.strip()]
+
+
+def convert_tool_format(tool):
+    converted_tool = {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": {
+                "type": "object",
+                "properties": tool.inputSchema["properties"],
+                "required": tool.inputSchema["required"],
+            },
+        },
+    }
+    return converted_tool

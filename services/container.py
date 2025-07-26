@@ -8,6 +8,7 @@ from utils.logging import setup_logging
 from services.state_manager import StateManager
 from services.ai_service import AIService
 from services.error_handler import ErrorHandler
+from services.mcp_client import MCPClient
 
 
 class ServiceContainer:
@@ -29,8 +30,16 @@ class ServiceContainer:
         self.state_manager = StateManager(
             config, self.logger_manager.get_logger("state")
         )
+
+        self.mcp_client = MCPClient(
+            config, self.state_manager, self.logger_manager.get_logger("mcp_client")
+        )
+
         self.ai_service = AIService(
-            config, self.state_manager, self.logger_manager.get_ai_logger()
+            config,
+            self.state_manager,
+            self.logger_manager.get_ai_logger(),
+            self.mcp_client,
         )
 
         self.logger.info("Service container created")
@@ -42,6 +51,12 @@ class ServiceContainer:
         try:
             await self.state_manager.initialize()
             await self.ai_service.initialize()
+
+            # MCP
+            mcp_startup = self.config.mcp_server_instruction
+            for server_id, instruction in mcp_startup.items():
+                await self.mcp_client.connect_to_server(instruction)
+                self.logger.info(f"Connected to MCP server: {server_id}")
 
             self.logger.info("All services initialized successfully")
 

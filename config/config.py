@@ -61,6 +61,17 @@ class Config:
     # Reverse mapping for quick access
     quick_models_reverse: Dict[str, str] = field(init=False)
 
+    # MCP server folders
+    mcp_server_instruction: Dict = field(
+        default_factory=lambda: {
+            "duckduckgo": {
+                "command": "python",
+                "args": ["mcp_servers/duckduckgo.py"],
+                "env": None,
+            }
+        }
+    )
+
     def __post_init__(self):
         """Initialize reverse mapping for available models."""
         self.quick_models_reverse = {v: k for k, v in self.available_models.items()}
