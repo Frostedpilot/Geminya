@@ -243,7 +243,7 @@ class MCPClientManager:
                 model=self.state_manager.get_model(server_id=server_id),
                 messages=messages,
                 tools=all_tools,
-                parallel_tool_calls=True,
+                parallel_tool_calls=False,
             )
 
             self.logger.debug(
@@ -471,7 +471,7 @@ class MCPClientManager:
             model=self.state_manager.get_model(server_id=server_id),
             messages=messages,
             tools=available_tools,
-            parallel_tool_calls=True,
+            parallel_tool_calls=False,
         )
 
         self.logger.debug(

@@ -325,7 +325,7 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
 {lore_prompt}
 [Start a new group chat. Group members: {persona_name}, {', '.join(authors)}]
 {history_prompt}
-[Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly. Do not start with "From {persona_name}:" or similar. You have access to tools, so leverage them as much as possible, you can use more than one tool each time you reply.]
+[Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly. Do not start with "From {persona_name}:" or similar. You have access to tools, so leverage them as much as possible. You can only use ONE tool at a time, but you can iteratively call them up to {self.config.max_tool_iterations} times with consecutive messages before giving answer, so plan accordingly.]
 """.replace(
             "{{user}}", author_name
         )
