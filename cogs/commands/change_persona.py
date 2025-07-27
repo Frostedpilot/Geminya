@@ -29,6 +29,10 @@ class PersonaSelect(Select):
         # Use state manager to update persona
         self.services.state_manager.set_persona(server_id, selected_persona_name)
 
+        for member in interaction.guild.members:
+            if member.id == interaction.client.user.id:
+                await member.edit(nick=f"{selected_persona_name}")
+
         self.view.stop()
 
 

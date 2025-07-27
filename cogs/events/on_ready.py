@@ -41,6 +41,19 @@ class OnReady(BaseEventHandler):
             ]
         )
 
+        # Set bot's correct nickname according to each server's persona
+        for guild in self.bot.guilds:
+            server_id = str(guild.id)
+            persona_name = self.state_manager.get_persona(server_id)
+            if persona_name:
+                for member in guild.members:
+                    if member.id == self.bot.user.id:
+                        await member.edit(nick=f"{persona_name}")
+
+                        self.logger.info(
+                            f"Set bot nickname to '{persona_name}' in guild: {guild.name} ({server_id})"
+                        )
+
         self.logger.info(
             f"Bot is ready! Connected to {guild_count} guilds with {channel_count} text channels"
         )

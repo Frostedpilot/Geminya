@@ -16,8 +16,8 @@ class OnMessage(BaseEventHandler):
     async def on_message(self, message: discord.Message):
         """Handle incoming messages for AI responses."""
 
-        # Skip bot messages
-        if message.author.bot:
+        # Skip this own bot messages (keep other bots messages)
+        if message.author.id == self.bot.user.id:
             return
 
         # Skip DMs for now (could be extended later)
@@ -112,6 +112,9 @@ class OnMessage(BaseEventHandler):
         if self.bot.user and self.bot.user.mentioned_in(message):
             self.logger.debug(f"Responding to direct mention from {message.author}")
             return True
+
+        # Return here for now TODO: Implement more complex logic based on bot nicknames
+        return False
 
         # Check for bot name in message (case insensitive)
         if "geminya" in content.lower():

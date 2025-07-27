@@ -1,590 +1,334 @@
 # Development Guide
 
-## Getting Started with Development
+## Quick Start
 
-This guide covers how to extend and modify Geminya's functionality, from adding new commands to customizing the personality system.
+1. **Test architecture**: `python test_architecture.py`
+2. **Start development**: `python start.py`
+3. **Check logs**: `logs/` directory
 
-## Project Architecture
-
-### Bot Structure
+## Project Structure
 
 ```
-GeminyaBot (commands.Bot)
-├── Model Management (per-server AI model selection)
-├── History Management (conversation context)
-├── Lore Book System (trigger-based responses)
-└── Cog System (modular commands and events)
+├── config/config.py         # Configuration system
+├── services/                # Core services
+│   ├── container.py         # Dependency injection
+│   ├── state_manager.py     # State management
+│   ├── ai_service.py        # AI operations
+│   └── error_handler.py     # Error handling
+├── cogs/                    # Discord cogs
+│   ├── base_command.py      # Command base class
+│   ├── base_event.py        # Event base class
+│   ├── commands/            # Command implementations
+│   └── events/              # Event handlers
+├── utils/                   # Utilities
+│   ├── logging.py           # Centralized logging
+│   └── utils.py             # General utilities
+└── lang/en.json             # Personality & responses
 ```
 
-### Key Design Patterns
+## Creating New Features
 
-1. **Cog-based Architecture**: Commands and events are organized into Discord.py cogs for modularity
-2. **Async/Await**: All I/O operations use async patterns for performance
-3. **Context Management**: Conversation history and server-specific settings maintained in memory
-4. **Fallback Handling**: Graceful degradation when services are unavailable
+### Adding Commands
 
-## Adding New Commands
-
-### Basic Command Structure
-
-Create a new file in `cogs/commands/` (e.g., `my_command.py`):
+1. **Create command file** in `cogs/commands/`:
 
 ```python
+# cogs/commands/my_command.py
 import discord
+from discord import app_commands
 from discord.ext import commands
+from cogs.base_command import BaseCommand
 
+class MyCommand(BaseCommand):
+    def __init__(self, bot, services):
+        super().__init__(bot, services)
 
-class MyCommandCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+    @app_commands.command(name="mycommand", description="My new command")
+    async def my_command(self, interaction: discord.Interaction):
+        # Access services via self.ai_service, self.state_manager, etc.
+        model = self.state_manager.get_model(str(interaction.guild_id))
 
-    @commands.hybrid_command(
-        name="mycommand",
-        description="Description of what the command does"
-    )
-    async def my_command(self, ctx, parameter: str = None):
-        """Command implementation with optional parameters."""
-
-        # Access bot instance
-        server_id = str(ctx.guild.id)
-        current_model = self.bot.model.get(server_id, "default")
-
-        # Respond with Geminya's personality
-        await ctx.send(f"Nya! You used my command with: {parameter} ✨")
-
+        await interaction.response.send_message(f"Using model: {model}")
 
 async def setup(bot):
-    await bot.add_cog(MyCommandCog(bot))
+    services = getattr(bot, 'services', None)
+    if services:
+        await bot.add_cog(MyCommand(bot, services))
 ```
 
-### Command Best Practices
+2. **Auto-loading**: Commands in `cogs/commands/` are loaded automatically.
 
-1. **Personality Integration**: Always respond in Geminya's voice with cat puns
-2. **Error Handling**: Use try/catch blocks for external API calls
-3. **Permissions**: Check user permissions when appropriate
-4. **Rate Limiting**: Be mindful of Discord's rate limits
+### Adding Events
 
-### Advanced Command Example
+1. **Create event file** in `cogs/events/`:
 
 ```python
-from discord.ui import View, Select
-import aiohttp
-
-
-class CategorySelect(Select):
-    def __init__(self, bot):
-        self.bot = bot
-        options = [
-            discord.SelectOption(label="Option 1", value="opt1"),
-            discord.SelectOption(label="Option 2", value="opt2"),
-        ]
-        super().__init__(placeholder="Choose...", options=options)
-
-    async def callback(self, interaction: discord.Interaction):
-        selected = self.values[0]
-        await interaction.response.send_message(
-            f"You selected {selected}, nya! (◕‿◕)✨"
-        )
-
-
-class InteractiveView(View):
-    def __init__(self, bot):
-        super().__init__(timeout=300)  # 5 minute timeout
-        self.add_item(CategorySelect(bot))
-
-
-class AdvancedCommandCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
-    @commands.hybrid_command(name="interactive")
-    async def interactive_command(self, ctx):
-        """Example of interactive command with UI components."""
-        view = InteractiveView(self.bot)
-        await ctx.send("Pick an option, nya! ✨", view=view)
-
-    @commands.hybrid_command(name="api")
-    async def api_command(self, ctx, query: str):
-        """Example of command that calls external API."""
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(f"https://api.example.com/{query}") as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        await ctx.send(f"Found data: {data}, nya! ✨")
-                    else:
-                        await ctx.send("API request failed, nya! Try again later.")
-            except Exception as e:
-                await ctx.send("Something went wrong, nya! (╥﹏╥)")
-                print(f"API error: {e}")
-
-
-async def setup(bot):
-    await bot.add_cog(AdvancedCommandCog(bot))
-```
-
-## Adding Event Handlers
-
-### Basic Event Handler
-
-Create a new file in `cogs/events/` (e.g., `my_event.py`):
-
-```python
+# cogs/events/my_event.py
 import discord
 from discord.ext import commands
+from cogs.base_event import BaseEventHandler
 
-
-class MyEventCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-
+class MyEvent(BaseEventHandler):
     @commands.Cog.listener()
     async def on_member_join(self, member):
-        """Handle when a new member joins the server."""
-        # Get a default channel to send welcome message
-        channel = member.guild.system_channel
-        if channel:
-            await channel.send(
-                f"Welcome to the server, {member.mention}! "
-                f"Nya! I'm Geminya, your friendly catgirl assistant! ✨"
-            )
+        # Access services
+        self.logger.info(f"Member joined: {member.name}")
 
-    @commands.Cog.listener()
-    async def on_reaction_add(self, reaction, user):
-        """Handle when someone adds a reaction."""
-        if user == self.bot.user:
-            return  # Ignore bot's own reactions
-
-        # Example: React with cat emojis to specific reactions
-        if str(reaction.emoji) == "❤️":
-            await reaction.message.add_reaction("🐱")
-
+        # Use state manager
+        self.state_manager.initialize_server(str(member.guild.id))
 
 async def setup(bot):
-    await bot.add_cog(MyEventCog(bot))
+    services = getattr(bot, 'services', None)
+    if services:
+        await bot.add_cog(MyEvent(bot, services))
 ```
 
-### Available Events
+### Adding Services
 
-Common Discord.py events you can handle:
-
-- `on_message`: Message received
-- `on_member_join/leave`: Member joins/leaves server
-- `on_reaction_add/remove`: Reactions added/removed
-- `on_voice_state_update`: Voice channel changes
-- `on_guild_join/remove`: Bot added/removed from server
-
-## Customizing AI Responses
-
-### Modifying Personality
-
-Edit `lang/en.json` to change Geminya's personality:
-
-```json
-{
-  "personality": {
-    "Geminya_Exp": "Your updated system prompt here..."
-  }
-}
-```
-
-### Adding Lore Book Entries
-
-Add new trigger-based responses:
-
-```json
-{
-  "lorebook": {
-    "your_category": {
-      "keywords": ["trigger", "words", "here"],
-      "example_user": "Example user message",
-      "example": "Geminya's example response with personality, nya! ✨"
-    }
-  }
-}
-```
-
-### Custom Response Logic
-
-Modify `utils/ai_utils.py` to change how responses are generated:
+1. **Create service** in `services/`:
 
 ```python
-def build_prompt(message, history=None, lore_book=None):
-    # Your custom prompt building logic
-    personality_prompt = get_sys_prompt()
+# services/my_service.py
+import logging
+from config import Config
 
-    # Add custom context based on message content
-    if "programming" in message.content.lower():
-        personality_prompt += "\nYou're especially excited about coding today!"
+class MyService:
+    def __init__(self, config: Config, logger: logging.Logger):
+        self.config = config
+        self.logger = logger
 
-    # Rest of prompt building...
-    return final_prompt
+    async def initialize(self) -> None:
+        self.logger.info("My service initialized")
+
+    async def cleanup(self) -> None:
+        self.logger.info("My service cleanup completed")
 ```
 
-## Working with Models
-
-### Adding New AI Models
-
-Update `constants.py`:
+2. **Add to container**:
 
 ```python
-AVAILABLE_MODELS = {
-    "Your Model Name": "provider/model-id:variant",
-    "Another Model": "different-provider/model:free",
-    # ... existing models
-}
+# services/container.py
+from services.my_service import MyService
+
+class ServiceContainer:
+    def __init__(self, config: Config):
+        # ... existing services
+        self.my_service = MyService(config, logger_manager.get_logger("my_service"))
+
+    async def initialize(self) -> None:
+        # ... existing initialization
+        await self.my_service.initialize()
 ```
 
-### Model-Specific Logic
+## Testing
 
-You can add conditional logic based on the selected model:
+### Running Tests
 
-```python
-async def get_response(message, model, history=None, lore_book=None):
-    # Model-specific adjustments
-    if "gpt" in model.lower():
-        # Adjust for GPT models
-        temperature = 0.8
-    elif "deepseek" in model.lower():
-        # Adjust for DeepSeek models
-        temperature = 0.7
+```bash
+# Run all tests
+python test_architecture.py
 
-    # Use in API call...
+# Verbose output
+python test_architecture.py --verbose
 ```
 
-## Database Integration
+### Writing Tests
 
-### Adding Persistent Storage
-
-For features requiring data persistence, you can add database support:
+Add test methods to `ArchitectureTest` class:
 
 ```python
-import sqlite3
-import aiosqlite
+@test("My new feature")
+async def test_my_feature(self):
+    """Test my new feature."""
+    from services.my_service import MyService
 
+    config = Config.create()
+    my_service = MyService(config, logging.getLogger("test"))
 
-class DatabaseCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.db_path = "geminya.db"
-
-    async def setup_db(self):
-        """Initialize database tables."""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS user_preferences (
-                    user_id INTEGER PRIMARY KEY,
-                    preferred_model TEXT,
-                    custom_setting TEXT
-                )
-            """)
-            await db.commit()
-
-    @commands.hybrid_command(name="setpref")
-    async def set_preference(self, ctx, setting: str):
-        """Save user preference to database."""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "INSERT OR REPLACE INTO user_preferences (user_id, custom_setting) VALUES (?, ?)",
-                (ctx.author.id, setting)
-            )
-            await db.commit()
-        await ctx.send("Preference saved, nya! ✨")
-
-
-async def setup(bot):
-    cog = DatabaseCog(bot)
-    await cog.setup_db()
-    await bot.add_cog(cog)
+    await my_service.initialize()
+    # Test functionality
+    assert my_service.some_method() == expected_result
+    await my_service.cleanup()
 ```
 
-## Testing Your Code
+## Debugging
 
-### Unit Testing
+### Logging
 
-Create test files in a `tests/` directory:
+Use appropriate logger for context:
 
 ```python
-import unittest
-from unittest.mock import Mock, AsyncMock
-from utils.utils import split_response
+class MyCommand(BaseCommand):
+    def __init__(self, bot, services):
+        super().__init__(bot, services)
+        self.logger = services.logger_manager.get_logger("commands")
 
-
-class TestUtils(unittest.TestCase):
-    def test_split_response_short(self):
-        """Test that short responses aren't split."""
-        response = "Short response nya!"
-        result = split_response(response)
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0], response)
-
-    def test_split_response_long(self):
-        """Test that long responses are split properly."""
-        response = "Very long response. " * 100  # Over 1999 chars
-        result = split_response(response)
-        self.assertGreater(len(result), 1)
-        for chunk in result:
-            self.assertLessEqual(len(chunk), 1999)
-
-
-if __name__ == "__main__":
-    unittest.main()
+    async def my_command(self, interaction):
+        self.logger.info(f"Command executed by {interaction.user}")
+        self.logger.debug(f"Command data: {interaction.data}")
 ```
 
-### Integration Testing
+### Error Handling
 
-Test bot commands manually:
+Use the error handler service:
 
 ```python
-# test_bot.py
-import asyncio
-from base import GeminyaBot
-import discord
-
-async def test_commands():
-    """Test bot commands in isolation."""
-    intents = discord.Intents.default()
-    intents.message_content = True
-    bot = GeminyaBot(command_prefix=[], intents=intents)
-
-    # Test model switching
-    bot.model["123456789"] = "test-model"
-    assert bot.model["123456789"] == "test-model"
-
-    print("Basic tests passed!")
-
-if __name__ == "__main__":
-    asyncio.run(test_commands())
+class MyCommand(BaseCommand):
+    async def my_command(self, interaction):
+        try:
+            # Risky operation
+            result = await some_api_call()
+        except Exception as e:
+            error_msg = self.error_handler.handle_api_error(e, "my_command")
+            await interaction.response.send_message(error_msg, ephemeral=True)
 ```
 
-## Performance Optimization
+### Debug Mode
 
-### Caching Responses
+Enable debug logging in config:
 
-Implement response caching to reduce API calls:
+```yaml
+discord:
+  debug: true
+logging:
+  level: "DEBUG"
+```
+
+## Best Practices
+
+### Service Usage
+
+**DO:**
 
 ```python
-import time
-from functools import lru_cache
+class MyCommand(BaseCommand):
+    async def my_command(self, interaction):
+        # Use injected services
+        model = self.state_manager.get_model(str(interaction.guild_id))
+        response = await self.ai_service.get_response(message, str(interaction.guild_id))
+```
 
+**DON'T:**
 
-class ResponseCache:
-    def __init__(self, max_age=300):  # 5 minutes
-        self.cache = {}
-        self.max_age = max_age
+```python
+# Avoid direct imports of legacy code
+from constants import DEFAULT_MODEL  # Deprecated
+from utils.ai_utils import get_response  # Use ai_service instead
+```
 
-    def get(self, key):
-        if key in self.cache:
-            response, timestamp = self.cache[key]
-            if time.time() - timestamp < self.max_age:
-                return response
-            else:
-                del self.cache[key]
-        return None
+### Error Handling
 
-    def set(self, key, value):
-        self.cache[key] = (value, time.time())
+**DO:**
 
+```python
+async def my_operation(self):
+    try:
+        result = await risky_operation()
+        return result
+    except SpecificException as e:
+        self.logger.error(f"Specific error: {e}")
+        raise
+    except Exception as e:
+        self.logger.error(f"Unexpected error: {e}")
+        return self.error_handler.handle_api_error(e, "my_operation")
+```
 
-# Use in AI utils
-response_cache = ResponseCache()
+**DON'T:**
 
-async def get_response(message, model, history=None, lore_book=None):
-    # Create cache key from message content and recent history
-    cache_key = f"{message.content[:100]}_{model}"
+```python
+async def my_operation(self):
+    try:
+        return await risky_operation()
+    except:  # Too broad
+        pass  # Silent failure
+```
 
-    cached = response_cache.get(cache_key)
-    if cached:
-        return cached
+### Configuration
 
-    # Generate new response
-    response = await generate_ai_response(...)
-    response_cache.set(cache_key, response)
-    return response
+**DO:**
+
+```python
+class MyService:
+    def __init__(self, config: Config):
+        self.api_key = config.my_api_key  # Type-safe access
+        self.timeout = config.timeout if config.timeout > 0 else 30
+```
+
+**DON'T:**
+
+```python
+# Avoid global configuration access
+from constants import MY_API_KEY  # Use dependency injection instead
+```
+
+## Migration from Legacy
+
+### Gradual Migration
+
+1. **Keep legacy code working** with deprecation warnings
+2. **Create new features** using service architecture
+3. **Migrate existing features** one at a time
+4. **Remove deprecated code** after full migration
+
+### Common Patterns
+
+**Legacy Pattern:**
+
+```python
+# Old command style
+class OldCommand(commands.Cog):
+    @commands.command()
+    async def old_cmd(self, ctx):
+        from utils.ai_utils import get_response
+        response = await get_response(ctx.message, DEFAULT_MODEL)
+```
+
+**New Pattern:**
+
+```python
+# New service-based style
+class NewCommand(BaseCommand):
+    @app_commands.command()
+    async def new_cmd(self, interaction):
+        response = await self.ai_service.get_response(
+            interaction.message,
+            str(interaction.guild_id)
+        )
+```
+
+## Performance
+
+### Service Initialization
+
+Services are initialized once at startup:
+
+```python
+# Heavy operations in initialize()
+async def initialize(self):
+    self.expensive_resource = await load_expensive_data()
+
+# Quick operations in methods
+async def get_data(self):
+    return self.expensive_resource.query(...)
 ```
 
 ### Memory Management
 
-Monitor memory usage for long-running bots:
+Clean up resources properly:
 
 ```python
-import psutil
-import gc
-from discord.ext import tasks
-
-
-class MemoryMonitorCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.memory_monitor.start()
-
-    @tasks.loop(hours=1)
-    async def memory_monitor(self):
-        """Monitor memory usage and cleanup if needed."""
-        process = psutil.Process()
-        memory_mb = process.memory_info().rss / 1024 / 1024
-
-        if memory_mb > 500:  # If using more than 500MB
-            print(f"High memory usage: {memory_mb:.1f}MB, running cleanup...")
-
-            # Cleanup old history entries
-            for channel_id in list(self.bot.history.keys()):
-                if len(self.bot.history[channel_id]) > 10:
-                    self.bot.history[channel_id] = self.bot.history[channel_id][-5:]
-
-            gc.collect()
+async def cleanup(self):
+    if self.connection:
+        await self.connection.close()
+    self.cache.clear()
 ```
 
-## Debugging Tips
+### Caching
 
-### Logging Best Practices
+Use state manager for persistent data:
 
 ```python
-import logging
-
-# Set up logger for your module
-logger = logging.getLogger(__name__)
-
-class MyCommandCog(commands.Cog):
-    @commands.hybrid_command(name="debug")
-    async def debug_command(self, ctx):
-        try:
-            # Your command logic
-            logger.info(f"Debug command used by {ctx.author}")
-            result = some_operation()
-            logger.debug(f"Operation result: {result}")
-
-        except Exception as e:
-            logger.error(f"Error in debug command: {e}", exc_info=True)
-            await ctx.send("Something went wrong, nya! Check the logs.")
+# Cache in state manager
+self.state_manager.set_cached_data(key, value)
+cached = self.state_manager.get_cached_data(key)
 ```
-
-### Error Handling Patterns
-
-```python
-async def safe_api_call(url):
-    """Example of robust API call with proper error handling."""
-    max_retries = 3
-    retry_delay = 1
-
-    for attempt in range(max_retries):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=10) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    elif response.status == 429:  # Rate limited
-                        await asyncio.sleep(retry_delay * (attempt + 1))
-                        continue
-                    else:
-                        logger.warning(f"API returned status {response.status}")
-                        return None
-
-        except asyncio.TimeoutError:
-            logger.warning(f"Timeout on attempt {attempt + 1}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(retry_delay)
-        except Exception as e:
-            logger.error(f"Unexpected error: {e}")
-            return None
-
-    return None  # All retries failed
-```
-
-## Contributing Guidelines
-
-### Code Style
-
-1. **Follow PEP 8**: Use tools like `black` and `flake8`
-2. **Type Hints**: Add type hints for function parameters and returns
-3. **Docstrings**: Document all public functions and classes
-4. **Comments**: Explain complex logic with inline comments
-
-### Git Workflow
-
-```bash
-# Create feature branch
-git checkout -b feature/new-command
-
-# Make your changes
-# ... code changes ...
-
-# Commit with descriptive message
-git commit -m "Add new interactive command with dropdown UI"
-
-# Push and create pull request
-git push origin feature/new-command
-```
-
-### Pull Request Template
-
-When submitting changes:
-
-1. **Description**: What does this change do?
-2. **Testing**: How was this tested?
-3. **Breaking Changes**: Any backwards compatibility issues?
-4. **Screenshots**: For UI changes, include screenshots
-
-## Deployment Considerations
-
-### Environment Variables
-
-For production, use environment variables instead of `secrets.json`:
-
-```python
-import os
-
-DISCORD_TOKEN = os.getenv('DISCORD_BOT_TOKEN')
-OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
-
-if not DISCORD_TOKEN:
-    raise ValueError("DISCORD_BOT_TOKEN environment variable is required")
-```
-
-### Docker Deployment
-
-Create `Dockerfile`:
-
-```dockerfile
-FROM python:3.12-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY . .
-
-CMD ["python", "base.py"]
-```
-
-### Monitoring and Health Checks
-
-```python
-from discord.ext import tasks
-import aiohttp
-
-class HealthCheckCog(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.health_check.start()
-
-    @tasks.loop(minutes=5)
-    async def health_check(self):
-        """Report bot status to monitoring service."""
-        try:
-            # Check if bot is responsive
-            latency = self.bot.latency * 1000  # Convert to ms
-
-            # Report to monitoring service
-            async with aiohttp.ClientSession() as session:
-                await session.post('http://monitoring-service/health', json={
-                    'status': 'healthy',
-                    'latency': latency,
-                    'guilds': len(self.bot.guilds),
-                    'users': len(self.bot.users)
-                })
-        except Exception as e:
-            logger.error(f"Health check failed: {e}")
-```
-
-This development guide should help you extend Geminya's functionality while maintaining code quality and the bot's personality. Remember to test thoroughly and follow the established patterns for consistency!

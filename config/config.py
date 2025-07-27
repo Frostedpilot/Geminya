@@ -61,6 +61,41 @@ class Config:
     # Reverse mapping for quick access
     quick_models_reverse: Dict[str, str] = field(init=False)
 
+    # MCP server folders
+    mcp_server_instruction: Dict = field(
+        default_factory=lambda: {
+            "duckduckgo": {
+                "command": "python",
+                "args": ["mcp_servers/duckduckgo.py"],
+                "env": None,
+                "blacklist": [],  # No tools blacklisted for duckduckgo
+            },
+            "anilist": {
+                "command": "npx",
+                "args": ["-y", "anilist-mcp"],
+                "env": None,
+                "blacklist": [
+                    # Example: Blacklist user management and posting tools
+                    "delete_activity",
+                    "post_message_activity",
+                    "post_text_activity",
+                    "delete_thread",
+                    "follow_user",
+                    "update_user",
+                    "add_list_entry",
+                    "get_authorized_user",
+                    "remove_list_entry",
+                    "update_list_entry",
+                    "favourite_anime",
+                    "favourite_manga",
+                    "favourite_character",
+                    "favourite_staff",
+                    "favourite_studio",
+                ],
+            },
+        }
+    )
+
     def __post_init__(self):
         """Initialize reverse mapping for available models."""
         self.quick_models_reverse = {v: k for k, v in self.available_models.items()}

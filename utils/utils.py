@@ -1,14 +1,6 @@
 """Utility functions for the Geminya bot."""
 
 from typing import List
-import warnings
-
-# Issue deprecation warning for direct imports
-warnings.warn(
-    "Direct imports from utils.utils are deprecated. Use the service layer instead.",
-    DeprecationWarning,
-    stacklevel=2,
-)
 
 
 def split_response(response: str, max_len: int = 1999) -> List[str]:
@@ -36,11 +28,11 @@ def split_response(response: str, max_len: int = 1999) -> List[str]:
 
         # First, check the combined chunk length
         if len(tmp) > max_len:
-            # If it exceeds max_len, split at the last sentence ending and add to shards
+            # If it exceeds max_len, split at the last chunk ending and add to shards
             if current_chunk:
                 shards.append(current_chunk.strip())
 
-            # After added, assign the chunk to current_chunk (may be > max_len)
+            # After added, assign the chunk to current_chunk (may be > max_len) *a
             current_chunk = chunk + "\n"
         else:
             # If it fits, assign it to current_chunk (always less than max_len)
@@ -66,3 +58,53 @@ def split_response(response: str, max_len: int = 1999) -> List[str]:
         shards.append(current_chunk.strip())
 
     return [shard for shard in shards if shard.strip()]
+
+
+def convert_tool_format(tool):
+    """Convert MCP tool to OpenAI function format with error handling."""
+    try:
+        # Extract properties and required fields safely
+        properties = {}
+        required = []
+
+        if hasattr(tool, "inputSchema") and tool.inputSchema:
+            if "properties" in tool.inputSchema:
+                properties = tool.inputSchema["properties"]
+            if "required" in tool.inputSchema:
+                required_field = tool.inputSchema["required"]
+                # Handle both list and string cases
+                if isinstance(required_field, list):
+                    required = required_field
+                elif isinstance(required_field, str):
+                    required = [required_field]
+                else:
+                    required = []
+
+        converted_tool = {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": tool.description or "",
+                "parameters": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": required,
+                },
+            },
+        }
+        return converted_tool
+
+    except Exception:
+        # Fallback to basic tool format
+        return {
+            "type": "function",
+            "function": {
+                "name": tool.name,
+                "description": getattr(tool, "description", ""),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        }

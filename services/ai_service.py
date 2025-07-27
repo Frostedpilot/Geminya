@@ -12,16 +12,22 @@ from openai import AsyncOpenAI
 
 from config import Config
 from services.state_manager import StateManager
+from services.mcp_client import MCPClientManager
 
 
 class AIService:
     """Service for handling AI operations and API communication."""
 
     def __init__(
-        self, config: Config, state_manager: StateManager, logger: logging.Logger
+        self,
+        config: Config,
+        state_manager: StateManager,
+        logger: logging.Logger,
+        mcp_client: MCPClientManager,
     ):
         self.config = config
         self.state_manager = state_manager
+        self.mcp_client = mcp_client
         self.logger = logger
         self.client: Optional[AsyncOpenAI] = None
 
@@ -46,6 +52,73 @@ class AIService:
 
     async def get_response(self, message: discord.Message, server_id: str) -> str:
         """Generate an AI response for a Discord message.
+
+        Args:
+            message: Discord message to respond to
+            server_id: Server ID for model selection
+
+        Returns:
+            str: Generated response text
+        """
+        if self.state_manager.use_mcp:
+            return await self._get_mcp_response(message, server_id)
+        else:
+            return await self._get_response(message, server_id)
+
+    async def _get_mcp_response(self, message: discord.Message, server_id: str) -> str:
+        """Generate an MCP AI response for a Discord message.
+
+        Args:
+            message: Discord message to respond to
+            server_id: Server ID for model selection
+
+        Returns:
+            str: Generated response text
+        """
+        if not self.client:
+            self.logger.error("AI client not initialized")
+            return "Nya! I'm not ready yet, please try again in a moment."
+
+        try:
+            # Ensure server is initialized
+            self.state_manager.initialize_server(server_id)
+
+            # Get model and history
+            model = self.state_manager.get_model(server_id)
+            history = self.state_manager.get_history(message.channel.id)
+
+            # Get persona-specific lore book
+            persona_name = self.state_manager.persona.get(
+                server_id, self.config.default_persona
+            )
+            lore_books = self.state_manager.get_lore_books()
+            lore_book = lore_books.get(persona_name) if lore_books else None
+
+            # Build prompt
+            prompt = self._build_prompt(message, history, lore_book)
+
+            self.logger.debug(
+                f"Generating response for {message.author} using model {model} and persona {persona_name} (With MCP)"
+            )
+
+            response = await self.mcp_client.process_query(prompt, server_id)
+
+            if not response:
+                self.logger.warning("Empty response from MCP client")
+                return "Nya! Something went wrong, please try again later."
+
+            self.logger.info(
+                f"Generated MCP response for {message.author.name} ({len(response)} chars)"
+            )
+
+            return response.strip()
+
+        except Exception as e:
+            self.logger.error(f"Error generating MCP AI response: {e}")
+            return "Nya! Something went wrong, please try again later."
+
+    async def _get_response(self, message: discord.Message, server_id: str) -> str:
+        """Generate an normal non-MCP AI response for a Discord message.
 
         Args:
             message: Discord message to respond to
@@ -163,6 +236,25 @@ class AIService:
         self.logger.error("Failed to get check response after all retries")
         return "no"
 
+    def _get_mcp_prompt(self, history: List[Dict[str, Any]]) -> str:
+        """Get the first part of the MCP prompt, which does not include lore and personality for correctness. (experimental)
+
+        Args:
+            history: Conversation history
+
+        Returns:
+            str: MCP prompt text
+        """
+
+        history_prompt = ""
+        if history:
+            for entry in history:
+                nick_part = f" (aka {entry['nick']})" if entry["nick"] else ""
+                line = f"From: {entry['name']}{nick_part}\n{entry['content']}\n\n"
+                history_prompt += line
+
+        return history_prompt
+
     def _build_prompt(
         self,
         message: discord.Message,
@@ -181,6 +273,8 @@ class AIService:
         """
         author = message.author
         author_name = author.name
+        if author.nick:
+            author_name = f"{author.nick} ({author.name})"
 
         # Get personality prompt
         personality_prompt = self._get_personality_prompt(message)
@@ -218,15 +312,23 @@ class AIService:
             for entry in history:
                 authors.add(entry["name"])
 
+        # Collecr persona name
+        persona_name = self.state_manager.persona.get(
+            str(message.guild.id) if message.guild else "default",
+            self.config.default_persona,
+        )
+
         # Build final prompt
         final_prompt = f"""
-Write Geminya's next reply in a fictional chat between participants and {author_name}.
+Write {persona_name}'s next reply in a fictional chat between participants and {author_name}.
 {personality_prompt}
 {lore_prompt}
-[Start a new group chat. Group members: Geminya, {', '.join(authors)}]
+[Start a new group chat. Group members: {persona_name}, {', '.join(authors)}]
 {history_prompt}
-[Write the next reply only as Geminya. Only use information related to {author_name}'s message and only answer {author_name} directly.]
-"""
+[Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly. Do not start with "From {persona_name}:" or similar.]
+""".replace(
+            "{{user}}", author_name
+        )
 
         return final_prompt.strip()
 
