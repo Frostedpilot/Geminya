@@ -95,6 +95,22 @@ class GeminyaLogger:
         ai_logger = logging.getLogger("geminya.ai")
         ai_logger.setLevel(logging.DEBUG if self.config.debug else logging.INFO)
 
+        # Create MCP handler for MCP-specific logs
+        mcp_handler = logging.handlers.RotatingFileHandler(
+            logs_dir / "mcp.log",
+            maxBytes=5 * 1024 * 1024,  # 5MB
+            backupCount=5,
+            encoding="utf-8",
+        )
+        mcp_handler.setLevel(logging.DEBUG)
+        mcp_handler.setFormatter(file_formatter)
+
+        # Add MCP handler to MCP logger
+        mcp_logger = logging.getLogger("geminya.mcp_client")
+        mcp_logger.addHandler(mcp_handler)
+        mcp_logger.setLevel(logging.DEBUG)
+        mcp_logger.propagate = False  # Don't send to root logger to avoid duplication
+
     def get_logger(self, name: str) -> logging.Logger:
         """Get a logger instance for a specific module.
 
@@ -131,6 +147,14 @@ class GeminyaLogger:
             logging.Logger: AI service logger
         """
         return logging.getLogger("geminya.ai")
+
+    def get_mcp_logger(self) -> logging.Logger:
+        """Get the MCP client logger.
+
+        Returns:
+            logging.Logger: MCP client logger
+        """
+        return logging.getLogger("geminya.mcp_client")
 
 
 def setup_logging(config: Config) -> GeminyaLogger:

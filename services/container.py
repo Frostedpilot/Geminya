@@ -32,7 +32,7 @@ class ServiceContainer:
         )
 
         self.mcp_client = MCPClientManager(
-            config, self.state_manager, self.logger_manager.get_logger("mcp_client")
+            config, self.state_manager, self.logger_manager.get_mcp_logger()
         )
 
         self.ai_service = AIService(

@@ -191,7 +191,7 @@ class MCPClientManager:
                     for tool in tools:
                         # Modify the tool name to include server prefix
                         original_name = tool["function"]["name"]
-                        tool["function"]["name"] = f"{server_name}:{original_name}"
+                        tool["function"]["name"] = f"{server_name}__{original_name}"
                         # Store original name for later routing
                         tool["_original_name"] = original_name
                         tool["_server_name"] = server_name
@@ -228,38 +228,142 @@ class MCPClientManager:
     async def _process_with_all_tools(
         self, all_tools: List[dict], prompt: str, server_id: str
     ) -> str:
-        """Process query with tools from all servers."""
+        """Process query with tools from all servers, supporting iterative tool calls."""
         messages = [{"role": "user", "content": prompt}]
-
-        response = await self.openai.chat.completions.create(
-            model=self.state_manager.get_model(server_id=server_id),
-            messages=messages,
-            tools=all_tools,
-        )
-
-        self.logger.debug(
-            f"Received response from OpenAI (Server ID: {server_id}): {response}"
-        )
-
-        if not response.choices:
-            return "Nya! Something went wrong, please try again later."
-
         final_text = []
-        content = response.choices[0].message
+        iteration_count = 0
 
-        if content.tool_calls is not None:
-            final_text.extend(
-                await self._handle_multi_server_tool_calls(
-                    content.tool_calls, messages, server_id
-                )
-            )
-        else:
+        while iteration_count < self.config.max_tool_iterations:
+            iteration_count += 1
             self.logger.debug(
-                f"No tool calls found, returning content directly (Server ID: {server_id})"
+                f"Starting tool iteration {iteration_count}/{self.config.max_tool_iterations}"
             )
-            final_text.append(content.content)
 
-        return "\n".join(final_text)
+            response = await self.openai.chat.completions.create(
+                model=self.state_manager.get_model(server_id=server_id),
+                messages=messages,
+                tools=all_tools,
+                parallel_tool_calls=True,
+            )
+
+            self.logger.debug(
+                f"Received response from OpenAI (Iteration {iteration_count}, Server ID: {server_id}): {response}"
+            )
+
+            if not response.choices:
+                return "Nya! Something went wrong, please try again later."
+
+            content = response.choices[0].message
+
+            # Add assistant message to conversation
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": content.content,
+                    "tool_calls": content.tool_calls,
+                }
+            )
+
+            if content.tool_calls is not None:
+                self.logger.debug(
+                    f"Processing {len(content.tool_calls)} tool calls in iteration {iteration_count}"
+                )
+
+                # Execute all tool calls in this iteration
+                tool_results = await self._execute_tool_calls(content.tool_calls)
+
+                # Add tool results to messages
+                for tool_result in tool_results:
+                    messages.append(tool_result)
+
+                # If this was the last allowed iteration, force a final response
+                if iteration_count >= self.config.max_tool_iterations:
+                    self.logger.warning(
+                        f"Reached maximum tool iterations ({self.config.max_tool_iterations}), forcing final response"
+                    )
+                    # Get final response without tools
+                    final_response = await self.openai.chat.completions.create(
+                        model=self.state_manager.get_model(server_id=server_id),
+                        messages=messages
+                        + [
+                            {
+                                "role": "user",
+                                "content": "Please provide a final response based on the information gathered.",
+                            }
+                        ],
+                    )
+                    final_text.append(final_response.choices[0].message.content)
+                    break
+
+                # Continue to next iteration to see if AI wants to call more tools
+            else:
+                # No tool calls - this is our final response
+                self.logger.debug(
+                    f"No tool calls found in iteration {iteration_count}, returning final response"
+                )
+                final_text.append(content.content)
+                break
+
+        if not final_text:
+            final_text.append(
+                "I've completed the analysis but encountered an issue generating the final response."
+            )
+
+        result = "\n".join(final_text)
+        self.logger.info(f"Completed tool processing in {iteration_count} iterations")
+        return result
+
+    async def _execute_tool_calls(self, tool_calls) -> List[dict]:
+        """Execute a list of tool calls and return their results as message objects."""
+        tool_results = []
+
+        for tool_call in tool_calls:
+            tool_name = tool_call.function.name
+            tool_args = tool_call.function.arguments
+            tool_args = json.loads(tool_args) if tool_args else {}
+
+            # Parse server name and original tool name
+            if "__" in tool_name:
+                server_name, original_tool_name = tool_name.split("__", 1)
+            else:
+                # Fallback: try to find the tool in any server
+                server_name, original_tool_name = await self._find_tool_server(
+                    tool_name
+                )
+
+            self.logger.debug(
+                f"Calling tool {original_tool_name} on {server_name} with args {tool_args}"
+            )
+
+            try:
+                client = self.clients.get(server_name)
+                if not client or not client.is_connected:
+                    raise RuntimeError(f"Server {server_name} not available")
+
+                result = await client.call_tool(original_tool_name, tool_args)
+                content_str = self._extract_content_from_result(result)
+
+                # Log a snippet of the server response for debugging
+                response_snippet = self._format_response_snippet(content_str)
+                self.logger.debug(
+                    f"Tool {original_tool_name} on {server_name} returned: {response_snippet}"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Error calling tool {original_tool_name} on {server_name}: {e}"
+                )
+                content_str = f"Error calling tool {original_tool_name}: {e}"
+
+            # Create tool result message
+            tool_result = {
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "name": tool_name,
+                "content": content_str,
+            }
+            tool_results.append(tool_result)
+
+        return tool_results
 
     async def _handle_multi_server_tool_calls(
         self, tool_calls, messages: List[dict], server_id: str
@@ -273,8 +377,8 @@ class MCPClientManager:
             tool_args = json.loads(tool_args) if tool_args else {}
 
             # Parse server name and original tool name
-            if ":" in tool_name:
-                server_name, original_tool_name = tool_name.split(":", 1)
+            if "__" in tool_name:
+                server_name, original_tool_name = tool_name.split("__", 1)
             else:
                 # Fallback: try to find the tool in any server
                 server_name, original_tool_name = await self._find_tool_server(
@@ -350,13 +454,6 @@ class MCPClientManager:
         except Exception as e:
             self.logger.error(f"Error processing query with {server_name}: {e}")
             return f"Error: Failed to process query with {server_name}: {str(e)}"
-        """Process a query using a specific MCP server."""
-        try:
-            client = await self.get_or_create_client(server_name)
-            return await self._process_with_client(client, prompt, server_id)
-        except Exception as e:
-            self.logger.error(f"Error processing query with {server_name}: {e}")
-            return f"Error: Failed to process query with {server_name}: {str(e)}"
 
     async def _process_with_client(
         self, client: MCPClient, prompt: str, server_id: str
@@ -374,6 +471,7 @@ class MCPClientManager:
             model=self.state_manager.get_model(server_id=server_id),
             messages=messages,
             tools=available_tools,
+            parallel_tool_calls=True,
         )
 
         self.logger.debug(
@@ -418,6 +516,12 @@ class MCPClientManager:
             try:
                 result = await client.call_tool(tool_name, tool_args)
                 content_str = self._extract_content_from_result(result)
+
+                # Log a snippet of the server response for debugging
+                response_snippet = self._format_response_snippet(content_str)
+                self.logger.debug(
+                    f"Tool {tool_name} on {client.server_name} returned: {response_snippet}"
+                )
             except Exception as e:
                 self.logger.error(
                     f"Error calling tool {tool_name} on {client.server_name}: {e}"
@@ -456,6 +560,20 @@ class MCPClientManager:
             else:
                 return str(result)
         return ERROR_OCCURRED_MSG
+
+    def _format_response_snippet(self, content: str, max_length: int = 200) -> str:
+        """Format a response snippet for logging, handling newlines and length."""
+        if not content:
+            return "<empty response>"
+
+        # Replace newlines with spaces for cleaner logging
+        clean_content = content.replace("\n", " ").replace("\r", " ")
+
+        # Truncate if too long
+        if len(clean_content) > max_length:
+            return clean_content[:max_length] + "..."
+
+        return clean_content
 
     async def disconnect_all(self):
         """Disconnect all clients and cleanup resources."""

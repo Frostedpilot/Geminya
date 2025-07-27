@@ -44,6 +44,9 @@ class Config:
     sentence_endings: tuple = (".", "!", "?")
     max_response_length: int = 1999
 
+    # MCP configuration
+    max_tool_iterations: int = 15  # Maximum number of tool calling iterations
+
     # Server restrictions (empty tuple means no restrictions)
     active_servers: tuple = ()
 
@@ -54,7 +57,8 @@ class Config:
             "Kimi K2": "moonshotai/kimi-k2:free",
             "DeepSeek Chimera": "tngtech/deepseek-r1t2-chimera:free",
             "DeepSeek R1 0528": "deepseek/deepseek-r1-0528:free",
-            "Gemini 2.3 Flash": "google/gemini-2.5-flash",
+            "Gemini 2.5 Flash": "google/gemini-2.5-flash",
+            "GPT 4.1": "openai/gpt-4.1",
         }
     )
 
