@@ -9,6 +9,9 @@ from typing import Optional, Dict, Any
 import os
 import json
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class ConfigError(Exception):
@@ -45,7 +48,7 @@ class Config:
     max_response_length: int = 1999
 
     # MCP configuration
-    max_tool_iterations: int = 15  # Maximum number of tool calling iterations
+    max_tool_iterations: int = 10  # Maximum number of tool calling iterations
 
     # Server restrictions (empty tuple means no restrictions)
     active_servers: tuple = ()
@@ -58,7 +61,6 @@ class Config:
             "DeepSeek Chimera": "tngtech/deepseek-r1t2-chimera:free",
             "DeepSeek R1 0528": "deepseek/deepseek-r1-0528:free",
             "Gemini 2.5 Flash": "google/gemini-2.5-flash",
-            "GPT 4.1": "openai/gpt-4.1",
         }
     )
 

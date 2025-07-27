@@ -1,52 +1,48 @@
 # Geminya Discord Bot
 
-A modern Discord bot with AI conversation capabilities, built with service-oriented architecture and dependency injection.
+A modern Discord AI chatbot powered by Openrouter and MCP.
 
 ## Features
 
-- 🤖 AI conversations via OpenRouter API  
-- 🏗️ Service-oriented architecture with dependency injection
-- 📊 State management for models and conversation history
-- 🎯 Lore book integration for contextual responses
-- 📝 Comprehensive logging and error handling
-- 🔄 Backward compatibility with legacy code
-- ✅ Full test suite for architecture validation
+- Seemless AI model switch using OpenRouter API
+- State management for models, personas and conversation history for each server.
+- SillyTavern-style prompt for personas for better roleplay (if needed)
+- Support for MCP servers for better answers (experimental)
+- Comprehensive logging and error handling
 
 ## Quick Start
 
 1. **Install dependencies:**
+
 ```bash
-pip install discord.py openai pyyaml
+pip install discord.py openai pyyaml mcp
 ```
 
 2. **Configure:**
+
 ```bash
 cp config.yml.example config.yml
 # Edit config.yml with your tokens
 ```
 
 3. **Test & Run:**
+
 ```bash
 python test_architecture.py  # Validate setup
 python start.py              # Start bot
+python start.py --verbose    # Start bot with more verbose logging
 ```
 
 ## Architecture
 
 ```
-config/          # Configuration system with validation
-services/        # Core services (AI, state, error handling)
+config/          # Configuration system
+services/        # Core services (AI, mcp client, state, error handling)
 cogs/            # Commands and events with base classes
 utils/           # Utilities and logging
 lang/            # Language files and personality
+mcp_servers/     # Local MCP servers
 ```
-
-**Key Components:**
-- `ServiceContainer`: Dependency injection container
-- `StateManager`: Conversation history and model preferences  
-- `AIService`: OpenRouter API integration
-- `ErrorHandler`: Centralized error management
-- `BaseCommand`/`BaseEventHandler`: Inheritance for cogs
 
 ## Configuration
 
@@ -55,32 +51,54 @@ lang/            # Language files and personality
 ```yaml
 discord:
   token: "${DISCORD_TOKEN}"
-  
+
 openrouter:
   api_key: "${OPENROUTER_API_KEY}"
-  
+
 models:
   default: "anthropic/claude-3-haiku"
   check: "anthropic/claude-3-haiku"
 ```
 
+Alternatively, you can also directly change them in the `config.Config` class
+
+All persona related settings are in `lang/<language>.json`. The format is:
+
+```json
+{
+  "characters": [
+    "<character_name>": {
+      "personality": "The main personality system prompt for the persona",
+      "lorebook (Optional)": {
+        "<category_name>": {
+          "keywords": ["list", "of", "trigger", "words"],
+          "example_user": "An example query from user for this category",
+          "example": "The example response from the bot for that query"
+        }
+      }
+    }
+  ]
+}
+```
+
 ## Commands
 
 - `/change_model <model>` - Change AI model
-- `/help` - Show help  
-- `/nekogif` - Random cat GIF
+- `/change_persona <persona>` - Change the persona of the bot
+- `/help` - Show help
+- `/nekogif` - Random GIF for various reaction
+- `/dad_joke` - Random dad jokes
 
 ## Development
 
 - **Tests**: `python test_architecture.py`
 - **Logs**: Check `logs/` directory
-- **Legacy**: Old imports work with deprecation warnings
 
 ## Project Structure
 
 ```
-├── base.py              # Main bot with new architecture
-├── start.py             # Production startup script
+├── base.py              # Main bot class
+├── start.py             # Startup script
 ├── config/
 │   └── config.py        # Configuration management
 ├── services/
@@ -88,6 +106,7 @@ models:
 │   ├── state_manager.py # State management
 │   ├── ai_service.py    # AI operations
 │   └── error_handler.py # Error handling
+│   └── mcp_client.py    # MCP client manager
 ├── cogs/
 │   ├── base_command.py  # Base class for commands
 │   ├── base_event.py    # Base class for events
@@ -118,9 +137,10 @@ services.error_handler   # Error management
 services.logger_manager  # Logging system
 ```
 
-## Adding New Features
+## Adding New Commands and Event Handlers
 
 **Commands:**
+
 ```python
 from cogs.base_command import BaseCommand
 
@@ -131,6 +151,7 @@ class MyCommand(BaseCommand):
 ```
 
 **Events:**
+
 ```python
 from cogs.base_event import BaseEventHandler
 
@@ -140,17 +161,6 @@ class MyEvent(BaseEventHandler):
         # Handle event with access to all services
 ```
 
-## Legacy Support
+## Notes
 
-Old imports continue working with deprecation warnings:
-```python
-from constants import DISCORD_TOKEN  # Still works
-from utils.utils import split_response  # Still works
-```
-
-Migrate to new patterns:
-```python
-from config import Config
-config = Config.create()
-token = config.discord_token
-```
+- ...

@@ -23,6 +23,7 @@ await services.cleanup()     # Cleanup resources
 - `ai_service`: AI operations
 - `error_handler`: Error management
 - `logger_manager`: Logging system
+- `mcp_client`: MCP clients management
 
 ### StateManager (`services/state_manager.py`)
 
@@ -136,6 +137,7 @@ main_logger = logger_manager.get_logger("main")
 message_logger = logger_manager.get_message_logger()
 ai_logger = logger_manager.get_ai_logger()
 error_logger = logger_manager.get_error_logger()
+mcp_logger = logger_manager.get_mcp_logger()
 ```
 
 **Log Files:**
@@ -144,6 +146,7 @@ error_logger = logger_manager.get_error_logger()
 - `logs/messages.log` - Message handling
 - `logs/ai.log` - AI operations
 - `logs/errors.log` - Error tracking
+- `logs/mcp.loa` - MCP operation
 
 ## Testing
 
@@ -166,37 +169,3 @@ python test_architecture.py --verbose  # Detailed output
 - Base class inheritance
 - Logging system
 - Backward compatibility
-
-## Migration Guide
-
-### From Legacy Code
-
-**Old Pattern:**
-
-```python
-# constants.py imports
-from constants import DISCORD_TOKEN, DEFAULT_MODEL
-
-# Direct utilities
-from utils.ai_utils import get_response
-```
-
-**New Pattern:**
-
-```python
-# Service-based approach
-class MyCommand(BaseCommand):
-    async def my_command(self, interaction):
-        response = await self.ai_service.get_response(message, server_id)
-```
-
-### Deprecation Warnings
-
-Legacy imports still work but show deprecation warnings:
-
-```python
-import warnings
-from constants import DISCORD_TOKEN  # Triggers warning
-```
-
-Migrate gradually by using the new service architecture for new code.
