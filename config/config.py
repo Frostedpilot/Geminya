@@ -54,7 +54,11 @@ class Config:
             "Kimi K2": "moonshotai/kimi-k2:free",
             "DeepSeek Chimera": "tngtech/deepseek-r1t2-chimera:free",
             "DeepSeek R1 0528": "deepseek/deepseek-r1-0528:free",
-            "Hitler Nigger's supreme Model": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+            "Hitler Nigger's supreme Model": "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
+            "Nigler Hitler #2": "tngtech/deepseek-r1t2-chimera:free",
+            "Higler": "sarvamai/sarvam-m:free",
+            "HEHE Nigler": "mistralai/mistral-nemo:free",
+            "Final Nigler": "mistralai/mistral-small-3.2-24b-instruct:free"
         }
     )
 
