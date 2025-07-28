@@ -134,37 +134,37 @@ class AnimeWordle:
         target_titles = [title.lower().strip() for title in self.target.get_all_titles()]
         
         title_match = any(guess_title in target_titles for guess_title in guess_titles)
-        comparison['title'] = '✅' if title_match else '❌'
+        comparison['title'] = f"{guess.title} {'✅' if title_match else '❌'}"
         
         # Year comparison
         if guess.year == self.target.year:
-            comparison['year'] = '✅'
+            comparison['year'] = f"{guess.year} ✅"
         elif guess.year < self.target.year:
-            comparison['year'] = '⬆️'
+            comparison['year'] = f"{guess.year} ⬆️"
         else:
-            comparison['year'] = '⬇️'
+            comparison['year'] = f"{guess.year} ⬇️"
         
         # Score comparison
         if guess.score == self.target.score:
-            comparison['score'] = '✅'
+            comparison['score'] = f"{guess.score}/100 ✅"
         elif guess.score < self.target.score:
-            comparison['score'] = '⬆️'
+            comparison['score'] = f"{guess.score}/100 ⬆️"
         else:
-            comparison['score'] = '⬇️'
+            comparison['score'] = f"{guess.score}/100 ⬇️"
         
         # Episodes comparison
         if guess.episodes == self.target.episodes:
-            comparison['episodes'] = '✅'
+            comparison['episodes'] = f"{guess.episodes} ✅"
         elif guess.episodes < self.target.episodes:
-            comparison['episodes'] = '⬆️'
+            comparison['episodes'] = f"{guess.episodes} ⬆️"
         else:
-            comparison['episodes'] = '⬇️'
+            comparison['episodes'] = f"{guess.episodes} ⬇️"
         
         # Genres comparison - show individual matches
         guess_genres = set(guess.genres)
         target_genres = set(self.target.genres)
         if guess_genres == target_genres:
-            comparison['genres'] = '✅'
+            comparison['genres'] = f"{', '.join(sorted(guess.genres))} ✅"
         else:
             # Show individual genre matches
             genre_matches = []
@@ -179,7 +179,7 @@ class AnimeWordle:
         guess_studios = set(guess.studios)
         target_studios = set(self.target.studios)
         if guess_studios == target_studios:
-            comparison['studio'] = '✅'
+            comparison['studio'] = f"{', '.join(sorted(guess.studios))} ✅"
         else:
             # Show individual studio matches
             studio_matches = []
@@ -191,10 +191,10 @@ class AnimeWordle:
             comparison['studio'] = ', '.join(studio_matches) if studio_matches else '❌'
         
         # Source comparison
-        comparison['source'] = '✅' if guess.source == self.target.source else '❌'
+        comparison['source'] = f"{guess.source} {'✅' if guess.source == self.target.source else '❌'}"
         
         # Format comparison
-        comparison['format'] = '✅' if guess.format == self.target.format else '❌'
+        comparison['format'] = f"{guess.format} {'✅' if guess.format == self.target.format else '❌'}"
         
         return comparison
 
@@ -568,11 +568,11 @@ class AnimeWordleCog(BaseCommand):
         # Create comparison table
         comparison_text = (
             f"**Title:** {comparison['title']}\n"
-            f"**Year:** {guess.year} {comparison['year']}\n"
-            f"**Score:** {guess.score}/100 {comparison['score']}\n"
-            f"**Episodes:** {guess.episodes} {comparison['episodes']}\n"
-            f"**Source:** {guess.source} {comparison['source']}\n"
-            f"**Format:** {guess.format} {comparison['format']}"
+            f"**Year:** {comparison['year']}\n"
+            f"**Score:** {comparison['score']}\n"
+            f"**Episodes:** {comparison['episodes']}\n"
+            f"**Source:** {comparison['source']}\n"
+            f"**Format:** {comparison['format']}"
         )
         
         embed.add_field(

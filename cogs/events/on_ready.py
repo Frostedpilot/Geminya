@@ -59,7 +59,7 @@ class OnReady(BaseEventHandler):
         )
 
         # Update bot status
-        activity = discord.Game(name="with yarn balls | /changemodel")
+        activity = discord.Game(name="Fuck you, I'm Hitler")
         await self.bot.change_presence(activity=activity)
 
     def _initialize_guilds(self) -> None:
