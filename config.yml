@@ -24,15 +24,45 @@ active_servers:
 
 # Anime Wordle Configuration
 anime_wordle:
-  # Weighted random selection based on score ranges
+  # Difficulty-based score weight distributions
+  # Higher weights mean more likely to be selected
+  # Scores are out of 100 (AniList format)
+  difficulty_weights:
+    easy:
+      "85-100": 10    # Extremely popular/acclaimed anime (highest chance)
+      "75-84": 10      # Popular anime
+    
+    normal:
+      "80-100": 15    # Great anime
+      "60-79": 15     # Good anime  
+      "50-59": 2      # Below average
+      "40-49": 1      # Poor anime
+      "0-39": 1       # Bad anime
+    
+    hard:
+      "80-100": 3    # Great anime (highest weight)
+      "60-79": 10    # Good anime (high weight)
+      "50-59": 5      # Below average (low weight)
+      "40-49": 1      # Poor anime (very low weight)
+      "0-39": 1       # Bad anime (minimal weight)
+    
+    expert:
+      "80-100": 1     # Extremely rare acclaimed anime
+      "70-79": 2      # Less known decent anime
+      "60-69": 5      # Obscure average anime
+      "50-59": 10     # Unknown below average (highest chance)
+      "40-49": 10     # Obscure poor anime (very high chance)
+      "0-39": 1      # Ultra obscure/bad anime (high chance)
+  
+  # Legacy/fallback score weights (used if difficulty_weights not found)
   # Higher weights mean more likely to be selected
   # Scores are out of 100 (AniList format)
   score_weights:
-    80-100: 15    # Great anime (highest weight)
-    60-79: 15     # Good anime (high weight)
-    50-59: 2     # Below average (low weight)
-    40-49: 1     # Poor anime (very low weight)
-    0-39: 1     # Bad anime (minimal weight)
+    "80-100": 15    # Great anime (highest weight)
+    "60-79": 15     # Good anime (high weight)
+    "50-59": 2      # Below average (low weight)
+    "40-49": 1      # Poor anime (very low weight)
+    "0-39": 1       # Bad anime (minimal weight)
   
   # Maximum number of pages to search through (each page = 50 anime)
   # Higher values = more anime variety but slower startup

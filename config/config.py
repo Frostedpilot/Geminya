@@ -47,6 +47,9 @@ class Config:
     # Server restrictions (empty tuple means no restrictions)
     active_servers: tuple = ()
 
+    # Anime Wordle configuration
+    anime_wordle: Dict[str, Any] = field(default_factory=dict)
+
     # Available models mapping
     available_models: Dict[str, str] = field(
         default_factory=lambda: {
@@ -219,6 +222,7 @@ class Config:
             ),
             max_response_length=config_data.get("max_response_length", 1999),
             active_servers=active_servers,
+            anime_wordle=config_data.get("anime_wordle", {}),
         )
 
     @classmethod

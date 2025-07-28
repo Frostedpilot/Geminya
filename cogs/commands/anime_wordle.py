@@ -100,13 +100,14 @@ class AnimeData:
 class AnimeWordle:
     """Game state for anime Wordle."""
     
-    def __init__(self, target_anime: AnimeData):
+    def __init__(self, target_anime: AnimeData, difficulty: str = "normal"):
         self.target = target_anime
         self.guesses: List[AnimeData] = []
         self.max_guesses = 21
         self.is_complete = False
         self.is_won = False
         self.hint_penalty = 0  # Track additional guess penalty from hints
+        self.difficulty = difficulty  # Track game difficulty
     
     def add_guess(self, guess: AnimeData) -> bool:
         """Add a guess and check if game is complete."""
@@ -281,15 +282,43 @@ class AnimeWordleCog(BaseCommand):
             self.logger.error(f"Error in binary search for max page: {e}")
             return 1  # Fallback to page 1
 
-    async def _get_random_anime(self) -> Optional[AnimeData]:
-        """Get a random anime for the game using weighted selection based on score ranges."""
+    def _get_difficulty_weights(self, difficulty: str) -> Dict[str, int]:
+        """Get score weights based on difficulty level from config."""
         try:
-            # Get config settings
-            anime_config = getattr(self.services.config, 'anime_wordle', {})
-            score_weights = anime_config.get('score_weights', {
-                '90-100': 5, '80-89': 10, '70-79': 8, '60-69': 6,
-                '50-59': 3, '40-49': 2, '30-39': 1, '0-29': 1
+            # Get config settings - now access anime_wordle directly as a dict
+            anime_config = self.services.config.anime_wordle
+            difficulty_weights = anime_config.get('difficulty_weights', {})
+            
+            # Get difficulty-specific weights from config
+            if isinstance(difficulty_weights, dict) and difficulty in difficulty_weights:
+                weights = difficulty_weights[difficulty]
+                self.logger.info(f"Successfully loaded {difficulty} difficulty weights: {len(weights)} score ranges")
+                return weights
+            
+            # Fallback to legacy score_weights if difficulty not found
+            self.logger.warning(f"Difficulty '{difficulty}' not found in config, falling back to legacy weights")
+            legacy_weights = anime_config.get('score_weights', {
+                '80-100': 15, '60-79': 15, '50-59': 2, '40-49': 1, '0-39': 1
             })
+            return legacy_weights
+            
+        except (AttributeError, KeyError, TypeError) as e:
+            self.logger.error(f"Error reading difficulty weights from config: {e}")
+            # Hard fallback to updated default normal weights to match your config style
+            fallback_weights = {
+                '80-100': 15, '60-79': 15, '50-59': 2, '40-49': 1, '0-39': 1
+            }
+            self.logger.info(f"Using hard fallback weights: {len(fallback_weights)} score ranges")
+            return fallback_weights
+
+    async def _get_random_anime(self, difficulty: str = "normal") -> Optional[AnimeData]:
+        """Get a random anime for the game using weighted selection based on score ranges and difficulty."""
+        try:
+            # Get config settings - now access anime_wordle directly as a dict
+            anime_config = self.services.config.anime_wordle
+            
+            # Use difficulty-specific weights instead of config weights
+            score_weights = self._get_difficulty_weights(difficulty)
             sort_method = anime_config.get('sort_method', 'POPULARITY_DESC')
             
             # Create weighted list of score ranges
@@ -553,8 +582,18 @@ class AnimeWordleCog(BaseCommand):
     def _create_guess_embed(self, game: AnimeWordle, guess: AnimeData, comparison: Dict[str, str]) -> discord.Embed:
         """Create an embed showing the guess results."""
         total_guesses = len(game.guesses) + game.hint_penalty
+        
+        # Get difficulty emoji
+        difficulty_emojis = {
+            "easy": "🟢",
+            "normal": "🟡", 
+            "hard": "🟠",
+            "expert": "🔴"
+        }
+        difficulty_emoji = difficulty_emojis.get(game.difficulty, "🟡")
+        
         embed = discord.Embed(
-            title=f"Anime Wordle - Guess {total_guesses}/{game.max_guesses}",
+            title=f"Anime Wordle {difficulty_emoji} - Guess {total_guesses}/{game.max_guesses}",
             color=0x02A9FF
         )
         
@@ -610,16 +649,26 @@ class AnimeWordleCog(BaseCommand):
     def _create_game_over_embed(self, game: AnimeWordle) -> discord.Embed:
         """Create an embed for game completion."""
         total_guesses = len(game.guesses) + game.hint_penalty
+        
+        # Get difficulty descriptions
+        difficulty_descriptions = {
+            "easy": "🟢 Easy",
+            "normal": "🟡 Normal", 
+            "hard": "🟠 Hard",
+            "expert": "🔴 Expert"
+        }
+        difficulty_text = difficulty_descriptions.get(game.difficulty, "🟡 Normal")
+        
         if game.is_won:
             embed = discord.Embed(
                 title="🎉 Congratulations!",
-                description=f"You guessed it in {total_guesses} tries!",
+                description=f"You guessed it in {total_guesses} tries!\n**Difficulty:** {difficulty_text}",
                 color=0x00FF00
             )
         else:
             embed = discord.Embed(
                 title="💀 Game Over!",
-                description="Better luck next time!",
+                description=f"Better luck next time!\n**Difficulty:** {difficulty_text}",
                 color=0xFF0000
             )
         
@@ -649,7 +698,8 @@ class AnimeWordleCog(BaseCommand):
     )
     @app_commands.describe(
         action="Choose an action",
-        guess="Anime name to guess (only for 'guess' action)"
+        guess="Anime name to guess (only for 'guess' action)",
+        difficulty="Choose difficulty level (only for 'start' action)"
     )
     @app_commands.choices(action=[
         app_commands.Choice(name="Start New Game", value="start"),
@@ -658,12 +708,19 @@ class AnimeWordleCog(BaseCommand):
         app_commands.Choice(name="Game Status", value="status"),
         app_commands.Choice(name="Give Up", value="giveup")
     ])
+    @app_commands.choices(difficulty=[
+        app_commands.Choice(name="Easy - Popular & Well-known Anime", value="easy"),
+        app_commands.Choice(name="Normal - Mixed Selection", value="normal"),
+        app_commands.Choice(name="Hard - Obscure & Lesser-known", value="hard"),
+        app_commands.Choice(name="Expert - Ultra Obscure & Hidden Gems", value="expert")
+    ])
     @app_commands.autocomplete(guess=anime_autocomplete)
     async def animewordle(
         self,
         interaction: discord.Interaction,
         action: app_commands.Choice[str],
-        guess: Optional[str] = None
+        guess: Optional[str] = None,
+        difficulty: Optional[app_commands.Choice[str]] = None
     ):
         """Main anime wordle command."""
         if not interaction.channel:
@@ -676,7 +733,8 @@ class AnimeWordleCog(BaseCommand):
         channel_id = interaction.channel.id
         
         if action.value == "start":
-            await self._start_game(interaction, channel_id)
+            difficulty_value = difficulty.value if difficulty else "normal"
+            await self._start_game(interaction, channel_id, difficulty_value)
         elif action.value == "guess":
             await self._make_guess(interaction, channel_id, guess or "")
         elif action.value == "hint":
@@ -686,8 +744,8 @@ class AnimeWordleCog(BaseCommand):
         elif action.value == "giveup":
             await self._give_up(interaction, channel_id)
     
-    async def _start_game(self, interaction: discord.Interaction, channel_id: int):
-        """Start a new anime wordle game."""
+    async def _start_game(self, interaction: discord.Interaction, channel_id: int, difficulty: str = "normal"):
+        """Start a new anime wordle game with specified difficulty."""
         # Check if there's already an active game in this channel
         if channel_id in self.games:
             existing_game = self.games[channel_id]
@@ -704,7 +762,7 @@ class AnimeWordleCog(BaseCommand):
         await interaction.response.defer(thinking=True)
         
         try:
-            target_anime = await self._get_random_anime()
+            target_anime = await self._get_random_anime(difficulty)
             if not target_anime:
                 await interaction.followup.send(
                     "❌ Failed to fetch anime data. Please try again later!",
@@ -712,16 +770,25 @@ class AnimeWordleCog(BaseCommand):
                 )
                 return
             
-            self.games[channel_id] = AnimeWordle(target_anime)
+            self.games[channel_id] = AnimeWordle(target_anime, difficulty)
+            
+            # Get difficulty description
+            difficulty_descriptions = {
+                "easy": "🟢 **Easy** - Popular & Well-known Anime",
+                "normal": "🟡 **Normal** - Mixed Selection", 
+                "hard": "🟠 **Hard** - Obscure & Lesser-known",
+                "expert": "🔴 **Expert** - Ultra Obscure & Hidden Gems"
+            }
             
             embed = discord.Embed(
                 title="🎮 Anime Wordle Started!",
                 description=(
-                    "Guess the anime! You have 21 tries.\n"
-                    "Use `/animewordle guess <anime_name>` to make a guess.\n\n"
-                    "**Properties to match:**\n"
-                    "• Title, Year, Score, Episodes\n"
-                    "• Genres, Studio, Source, Format"
+                    f"Guess the anime! You have 21 tries.\n"
+                    f"**Difficulty:** {difficulty_descriptions.get(difficulty, '🟡 **Normal**')}\n\n"
+                    f"Use `/animewordle guess <anime_name>` to make a guess.\n\n"
+                    f"**Properties to match:**\n"
+                    f"• Title, Year, Score, Episodes\n"
+                    f"• Genres, Studio, Source, Format"
                 ),
                 color=0x02A9FF
             )
@@ -738,8 +805,22 @@ class AnimeWordleCog(BaseCommand):
                 inline=False
             )
             
+            # Add difficulty explanation
+            difficulty_explanations = {
+                "easy": "Focuses on mainstream, popular anime that most people have heard of.",
+                "normal": "Balanced mix of popular and lesser-known anime.",
+                "hard": "Emphasizes obscure, underrated, or niche anime series.",
+                "expert": "Ultra challenging with the most obscure and unknown anime."
+            }
+            
+            embed.add_field(
+                name="🎯 Difficulty Info",
+                value=f"{difficulty_explanations.get(difficulty, 'Balanced mix of popular and lesser-known anime.')}\n*Weights are configurable in config.yml*",
+                inline=False
+            )
+            
             await interaction.followup.send(embed=embed)
-            self.logger.info(f"Started anime wordle game in channel {channel_id} with target: {target_anime.title}")
+            self.logger.info(f"Started anime wordle game in channel {channel_id} with target: {target_anime.title} (Difficulty: {difficulty})")
             
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
             self.logger.error(f"Error starting anime wordle game: {e}")
@@ -942,6 +1023,14 @@ class AnimeWordleCog(BaseCommand):
         total_guesses = len(game.guesses) + game.hint_penalty
         remaining_guesses = game.max_guesses - total_guesses
         
+        # Get difficulty description
+        difficulty_descriptions = {
+            "easy": "🟢 Easy - Popular & Well-known",
+            "normal": "🟡 Normal - Mixed Selection", 
+            "hard": "🟠 Hard - Obscure & Lesser-known",
+            "expert": "🔴 Expert - Ultra Obscure & Hidden Gems"
+        }
+        
         embed = discord.Embed(
             title="📊 Game Status",
             color=0x02A9FF
@@ -950,6 +1039,7 @@ class AnimeWordleCog(BaseCommand):
         embed.add_field(
             name="🎯 Progress",
             value=(
+                f"**Difficulty:** {difficulty_descriptions.get(game.difficulty, '🟡 Normal')}\n"
                 f"**Guesses Made:** {len(game.guesses)}\n"
                 f"**Hint Penalty:** +{game.hint_penalty}\n"
                 f"**Total Used:** {total_guesses}/{game.max_guesses}\n"
