@@ -23,7 +23,7 @@ active_servers:
   # - "700261922259599420"
 
 # Anime Wordle Configuration
-anime_wordle:
+anidle:
   # Selection range configuration by type and difficulty
   # Each combination has separate score and popularity ranges
   # Higher weights mean more likely to be selected

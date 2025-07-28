@@ -188,8 +188,8 @@ class AnimeData:
             return False
 
 
-class AnimeWordle:
-    """Game state for anime Wordle."""
+class Anidle:
+    """Game state for Anidle."""
     
     def __init__(self, target_anime: AnimeData, difficulty: str = "normal"):
         self.target = target_anime
@@ -309,10 +309,10 @@ class AnimeWordle:
         return comparison
 
 
-class AnimeWordleCog(BaseCommand):
+class AnidleCog(BaseCommand):
     def __init__(self, bot: commands.Bot, services: ServiceContainer):
         super().__init__(bot, services)
-        self.games: Dict[int, AnimeWordle] = {}  # channel_id -> game
+        self.games: Dict[int, Anidle] = {}  # channel_id -> game
         self.jikan_base_url = "https://api.jikan.moe/v4"
         self.page_cache: Dict[str, int] = {}  # Cache for max page results
         self.rate_limit_delay = 1.0  # Jikan has rate limits, add delay between requests
@@ -429,8 +429,8 @@ class AnimeWordleCog(BaseCommand):
     def _get_selection_config(self, difficulty: str) -> Tuple[str, Dict[str, int]]:
         """Get selection method and ranges based on difficulty level from config."""
         try:
-            # Get config settings - now access anime_wordle directly as a dict
-            anime_config = self.services.config.anime_wordle
+            # Get config settings - now access anidle directly as a dict
+            anime_config = self.services.config.anidle
             
             # Get selection method for this difficulty
             selection_methods = anime_config.get('selection_method', {})
@@ -464,8 +464,8 @@ class AnimeWordleCog(BaseCommand):
     async def _get_random_anime(self, difficulty: str = "normal") -> Optional[AnimeData]:
         """Get a random anime for the game using weighted selection based on selection ranges and difficulty."""
         try:
-            # Get config settings - now access anime_wordle directly as a dict
-            anime_config = self.services.config.anime_wordle
+            # Get config settings - now access anidle directly as a dict
+            anime_config = self.services.config.anidle
             
             # Get selection method and ranges for this difficulty
             selection_method, selection_ranges = self._get_selection_config(difficulty)
@@ -709,7 +709,7 @@ class AnimeWordleCog(BaseCommand):
             self.logger.error(f"Unexpected error in autocomplete: {e}")
             return []
     
-    def _create_guess_embed(self, game: AnimeWordle, guess: AnimeData, comparison: Dict[str, str]) -> discord.Embed:
+    def _create_guess_embed(self, game: Anidle, guess: AnimeData, comparison: Dict[str, str]) -> discord.Embed:
         """Create an embed showing the guess results."""
         total_guesses = len(game.guesses) + game.hint_penalty
         
@@ -723,7 +723,7 @@ class AnimeWordleCog(BaseCommand):
         difficulty_emoji = difficulty_emojis.get(game.difficulty, "🟡")
         
         embed = discord.Embed(
-            title=f"Anime Wordle {difficulty_emoji} - Guess {total_guesses}/{game.max_guesses}",
+            title=f"Anidle {difficulty_emoji} - Guess {total_guesses}/{game.max_guesses}",
             color=0x02A9FF
         )
         
@@ -784,7 +784,7 @@ class AnimeWordleCog(BaseCommand):
         
         return embed
     
-    def _create_game_over_embed(self, game: AnimeWordle) -> discord.Embed:
+    def _create_game_over_embed(self, game: Anidle) -> discord.Embed:
         """Create an embed for game completion."""
         total_guesses = len(game.guesses) + game.hint_penalty
         
@@ -833,8 +833,8 @@ class AnimeWordleCog(BaseCommand):
         return embed
     
     @app_commands.command(
-        name="animewordle",
-        description="Play Anime Wordle! Guess the anime based on its properties."
+        name="anidle",
+        description="Play Anidle! Guess the anime based on its properties."
     )
     @app_commands.describe(
         action="Choose an action",
@@ -855,14 +855,14 @@ class AnimeWordleCog(BaseCommand):
         app_commands.Choice(name="Expert - Ultra Obscure & Hidden Gems", value="expert")
     ])
     @app_commands.autocomplete(guess=anime_autocomplete)
-    async def animewordle(
+    async def anidle(
         self,
         interaction: discord.Interaction,
         action: app_commands.Choice[str],
         guess: Optional[str] = None,
         difficulty: Optional[app_commands.Choice[str]] = None
     ):
-        """Main anime wordle command."""
+        """Main anidle command."""
         if not interaction.channel:
             await interaction.response.send_message(
                 "❌ This command can only be used in a channel!",
@@ -885,7 +885,7 @@ class AnimeWordleCog(BaseCommand):
             await self._give_up(interaction, channel_id)
     
     async def _start_game(self, interaction: discord.Interaction, channel_id: int, difficulty: str = "normal"):
-        """Start a new anime wordle game with specified difficulty."""
+        """Start a new anidle game with specified difficulty."""
         # Defer immediately to prevent timeout
         await interaction.response.defer(thinking=True)
         
@@ -894,7 +894,8 @@ class AnimeWordleCog(BaseCommand):
             existing_game = self.games[channel_id]
             if not existing_game.is_complete:
                 await interaction.followup.send(
-                    "❌ There's already an active game in this channel! Finish the current game or use `/animewordle giveup` to end it.",
+                    "❌ You already have an active game in this channel! "
+                    "Complete it first or wait for it to timeout. Use `/anidle` to continue your current game.",
                     ephemeral=True
                 )
                 return
@@ -911,7 +912,7 @@ class AnimeWordleCog(BaseCommand):
                 )
                 return
             
-            self.games[channel_id] = AnimeWordle(target_anime, difficulty)
+            self.games[channel_id] = Anidle(target_anime, difficulty)
             
             # Get difficulty description
             difficulty_descriptions = {
@@ -922,11 +923,11 @@ class AnimeWordleCog(BaseCommand):
             }
             
             embed = discord.Embed(
-                title="🎮 Anime Wordle Started!",
+                title="🎮 Anidle Started!",
                 description=(
                     f"Guess the anime! You have 21 tries.\n"
                     f"**Difficulty:** {difficulty_descriptions.get(difficulty, '🟡 **Normal**')}\n\n"
-                    f"Use `/animewordle guess <anime_name>` to make a guess.\n\n"
+                    f"Use `/anidle guess <anime_name>` to make a guess.\n\n"
                     f"**Properties to match:**\n"
                     f"• Title, Year, Score, Episodes\n"
                     f"• Genres, Studio, Source, Format\n"
@@ -962,21 +963,21 @@ class AnimeWordleCog(BaseCommand):
             )
             
             await interaction.followup.send(embed=embed)
-            self.logger.info(f"Started anime wordle game in channel {channel_id} with target: {target_anime.title} (Difficulty: {difficulty})")
+            self.logger.info(f"Started anidle game in channel {channel_id} with target: {target_anime.title} (Difficulty: {difficulty})")
             
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
-            self.logger.error(f"Error starting anime wordle game: {e}")
+            self.logger.error(f"Error starting anidle game: {e}")
             await interaction.followup.send(
                 "❌ An error occurred while starting the game. Please try again!",
                 ephemeral=True
             )
     
     async def _make_guess(self, interaction: discord.Interaction, channel_id: int, guess: str):
-        """Make a guess in the anime wordle game."""
+        """Make a guess in the anidle game."""
         # Check if there's an active game
         if channel_id not in self.games:
             await interaction.response.send_message(
-                "❌ No active game in this channel! Use `/animewordle start` to begin a new game.",
+                "❌ No active game in this channel! Use `/anidle start` to begin a new game.",
                 ephemeral=True
             )
             return
@@ -986,7 +987,7 @@ class AnimeWordleCog(BaseCommand):
         # Check if game is already completed
         if game.is_complete:
             await interaction.response.send_message(
-                "❌ This game is already completed! Start a new game with `/animewordle start`.",
+                "❌ This game is already completed! Start a new game with `/anidle start`.",
                 ephemeral=True
             )
             return
@@ -1034,10 +1035,10 @@ class AnimeWordleCog(BaseCommand):
                 # Clean up the game
                 del self.games[channel_id]
                 
-                self.logger.info(f"Anime wordle game completed in channel {channel_id}. Won: {game.is_won}")
+                self.logger.info(f"Anidle game completed in channel {channel_id}. Won: {game.is_won}")
             
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
-            self.logger.error(f"Error making guess in anime wordle: {e}")
+            self.logger.error(f"Error making guess in anidle: {e}")
             await interaction.followup.send(
                 "❌ An error occurred while processing your guess. Please try again!",
                 ephemeral=True
@@ -1048,7 +1049,7 @@ class AnimeWordleCog(BaseCommand):
         # Check if there's an active game
         if channel_id not in self.games:
             await interaction.response.send_message(
-                "❌ No active game in this channel! Use `/animewordle start` to begin a new game.",
+                "❌ No active game in this channel! Use `/anidle start` to begin a new game.",
                 ephemeral=False
             )
             return
@@ -1058,7 +1059,7 @@ class AnimeWordleCog(BaseCommand):
         # Check if game is already completed
         if game.is_complete:
             await interaction.response.send_message(
-                "❌ This game is already completed! Start a new game with `/animewordle start`.",
+                "❌ This game is already completed! Start a new game with `/anidle start`.",
                 ephemeral=False
             )
             return
@@ -1107,7 +1108,7 @@ class AnimeWordleCog(BaseCommand):
         # Check if there's an active game
         if channel_id not in self.games:
             await interaction.response.send_message(
-                "❌ No active game in this channel! Use `/animewordle start` to begin a new game.",
+                "❌ No active game in this channel! Use `/anidle start` to begin a new game.",
                 ephemeral=True
             )
             return
@@ -1140,14 +1141,14 @@ class AnimeWordleCog(BaseCommand):
         # Clean up
         del self.games[channel_id]
         
-        self.logger.info(f"User gave up anime wordle game in channel {channel_id} after {len(game.guesses)} guesses")
+        self.logger.info(f"User gave up anidle game in channel {channel_id} after {len(game.guesses)} guesses")
     
     async def _show_status(self, interaction: discord.Interaction, channel_id: int):
         """Show the current game status."""
         # Check if there's an active game
         if channel_id not in self.games:
             await interaction.response.send_message(
-                "❌ No active game in this channel! Use `/animewordle start` to begin a new game.",
+                "❌ No active game in this channel! Use `/anidle start` to begin a new game.",
                 ephemeral=True
             )
             return
@@ -1157,7 +1158,7 @@ class AnimeWordleCog(BaseCommand):
         # Check if game is already completed
         if game.is_complete:
             await interaction.response.send_message(
-                "❌ This game is already completed! The results were already shown. Use `/animewordle start` to begin a new game.",
+                "❌ This game is already completed! The results were already shown. Use `/anidle start` to begin a new game.",
                 ephemeral=True
             )
             return
@@ -1206,9 +1207,9 @@ class AnimeWordleCog(BaseCommand):
         embed.add_field(
             name="ℹ️ Available Actions",
             value=(
-                "• `/animewordle guess <anime>` - Make a guess\n"
-                "• `/animewordle hint` - Get poster hint (+10 penalty)\n"
-                "• `/animewordle giveup` - End the game"
+                "• `/anidle guess <anime>` - Make a guess\n"
+                "• `/anidle hint` - Get poster hint (+10 penalty)\n"
+                "• `/anidle giveup` - End the game"
             ),
             inline=False
         )
@@ -1221,7 +1222,7 @@ async def setup(bot: commands.Bot):
     # Get services from bot instance
     services = getattr(bot, 'services', None)
     if services:
-        await bot.add_cog(AnimeWordleCog(bot, services))
+        await bot.add_cog(AnidleCog(bot, services))
     else:
         # Fallback if services not available
         raise RuntimeError("Bot services not available")

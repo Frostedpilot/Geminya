@@ -1,7 +1,7 @@
-# Anime Wordle Command Documentation
+# Anidle Command Documentation
 
 ## Overview
-A Discord bot command that implements a Wordle-like game using anime data from the Jikan API (MyAnimeList). Players must guess an anime title based on its properties.
+A Discord bot command that implements an anidle-like game using anime data from the Jikan API (MyAnimeList). Players must guess an anime title based on its properties.
 
 ## Game Mechanics
 
@@ -24,17 +24,17 @@ A Discord bot command that implements a Wordle-like game using anime data from t
 
 ## Commands
 
-### `/animewordle start [difficulty]`
-Starts a new anime Wordle game in the current channel.
+### `/anidle start [difficulty]`
+Starts a new anidle game in the current channel.
 - **difficulty** (optional): Choose from `easy`, `normal`, `hard`, or `expert`
 - Default difficulty is `normal`
 
-### `/animewordle guess <anime_name>`
+### `/anidle guess <anime_name>`
 Make a guess by providing an anime title. The bot will search MyAnimeList and compare properties.
 
-**Example**: `/animewordle guess Attack on Titan`
+**Example**: `/anidle guess Attack on Titan`
 
-### `/animewordle hint`
+### `/anidle hint`
 Get a random hint about the target anime (ephemeral message).
 **Note**: Using hints adds +2 to your guess count as a penalty.
 
@@ -46,7 +46,7 @@ Get a random hint about the target anime (ephemeral message).
 - Source (Manga/Light Novel/etc.)
 - Score range
 
-### `/animewordle giveup`
+### `/anidle giveup`
 Reveal the answer and end the current game.
 
 ## Difficulty Levels
@@ -84,12 +84,12 @@ Uses Jikan API v4 (https://api.jikan.moe/v4) for MyAnimeList data:
 
 ## Example Game Flow
 
-1. **Start**: `/animewordle start`
+1. **Start**: `/anidle start`
    - Bot selects random popular anime
    - Shows game instructions
 
-2. **Guess**: `/animewordle guess Demon Slayer`
-   - Bot searches for "Demon Slayer" on AniList
+2. **Guess**: `/anidle guess Demon Slayer`
+   - Bot searches for "Demon Slayer" on MyAnimeList
    - Compares all properties with target
    - Shows results with indicators
 
@@ -102,7 +102,7 @@ Uses Jikan API v4 (https://api.jikan.moe/v4) for MyAnimeList data:
 4. **Win/Lose**: Game ends when you guess correctly or run out of attempts
 
 ## Technical Implementation
-- Uses `aiohttp` for AniList API requests
+- Uses `aiohttp` for Jikan API requests
 - Game state stored in memory per channel
 - Automatic cleanup when games complete
 - Follows the bot's service architecture pattern
