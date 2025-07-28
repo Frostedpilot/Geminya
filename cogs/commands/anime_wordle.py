@@ -80,7 +80,7 @@ class AnimeWordle:
     def __init__(self, target_anime: AnimeData):
         self.target = target_anime
         self.guesses: List[AnimeData] = []
-        self.max_guesses = 6
+        self.max_guesses = 21
         self.is_complete = False
         self.is_won = False
     
@@ -178,6 +178,10 @@ class AnimeWordleCog(BaseCommand):
         super().__init__(bot, services)
         self.games: Dict[int, AnimeWordle] = {}  # channel_id -> game
         self.anilist_url = "https://graphql.anilist.co"
+        # Cache for anime counts to reduce API calls
+        self._anime_count_cache: Dict[str, int] = {}  # "min_score-max_score-sort" -> count
+        self._cache_duration = 3600  # 1 hour cache
+        self._cache_timestamps: Dict[str, float] = {}  # cache key -> timestamp
     
     async def _query_anilist(self, query: str, variables: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """Make a GraphQL query to AniList API."""
@@ -198,16 +202,75 @@ class AnimeWordleCog(BaseCommand):
             self.logger.error(f"Error querying AniList API: {e}")
             return None
     
+    async def _get_anime_count_in_range(self, min_score: int, max_score: int, sort_method: str) -> int:
+        """Get the total count of anime in a specific score range with caching."""
+        import time
+        
+        # Create cache key
+        cache_key = f"{min_score}-{max_score}-{sort_method}"
+        current_time = time.time()
+        
+        # Check if we have a valid cached result
+        if (cache_key in self._anime_count_cache and 
+            cache_key in self._cache_timestamps and
+            current_time - self._cache_timestamps[cache_key] < self._cache_duration):
+            
+            cached_count = self._anime_count_cache[cache_key]
+            self.logger.info(f"Using cached count for range {min_score}-{max_score}: {cached_count} anime")
+            return cached_count
+        
+        try:
+            query = """
+            query ($minScore: Int, $maxScore: Int, $sort: [MediaSort]) {
+                Page(page: 1, perPage: 1) {
+                    pageInfo {
+                        total
+                        lastPage
+                    }
+                    media(type: ANIME, sort: $sort, isAdult: false, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
+                        id
+                    }
+                }
+            }
+            """
+            
+            variables = {
+                'minScore': min_score,
+                'maxScore': max_score,
+                'sort': [sort_method]
+            }
+            
+            data = await self._query_anilist(query, variables)
+            if data and data.get('Page', {}).get('pageInfo'):
+                page_info = data['Page']['pageInfo']
+                total_count = page_info.get('total', 0)
+                last_page = page_info.get('lastPage', 1)
+                count = min(total_count, last_page * 50)  # Each page has max 50 items
+                
+                # Cache the result
+                self._anime_count_cache[cache_key] = count
+                self._cache_timestamps[cache_key] = current_time
+                
+                self.logger.info(f"Fetched and cached count for range {min_score}-{max_score}: {count} anime")
+                return count
+            
+            return 0
+            
+        except Exception as e:
+            self.logger.error(f"Error counting anime in range {min_score}-{max_score}: {e}")
+            return 0
+
     async def _get_random_anime(self) -> Optional[AnimeData]:
         """Get a random anime for the game using weighted selection based on score ranges."""
         try:
-            # Get score weights from config
+            # Get config settings
             anime_config = getattr(self.services.config, 'anime_wordle', {})
             score_weights = anime_config.get('score_weights', {
                 '90-100': 5, '80-89': 10, '70-79': 8, '60-69': 6,
                 '50-59': 3, '40-49': 2, '30-39': 1, '0-29': 1
             })
-            max_pages = anime_config.get('max_search_pages', 200)
+            max_pages_config = anime_config.get('max_search_pages', 200)
+            sort_method = anime_config.get('sort_method', 'POPULARITY_DESC')
             
             # Create weighted list of score ranges
             weighted_ranges = []
@@ -219,11 +282,25 @@ class AnimeWordleCog(BaseCommand):
             selected_range = random.choice(weighted_ranges)
             min_score, max_score = selected_range
             
-            # Query anime within the selected score range
+            # Get the actual count of anime in this score range
+            anime_count = await self._get_anime_count_in_range(min_score, max_score, sort_method)
+            if anime_count == 0:
+                self.logger.warning(f"No anime found in score range {min_score}-{max_score}")
+                # Fallback to a broader range
+                min_score = max(0, min_score - 20)
+                max_score = min(100, max_score + 20)
+                anime_count = await self._get_anime_count_in_range(min_score, max_score, sort_method)
+            
+            # Calculate max pages based on actual anime count
+            max_pages = min(max_pages_config, max(1, anime_count // 50 + 1))
+            
+            self.logger.info(f"Selected score range: {min_score}-{max_score}, Found {anime_count} anime, Max pages: {max_pages}")
+            
+            # Query anime within the selected score range with configurable sorting
             query = """
-            query ($page: Int, $minScore: Int, $maxScore: Int) {
+            query ($page: Int, $minScore: Int, $maxScore: Int, $sort: [MediaSort]) {
                 Page(page: $page, perPage: 50) {
-                    media(type: ANIME, sort: POPULARITY_DESC, isAdult: false, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
+                    media(type: ANIME, sort: $sort, isAdult: false, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
                         id
                         title {
                             english
@@ -249,14 +326,15 @@ class AnimeWordleCog(BaseCommand):
             }
             """
             
-            # Try to get anime from random pages within the score range
-            max_attempts = 10
+            # Try to get anime from random pages within the actual available range
+            max_attempts = 5
             for attempt in range(max_attempts):
                 random_page = random.randint(1, max_pages)
                 variables = {
                     'page': random_page,
                     'minScore': min_score,
-                    'maxScore': max_score
+                    'maxScore': max_score,
+                    'sort': [sort_method]
                 }
                 
                 data = await self._query_anilist(query, variables)
@@ -265,19 +343,18 @@ class AnimeWordleCog(BaseCommand):
                     if anime_list:
                         # Randomly select one anime from the page
                         selected_anime = random.choice(anime_list)
+                        self.logger.info(f"Selected anime: {selected_anime.get('title', {}).get('english', 'Unknown')} (Score: {selected_anime.get('averageScore', 'N/A')})")
                         return AnimeData(selected_anime)
                 
-                # If no results, try a broader range or different page
-                if attempt > 5:
-                    # Fallback to a broader score range
-                    min_score = max(0, min_score - 10)
-                    max_score = min(100, max_score + 10)
+                # If no results on this page, try another page
+                self.logger.warning(f"No anime found on page {random_page} for range {min_score}-{max_score}")
             
-            # Final fallback - get any popular anime
+            # Final fallback - get any popular anime with configurable sorting
+            self.logger.warning("Falling back to general popular anime selection")
             fallback_query = """
-            query ($page: Int) {
+            query ($page: Int, $sort: [MediaSort]) {
                 Page(page: $page, perPage: 1) {
-                    media(type: ANIME, sort: POPULARITY_DESC, isAdult: false, episodes_greater: 0) {
+                    media(type: ANIME, sort: $sort, isAdult: false, episodes_greater: 0) {
                         id
                         title {
                             english
@@ -303,8 +380,11 @@ class AnimeWordleCog(BaseCommand):
             }
             """
             
-            random_page = random.randint(1, 500)
-            data = await self._query_anilist(fallback_query, {'page': random_page})
+            random_page = random.randint(1, 100)  # Use smaller range for fallback
+            data = await self._query_anilist(fallback_query, {
+                'page': random_page,
+                'sort': [sort_method]
+            })
             if data and data.get('Page', {}).get('media'):
                 return AnimeData(data['Page']['media'][0])
             
@@ -582,7 +662,7 @@ class AnimeWordleCog(BaseCommand):
             embed = discord.Embed(
                 title="🎮 Anime Wordle Started!",
                 description=(
-                    "Guess the anime! You have 6 tries.\n"
+                    "Guess the anime! You have 21 tries.\n"
                     "Use `/animewordle guess <anime_name>` to make a guess.\n\n"
                     "**Properties to match:**\n"
                     "• Title, Year, Score, Episodes\n"

@@ -40,3 +40,11 @@ anime_wordle:
   # Maximum number of pages to search through (each page = 50 anime)
   # Higher values = more anime variety but slower startup
   max_search_pages: 200
+  
+  # Sorting method for anime selection
+  # Options: POPULARITY_DESC, SCORE_DESC, TRENDING_DESC, FAVOURITES_DESC
+  # POPULARITY_DESC = Most popular/well-known anime first
+  # SCORE_DESC = Highest rated anime first  
+  # TRENDING_DESC = Currently trending anime first
+  # FAVOURITES_DESC = Most favorited anime first
+  sort_method: "POPULARITY_DESC"
