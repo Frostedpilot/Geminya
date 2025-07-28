@@ -25,6 +25,7 @@ class AnimeData:
         self.studios = self._extract_studios(data.get('studios', {}).get('nodes', []))
         self.source = data.get('source', 'UNKNOWN')
         self.format = data.get('format', 'UNKNOWN')
+        self.cover_image = self._extract_cover_image(data.get('coverImage', {}))
     
     def _extract_title(self, title_data: Dict) -> str:
         """Extract the best available title."""
@@ -46,6 +47,12 @@ class AnimeData:
         if not studios_data:
             return ['Unknown']
         return [studio.get('name', 'Unknown') for studio in studios_data if studio.get('name')]
+    
+    def _extract_cover_image(self, cover_data: Dict) -> Optional[str]:
+        """Extract cover image URL."""
+        if not cover_data:
+            return None
+        return cover_data.get('large') or cover_data.get('medium')
     
     def get_all_titles(self) -> List[str]:
         """Get all possible titles including synonyms for matching, filtered for English/Latin characters only."""
@@ -99,6 +106,7 @@ class AnimeWordle:
         self.max_guesses = 21
         self.is_complete = False
         self.is_won = False
+        self.hint_penalty = 0  # Track additional guess penalty from hints
     
     def add_guess(self, guess: AnimeData) -> bool:
         """Add a guess and check if game is complete."""
@@ -109,7 +117,9 @@ class AnimeWordle:
             self.is_won = True
             return True
         
-        if len(self.guesses) >= self.max_guesses:
+        # Check if total guesses (including hint penalty) exceed max
+        total_guesses = len(self.guesses) + self.hint_penalty
+        if total_guesses >= self.max_guesses:
             self.is_complete = True
             self.is_won = False
         
@@ -328,6 +338,10 @@ class AnimeWordleCog(BaseCommand):
                         }
                         source
                         format
+                        coverImage {
+                            large
+                            medium
+                        }
                     }
                 }
             }
@@ -388,6 +402,10 @@ class AnimeWordleCog(BaseCommand):
                         }
                         source
                         format
+                        coverImage {
+                            large
+                            medium
+                        }
                     }
                 }
             }
@@ -432,6 +450,10 @@ class AnimeWordleCog(BaseCommand):
                 }
                 source
                 format
+                coverImage {
+                    large
+                    medium
+                }
             }
         }
         """
@@ -530,8 +552,9 @@ class AnimeWordleCog(BaseCommand):
     
     def _create_guess_embed(self, game: AnimeWordle, guess: AnimeData, comparison: Dict[str, str]) -> discord.Embed:
         """Create an embed showing the guess results."""
+        total_guesses = len(game.guesses) + game.hint_penalty
         embed = discord.Embed(
-            title=f"Anime Wordle - Guess {len(game.guesses)}/{game.max_guesses}",
+            title=f"Anime Wordle - Guess {total_guesses}/{game.max_guesses}",
             color=0x02A9FF
         )
         
@@ -586,10 +609,11 @@ class AnimeWordleCog(BaseCommand):
     
     def _create_game_over_embed(self, game: AnimeWordle) -> discord.Embed:
         """Create an embed for game completion."""
+        total_guesses = len(game.guesses) + game.hint_penalty
         if game.is_won:
             embed = discord.Embed(
                 title="🎉 Congratulations!",
-                description=f"You guessed it in {len(game.guesses)} tries!",
+                description=f"You guessed it in {total_guesses} tries!",
                 color=0x00FF00
             )
         else:
@@ -769,11 +793,11 @@ class AnimeWordleCog(BaseCommand):
             )
     
     async def _give_hint(self, interaction: discord.Interaction, channel_id: int):
-        """Give a hint for the current game."""
+        """Display the anime poster image and add 10 guess penalty."""
         if channel_id not in self.games:
             await interaction.response.send_message(
                 "❌ No active game in this channel! Use `/animewordle start` to begin.",
-                ephemeral=True
+                ephemeral=False
             )
             return
         
@@ -782,29 +806,40 @@ class AnimeWordleCog(BaseCommand):
         if game.is_complete:
             await interaction.response.send_message(
                 "❌ This game is already completed!",
-                ephemeral=True
+                ephemeral=False
             )
             return
         
-        # Provide a random hint
-        hints = [
-            f"🎭 One of the genres is: {random.choice(game.target.genres)}",
-            f"🏢 The studio is: {game.target.studios[0] if game.target.studios else 'Unknown'}",
-            f"📅 It's from the {game.target.year}s" if game.target.year else "📅 Year is unknown",
-            f"📺 Format: {game.target.format}",
-            f"📚 Source: {game.target.source}",
-            f"⭐ Score range: {(game.target.score // 10) * 10}-{(game.target.score // 10) * 10 + 9}" if game.target.score else "⭐ Score is unknown"
-        ]
+        # Check if adding 10 to total guesses would exceed max_guesses (21)
+        total_guesses = len(game.guesses) + game.hint_penalty
+        if total_guesses + 10 > game.max_guesses:
+            await interaction.response.send_message(
+                f"❌ Cannot use hint! Adding 10 guesses would exceed the maximum limit of {game.max_guesses} guesses.",
+                ephemeral=False
+            )
+            return
         
-        hint = random.choice(hints)
+        # Add 10 guess penalty
+        game.hint_penalty += 10
+        total_guesses = len(game.guesses) + game.hint_penalty
         
         embed = discord.Embed(
-            title="💡 Hint",
-            description=hint,
+            title="� Poster Hint!",
+            description=f"Here's the poster for the anime you're looking for!\n**Penalty**: +10 guesses (Total: {total_guesses}/{game.max_guesses})",
             color=0xFFD700
         )
         
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        # Add poster image if available
+        if game.target.cover_image:
+            embed.set_image(url=game.target.cover_image)
+        else:
+            embed.add_field(
+                name="⚠️ No Image Available",
+                value="Poster image is not available for this anime.",
+                inline=False
+            )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=False)
     
     async def _give_up(self, interaction: discord.Interaction, channel_id: int):
         """Give up the current game."""
