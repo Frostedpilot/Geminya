@@ -4,8 +4,7 @@ import random
 import asyncio
 from discord.ext import commands
 from discord import app_commands
-from typing import Dict, List, Optional, Any, Union
-import json
+from typing import Dict, List, Optional, Any
 
 from cogs.base_command import BaseCommand
 from services.container import ServiceContainer
@@ -67,11 +66,28 @@ class AnimeData:
     def _is_latin_title(self, title: str) -> bool:
         """Check if title contains only Latin characters, numbers, and common punctuation."""
         import re
-        # Allow Latin letters (a-z, A-Z), numbers (0-9), spaces, and extended punctuation
-        # This includes accented characters like é, ñ, ü, etc. and many special characters used in anime titles
-        # Added: ♥ ★ ☆ × ÷ ♦ ♠ ♣ ♪ ♫ ° † ‡ • … — – ' ' " " ¡ ¿ § ¤ ® © ™ ± ² ³ ¼ ½ ¾
-        latin_pattern = re.compile(r'^[a-zA-Z0-9\s\-_\'\"\.!?\(\)\[\]:&+,;♥★☆×÷♦♠♣♪♫°†‡•…—–''""¡¿§¤®©™±²³¼½¾~@#$%^*={}|\\/<>]*$')
-        return bool(latin_pattern.match(title))
+        # Check if title contains only allowed characters (Latin alphabet, numbers, punctuation)
+        # We exclude non-Latin scripts like Japanese, Chinese, Korean, Arabic, etc.
+        try:
+            # Allow ASCII letters, numbers, extended Latin characters, and common punctuation
+            title.encode('ascii', errors='ignore').decode('ascii')
+            # Also allow common extended characters used in anime titles
+            forbidden_patterns = [
+                r'[\u3040-\u309F]',  # Hiragana
+                r'[\u30A0-\u30FF]',  # Katakana  
+                r'[\u4E00-\u9FAF]',  # CJK Unified Ideographs
+                r'[\u0400-\u04FF]',  # Cyrillic
+                r'[\u0590-\u05FF]',  # Hebrew
+                r'[\u0600-\u06FF]',  # Arabic
+            ]
+            
+            for pattern in forbidden_patterns:
+                if re.search(pattern, title):
+                    return False
+            
+            return True
+        except UnicodeError:
+            return False
 
 
 class AnimeWordle:
@@ -178,10 +194,7 @@ class AnimeWordleCog(BaseCommand):
         super().__init__(bot, services)
         self.games: Dict[int, AnimeWordle] = {}  # channel_id -> game
         self.anilist_url = "https://graphql.anilist.co"
-        # Cache for anime counts to reduce API calls
-        self._anime_count_cache: Dict[str, int] = {}  # "min_score-max_score-sort" -> count
-        self._cache_duration = 3600  # 1 hour cache
-        self._cache_timestamps: Dict[str, float] = {}  # cache key -> timestamp
+        self.page_cache: Dict[str, int] = {}  # Cache for max page results
     
     async def _query_anilist(self, query: str, variables: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """Make a GraphQL query to AniList API."""
@@ -198,67 +211,65 @@ class AnimeWordleCog(BaseCommand):
                     else:
                         self.logger.warning(f"AniList API returned status {response.status}")
                         return None
-        except Exception as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             self.logger.error(f"Error querying AniList API: {e}")
             return None
     
-    async def _get_anime_count_in_range(self, min_score: int, max_score: int, sort_method: str) -> int:
-        """Get the total count of anime in a specific score range with caching."""
-        import time
-        
+    async def _find_max_page_binary_search(self, min_score: int, max_score: int, sort_method: str) -> int:
+        """Find the maximum page number using binary search to locate the boundary between content and empty pages."""
         # Create cache key
         cache_key = f"{min_score}-{max_score}-{sort_method}"
-        current_time = time.time()
         
-        # Check if we have a valid cached result
-        if (cache_key in self._anime_count_cache and 
-            cache_key in self._cache_timestamps and
-            current_time - self._cache_timestamps[cache_key] < self._cache_duration):
-            
-            cached_count = self._anime_count_cache[cache_key]
-            self.logger.info(f"Using cached count for range {min_score}-{max_score}: {cached_count} anime")
-            return cached_count
+        # Check if result is already cached
+        if cache_key in self.page_cache:
+            cached_result = self.page_cache[cache_key]
+            self.logger.info(f"Using cached max page: {cached_result} for range {min_score}-{max_score}")
+            return cached_result
         
         try:
-            query = """
-            query ($minScore: Int, $maxScore: Int, $sort: [MediaSort]) {
-                Page(page: 1, perPage: 1) {
-                    pageInfo {
-                        total
-                        lastPage
-                    }
-                    media(type: ANIME, sort: $sort, isAdult: false, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
-                        id
+            # Start with a reasonable upper bound for binary search
+            left, right = 1, 1000
+            max_page_found = 1
+            
+            # Binary search to find the last page with content
+            while left <= right:
+                mid = (left + right) // 2
+                
+                # Check if this page has content
+                query = """
+                query ($page: Int, $minScore: Int, $maxScore: Int, $sort: [MediaSort]) {
+                    Page(page: $page, perPage: 50) {
+                        media(type: ANIME, sort: $sort, isAdult: false, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
+                            id
+                        }
                     }
                 }
-            }
-            """
-            
-            variables = {
-                'minScore': min_score,
-                'maxScore': max_score,
-                'sort': [sort_method]
-            }
-            
-            data = await self._query_anilist(query, variables)
-            if data and data.get('Page', {}).get('pageInfo'):
-                page_info = data['Page']['pageInfo']
-                total_count = page_info.get('total', 0)
-                last_page = page_info.get('lastPage', 1)
-                count = min(total_count, last_page * 50)  # Each page has max 50 items
+                """
                 
-                # Cache the result
-                self._anime_count_cache[cache_key] = count
-                self._cache_timestamps[cache_key] = current_time
+                variables = {
+                    'page': mid,
+                    'minScore': min_score,
+                    'maxScore': max_score,
+                    'sort': [sort_method]
+                }
                 
-                self.logger.info(f"Fetched and cached count for range {min_score}-{max_score}: {count} anime")
-                return count
+                data = await self._query_anilist(query, variables)
+                has_content = data and data.get('Page', {}).get('media') and len(data['Page']['media']) > 0
+                
+                if has_content:
+                    max_page_found = mid
+                    left = mid + 1  # Search for a higher page
+                else:
+                    right = mid - 1  # Search for a lower page
             
-            return 0
+            # Cache the result
+            self.page_cache[cache_key] = max_page_found
+            self.logger.info(f"Binary search found and cached max page: {max_page_found} for range {min_score}-{max_score}")
+            return max_page_found
             
-        except Exception as e:
-            self.logger.error(f"Error counting anime in range {min_score}-{max_score}: {e}")
-            return 0
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            self.logger.error(f"Error in binary search for max page: {e}")
+            return 1  # Fallback to page 1
 
     async def _get_random_anime(self) -> Optional[AnimeData]:
         """Get a random anime for the game using weighted selection based on score ranges."""
@@ -269,7 +280,6 @@ class AnimeWordleCog(BaseCommand):
                 '90-100': 5, '80-89': 10, '70-79': 8, '60-69': 6,
                 '50-59': 3, '40-49': 2, '30-39': 1, '0-29': 1
             })
-            max_pages_config = anime_config.get('max_search_pages', 200)
             sort_method = anime_config.get('sort_method', 'POPULARITY_DESC')
             
             # Create weighted list of score ranges
@@ -282,19 +292,16 @@ class AnimeWordleCog(BaseCommand):
             selected_range = random.choice(weighted_ranges)
             min_score, max_score = selected_range
             
-            # Get the actual count of anime in this score range
-            anime_count = await self._get_anime_count_in_range(min_score, max_score, sort_method)
-            if anime_count == 0:
-                self.logger.warning(f"No anime found in score range {min_score}-{max_score}")
-                # Fallback to a broader range
+            # Find the true maximum page using binary search
+            max_pages = await self._find_max_page_binary_search(min_score, max_score, sort_method)
+            if max_pages == 1:
+                # If only 1 page found, try a broader range
+                self.logger.warning(f"Only 1 page found in score range {min_score}-{max_score}, expanding range")
                 min_score = max(0, min_score - 20)
                 max_score = min(100, max_score + 20)
-                anime_count = await self._get_anime_count_in_range(min_score, max_score, sort_method)
+                max_pages = await self._find_max_page_binary_search(min_score, max_score, sort_method)
             
-            # Calculate max pages based on actual anime count
-            max_pages = min(max_pages_config, max(1, anime_count // 50 + 1))
-            
-            self.logger.info(f"Selected score range: {min_score}-{max_score}, Found {anime_count} anime, Max pages: {max_pages}")
+            self.logger.info(f"Selected score range: {min_score}-{max_score}, True max pages: {max_pages}")
             
             # Query anime within the selected score range with configurable sorting
             query = """
@@ -326,28 +333,34 @@ class AnimeWordleCog(BaseCommand):
             }
             """
             
-            # Try to get anime from random pages within the actual available range
-            max_attempts = 5
-            for attempt in range(max_attempts):
-                random_page = random.randint(1, max_pages)
-                variables = {
-                    'page': random_page,
-                    'minScore': min_score,
-                    'maxScore': max_score,
-                    'sort': [sort_method]
-                }
-                
-                data = await self._query_anilist(query, variables)
-                if data and data.get('Page', {}).get('media'):
-                    anime_list = data['Page']['media']
-                    if anime_list:
-                        # Randomly select one anime from the page
-                        selected_anime = random.choice(anime_list)
-                        self.logger.info(f"Selected anime: {selected_anime.get('title', {}).get('english', 'Unknown')} (Score: {selected_anime.get('averageScore', 'N/A')})")
-                        return AnimeData(selected_anime)
-                
-                # If no results on this page, try another page
-                self.logger.warning(f"No anime found on page {random_page} for range {min_score}-{max_score}")
+            # Try once with a random page within the true range
+            random_page = random.randint(1, max_pages)
+            variables = {
+                'page': random_page,
+                'minScore': min_score,
+                'maxScore': max_score,
+                'sort': [sort_method]
+            }
+            
+            data = await self._query_anilist(query, variables)
+            if data and data.get('Page', {}).get('media'):
+                anime_list = data['Page']['media']
+                if anime_list:
+                    # Randomly select one anime from the page
+                    selected_anime = random.choice(anime_list)
+                    self.logger.info(f"Selected anime: {selected_anime.get('title', {}).get('english', 'Unknown')} (Score: {selected_anime.get('averageScore', 'N/A')})")
+                    return AnimeData(selected_anime)
+            
+            # If no results on the selected page, fall back to page 1
+            self.logger.warning(f"No anime found on page {random_page}, trying page 1")
+            variables['page'] = 1
+            data = await self._query_anilist(query, variables)
+            if data and data.get('Page', {}).get('media'):
+                anime_list = data['Page']['media']
+                if anime_list:
+                    selected_anime = random.choice(anime_list)
+                    self.logger.info(f"Fallback selected anime: {selected_anime.get('title', {}).get('english', 'Unknown')} (Score: {selected_anime.get('averageScore', 'N/A')})")
+                    return AnimeData(selected_anime)
             
             # Final fallback - get any popular anime with configurable sorting
             self.logger.warning("Falling back to general popular anime selection")
@@ -390,7 +403,7 @@ class AnimeWordleCog(BaseCommand):
             
             return None
             
-        except Exception as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             self.logger.error(f"Error in weighted anime selection: {e}")
             return None
     
@@ -503,13 +516,15 @@ class AnimeWordleCog(BaseCommand):
         current: str,
     ) -> List[app_commands.Choice[str]]:
         """Autocomplete function for anime names."""
+        # interaction parameter is required by Discord.py but not used
+        del interaction  # Suppress unused argument warning
         try:
             choices_data = await self._search_multiple_anime(current, limit=20)
             return [
                 app_commands.Choice(name=choice['name'], value=choice['value'])
                 for choice in choices_data
             ]
-        except Exception as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             self.logger.error(f"Error in anime autocomplete: {e}")
             return []
     
