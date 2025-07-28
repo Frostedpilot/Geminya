@@ -17,6 +17,7 @@ class AnimeData:
     def __init__(self, data: Dict[str, Any]):
         self.id = data.get('id')
         self.title = self._extract_title(data.get('title', {}))
+        self.synonyms = data.get('synonyms', [])
         self.start_date = data.get('startDate', {})
         self.year = self._extract_year(self.start_date)
         self.score = data.get('averageScore', 0) or 0
@@ -46,6 +47,31 @@ class AnimeData:
         if not studios_data:
             return ['Unknown']
         return [studio.get('name', 'Unknown') for studio in studios_data if studio.get('name')]
+    
+    def get_all_titles(self) -> List[str]:
+        """Get all possible titles including synonyms for matching, filtered for English/Latin characters only."""
+        titles = [self.title]
+        if self.synonyms:
+            titles.extend(self.synonyms)
+        
+        # Filter titles to only include those with English/Latin characters and numbers
+        filtered_titles = []
+        for title in titles:
+            if title and title.strip():
+                # Check if title contains only Latin alphabet, numbers, spaces, and common punctuation
+                if self._is_latin_title(title.strip()):
+                    filtered_titles.append(title.strip())
+        
+        return filtered_titles
+    
+    def _is_latin_title(self, title: str) -> bool:
+        """Check if title contains only Latin characters, numbers, and common punctuation."""
+        import re
+        # Allow Latin letters (a-z, A-Z), numbers (0-9), spaces, and extended punctuation
+        # This includes accented characters like é, ñ, ü, etc. and many special characters used in anime titles
+        # Added: ♥ ★ ☆ × ÷ ♦ ♠ ♣ ♪ ♫ ° † ‡ • … — – ' ' " " ¡ ¿ § ¤ ® © ™ ± ² ³ ¼ ½ ¾
+        latin_pattern = re.compile(r'^[a-zA-Z0-9\s\-_\'\"\.!?\(\)\[\]:&+,;♥★☆×÷♦♠♣♪♫°†‡•…—–''""¡¿§¤®©™±²³¼½¾~@#$%^*={}|\\/<>]*$')
+        return bool(latin_pattern.match(title))
 
 
 class AnimeWordle:
@@ -77,8 +103,12 @@ class AnimeWordle:
         """Compare guess with target and return result indicators."""
         comparison = {}
         
-        # Title comparison
-        comparison['title'] = '✅' if guess.title.lower() == self.target.title.lower() else '❌'
+        # Title comparison - check main title and synonyms
+        guess_titles = [title.lower().strip() for title in guess.get_all_titles()]
+        target_titles = [title.lower().strip() for title in self.target.get_all_titles()]
+        
+        title_match = any(guess_title in target_titles for guess_title in guess_titles)
+        comparison['title'] = '✅' if title_match else '❌'
         
         # Year comparison
         if guess.year == self.target.year:
@@ -104,23 +134,35 @@ class AnimeWordle:
         else:
             comparison['episodes'] = '⬇️'
         
-        # Genres comparison
+        # Genres comparison - show individual matches
         guess_genres = set(guess.genres)
         target_genres = set(self.target.genres)
         if guess_genres == target_genres:
             comparison['genres'] = '✅'
-        elif guess_genres & target_genres:  # Some overlap
-            comparison['genres'] = '🟡'
         else:
-            comparison['genres'] = '❌'
+            # Show individual genre matches
+            genre_matches = []
+            for genre in guess.genres:
+                if genre in target_genres:
+                    genre_matches.append(f"{genre} ✅")
+                else:
+                    genre_matches.append(f"{genre} ❌")
+            comparison['genres'] = ', '.join(genre_matches) if genre_matches else '❌'
         
-        # Studio comparison
+        # Studio comparison - show individual matches
         guess_studios = set(guess.studios)
         target_studios = set(self.target.studios)
-        if guess_studios & target_studios:  # Any studio match
+        if guess_studios == target_studios:
             comparison['studio'] = '✅'
         else:
-            comparison['studio'] = '❌'
+            # Show individual studio matches
+            studio_matches = []
+            for studio in guess.studios:
+                if studio in target_studios:
+                    studio_matches.append(f"{studio} ✅")
+                else:
+                    studio_matches.append(f"{studio} ❌")
+            comparison['studio'] = ', '.join(studio_matches) if studio_matches else '❌'
         
         # Source comparison
         comparison['source'] = '✅' if guess.source == self.target.source else '❌'
@@ -168,6 +210,7 @@ class AnimeWordleCog(BaseCommand):
                         romaji
                         native
                     }
+                    synonyms
                     startDate {
                         year
                     }
@@ -208,6 +251,7 @@ class AnimeWordleCog(BaseCommand):
                     romaji
                     native
                 }
+                synonyms
                 startDate {
                     year
                 }
@@ -233,6 +277,88 @@ class AnimeWordleCog(BaseCommand):
         
         return None
     
+    async def _search_multiple_anime(self, search_term: str, limit: int = 25) -> List[Dict[str, str]]:
+        """Search for multiple anime and return choices with all titles/synonyms."""
+        if not search_term or len(search_term.strip()) < 2:
+            return []
+        
+        query = """
+        query ($search: String, $perPage: Int) {
+            Page(page: 1, perPage: $perPage) {
+                media(search: $search, type: ANIME, isAdult: false) {
+                    id
+                    title {
+                        english
+                        romaji
+                        native
+                    }
+                    synonyms
+                    startDate {
+                        year
+                    }
+                }
+            }
+        }
+        """
+        
+        variables = {'search': search_term.strip(), 'perPage': limit}
+        data = await self._query_anilist(query, variables)
+        
+        choices = []
+        if data and data.get('Page', {}).get('media'):
+            for anime in data['Page']['media']:
+                anime_data = AnimeData(anime)
+                
+                # Get all possible titles for this anime (already filtered for Latin characters)
+                all_titles = anime_data.get_all_titles()
+                
+                # Filter titles that contain the search term (case-insensitive)
+                search_lower = search_term.lower().strip()
+                matching_titles = [
+                    title for title in all_titles 
+                    if search_lower in title.lower()
+                ]
+                
+                # If no direct matches in filtered titles, skip this anime
+                # (don't include non-Latin titles even as fallback)
+                if not matching_titles:
+                    continue
+                
+                # Add each matching title as a choice
+                for title in matching_titles[:3]:  # Limit to 3 titles per anime to avoid clutter
+                    if len(choices) < 25:  # Discord limit
+                        # Create display name with year for clarity
+                        display_name = f"{title}"
+                        if anime_data.year:
+                            display_name += f" ({anime_data.year})"
+                        
+                        # Truncate if too long (Discord choice name limit is 100 chars)
+                        if len(display_name) > 100:
+                            display_name = display_name[:97] + "..."
+                        
+                        choices.append({
+                            'name': display_name,
+                            'value': title
+                        })
+        
+        return choices
+    
+    async def anime_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        """Autocomplete function for anime names."""
+        try:
+            choices_data = await self._search_multiple_anime(current, limit=20)
+            return [
+                app_commands.Choice(name=choice['name'], value=choice['value'])
+                for choice in choices_data
+            ]
+        except Exception as e:
+            self.logger.error(f"Error in anime autocomplete: {e}")
+            return []
+    
     def _create_guess_embed(self, game: AnimeWordle, guess: AnimeData, comparison: Dict[str, str]) -> discord.Embed:
         """Create an embed showing the guess results."""
         embed = discord.Embed(
@@ -253,8 +379,6 @@ class AnimeWordleCog(BaseCommand):
             f"**Year:** {guess.year} {comparison['year']}\n"
             f"**Score:** {guess.score}/100 {comparison['score']}\n"
             f"**Episodes:** {guess.episodes} {comparison['episodes']}\n"
-            f"**Genres:** {', '.join(guess.genres[:3])} {comparison['genres']}\n"
-            f"**Studio:** {', '.join(guess.studios[:2])} {comparison['studio']}\n"
             f"**Source:** {guess.source} {comparison['source']}\n"
             f"**Format:** {guess.format} {comparison['format']}"
         )
@@ -265,14 +389,27 @@ class AnimeWordleCog(BaseCommand):
             inline=False
         )
         
+        # Add genres comparison separately to handle longer text
+        embed.add_field(
+            name="🎭 Genres",
+            value=comparison['genres'],
+            inline=False
+        )
+        
+        # Add studio comparison separately to handle longer text
+        embed.add_field(
+            name="🏢 Studio",
+            value=comparison['studio'],
+            inline=False
+        )
+        
         # Add legend
         legend = (
             "**Legend:**\n"
-            "✅ = Correct\n"
+            "✅ = Correct/Match\n"
             "⬆️ = Target is higher\n"
             "⬇️ = Target is lower\n"
-            "🟡 = Partial match (genres)\n"
-            "❌ = Incorrect"
+            "❌ = Incorrect/No match"
         )
         embed.add_field(name="ℹ️ Legend", value=legend, inline=False)
         
@@ -327,6 +464,7 @@ class AnimeWordleCog(BaseCommand):
         app_commands.Choice(name="Get Hint", value="hint"),
         app_commands.Choice(name="Give Up", value="giveup")
     ])
+    @app_commands.autocomplete(guess=anime_autocomplete)
     async def animewordle(
         self,
         interaction: discord.Interaction,
@@ -386,7 +524,6 @@ class AnimeWordleCog(BaseCommand):
                     "⬆️ Target value is higher\n"
                     "⬇️ Target value is lower\n"
                     "✅ Exact match\n"
-                    "🟡 Partial match (genres)\n"
                     "❌ No match"
                 ),
                 inline=False
