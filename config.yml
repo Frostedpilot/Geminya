@@ -105,3 +105,19 @@ anime_wordle:
   # favorites = Most favorited anime first
   # rank = Highest ranked anime first
   sort_method: "popularity"
+
+  # Content filtering options
+  content_filter:
+    # Enable Safe For Work filtering (excludes adult/NSFW content)
+    enable_sfw_filter: true
+    
+    # Rating filter - allows only certain content ratings
+    # Options: "g", "pg", "pg13", "r17", "r", "rx" (or null for no rating filter)
+    # g = General Audiences, pg = Parental Guidance, pg13 = Ages 13+
+    # r17 = Ages 17+, r = Restricted, rx = Explicit/Hentai
+    # Set to null to disable rating filtering
+    allowed_ratings: ["g", "pg", "pg13", "r17"]  # Excludes R and RX content
+    
+    # Genre exclusion list - exclude anime with these genres
+    # Common NSFW/adult genres to exclude: "Hentai", "Ecchi", "Erotica" 
+    excluded_genres: ["Hentai", "Erotica"]
