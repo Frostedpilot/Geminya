@@ -1,14 +1,14 @@
 # Anime Wordle Command Documentation
 
 ## Overview
-A Discord bot command that implements a Wordle-like game using anime data from the AniList API. Players must guess an anime title based on its properties.
+A Discord bot command that implements a Wordle-like game using anime data from the Jikan API (MyAnimeList). Players must guess an anime title based on its properties.
 
 ## Game Mechanics
 
 ### Properties Compared:
 - **Title**: ✅/❌ - Exact match
 - **Year**: ⬆️/⬇️/✅ - Higher/Lower/Exact
-- **Score**: ⬆️/⬇️/✅ - Higher/Lower/Exact (0-100 scale)
+- **Score**: ⬆️/⬇️/✅ - Higher/Lower/Exact (MyAnimeList's 1-10 scale)
 - **Episodes**: ⬆️/⬇️/✅ - Higher/Lower/Exact
 - **Genres**: ✅/🟡/❌ - Full match/Partial match/No match
 - **Studio**: ✅/❌ - Any studio match
@@ -16,23 +16,27 @@ A Discord bot command that implements a Wordle-like game using anime data from t
 - **Format**: ✅/❌ - Exact match (TV, Movie, OVA, etc.)
 
 ### Game Rules:
-- 6 attempts maximum
+- 21 attempts maximum
 - One game per channel at a time
-- Target anime is randomly selected from popular anime (top 500)
+- Target anime is randomly selected using weighted difficulty-based selection
 - Case-insensitive anime search
+- Multiple difficulty levels: Easy, Normal, Hard, Expert
 
 ## Commands
 
-### `/animewordle start`
+### `/animewordle start [difficulty]`
 Starts a new anime Wordle game in the current channel.
+- **difficulty** (optional): Choose from `easy`, `normal`, `hard`, or `expert`
+- Default difficulty is `normal`
 
 ### `/animewordle guess <anime_name>`
-Make a guess by providing an anime title. The bot will search AniList and compare properties.
+Make a guess by providing an anime title. The bot will search MyAnimeList and compare properties.
 
 **Example**: `/animewordle guess Attack on Titan`
 
 ### `/animewordle hint`
 Get a random hint about the target anime (ephemeral message).
+**Note**: Using hints adds +2 to your guess count as a penalty.
 
 **Possible hints**:
 - One random genre
@@ -45,9 +49,30 @@ Get a random hint about the target anime (ephemeral message).
 ### `/animewordle giveup`
 Reveal the answer and end the current game.
 
+## Difficulty Levels
+
+### Easy 🟢
+- Focuses on extremely popular and acclaimed anime
+- Higher chance of well-known titles (85-100 score range)
+
+### Normal 🟡 (Default)
+- Balanced mix of popular and good anime
+- Moderate difficulty with variety of score ranges
+
+### Hard 🟠
+- Emphasizes good but lesser-known anime
+- Lower chance of extremely popular titles
+
+### Expert 🔴
+- Focuses on obscure and unknown anime
+- Highest chance of difficult-to-guess titles
+- Very challenging for anime enthusiasts
+
 ## Data Source
-Uses AniList GraphQL API (https://graphql.anilist.co) for anime data:
-- No authentication required for basic queries
+Uses Jikan API v4 (https://api.jikan.moe/v4) for MyAnimeList data:
+- No authentication required
+- Rate limited to respect API guidelines
+- Comprehensive anime database with detailed metadata
 - Rate limit: Reasonable for Discord bot usage
 - Comprehensive anime database with detailed metadata
 

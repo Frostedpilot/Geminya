@@ -2,9 +2,11 @@ import discord
 import aiohttp
 import random
 import asyncio
+import time
+import re
 from discord.ext import commands
 from discord import app_commands
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 
 from cogs.base_command import BaseCommand
 from services.container import ServiceContainer
@@ -14,45 +16,134 @@ class AnimeData:
     """Data structure for anime information."""
     
     def __init__(self, data: Dict[str, Any]):
-        self.id = data.get('id')
-        self.title = self._extract_title(data.get('title', {}))
-        self.synonyms = data.get('synonyms', [])
-        self.start_date = data.get('startDate', {})
-        self.year = self._extract_year(self.start_date)
-        self.score = data.get('averageScore', 0) or 0
+        self.id = data.get('mal_id')
+        self.title = self._extract_title(data)
+        self.synonyms = self._extract_synonyms(data)
+        self.year = self._extract_year(data)
+        self.score = data.get('score', 0) or 0  # Keep native MAL 1-10 scale
         self.episodes = data.get('episodes', 0) or 0
-        self.genres = [genre for genre in data.get('genres', [])]
-        self.studios = self._extract_studios(data.get('studios', {}).get('nodes', []))
-        self.source = data.get('source', 'UNKNOWN')
-        self.format = data.get('format', 'UNKNOWN')
-        self.cover_image = self._extract_cover_image(data.get('coverImage', {}))
+        self.genres = self._extract_genres(data.get('genres', []))
+        self.studios = self._extract_studios(data.get('studios', []))
+        self.source = self._extract_source(data.get('source', 'Unknown'))
+        self.format = self._extract_format(data.get('type', 'Unknown'))
+        self.season = self._extract_season(data)
+        self.themes = self._extract_themes(data.get('themes', []))
+        self.cover_image = self._extract_cover_image(data.get('images', {}))
     
-    def _extract_title(self, title_data: Dict) -> str:
-        """Extract the best available title."""
-        if isinstance(title_data, dict):
-            return (title_data.get('english') or 
-                   title_data.get('romaji') or 
-                   title_data.get('native') or 
-                   'Unknown')
+    def _extract_title(self, data: Dict) -> str:
+        """Extract the best available title from Jikan data."""
+        # Jikan provides title as a string or nested object
+        title_data = data.get('title', '')
+        if isinstance(title_data, str):
+            return title_data or 'Unknown'
+        
+        # Handle titles object if it exists
+        titles = data.get('titles', [])
+        if titles:
+            # Prefer English title, then Default, then any available
+            for title_obj in titles:
+                if title_obj.get('type') == 'English':
+                    return title_obj.get('title', 'Unknown')
+            for title_obj in titles:
+                if title_obj.get('type') == 'Default':
+                    return title_obj.get('title', 'Unknown')
+            return titles[0].get('title', 'Unknown')
+        
         return str(title_data) if title_data else 'Unknown'
     
-    def _extract_year(self, start_date: Dict) -> int:
-        """Extract year from start date."""
-        if isinstance(start_date, dict):
-            return start_date.get('year', 0) or 0
-        return 0
+    def _extract_synonyms(self, data: Dict) -> List[str]:
+        """Extract synonyms and alternative titles from Jikan data."""
+        synonyms = []
+        
+        # Add title_synonyms if available
+        if 'title_synonyms' in data and data['title_synonyms']:
+            synonyms.extend(data['title_synonyms'])
+        
+        # Add titles from titles array
+        titles = data.get('titles', [])
+        for title_obj in titles:
+            title = title_obj.get('title', '').strip()
+            if title and title not in synonyms:
+                synonyms.append(title)
+        
+        # Add title_english and title_japanese if available
+        if data.get('title_english') and data['title_english'] not in synonyms:
+            synonyms.append(data['title_english'])
+        if data.get('title_japanese') and data['title_japanese'] not in synonyms:
+            synonyms.append(data['title_japanese'])
+        
+        return synonyms
+    
+    def _extract_year(self, data: Dict) -> int:
+        """Extract year from Jikan aired data."""
+        aired = data.get('aired', {})
+        if isinstance(aired, dict):
+            from_date = aired.get('from', '')
+            if from_date:
+                try:
+                    # Parse date string like "2013-04-07T00:00:00+00:00"
+                    return int(from_date[:4])
+                except (ValueError, TypeError):
+                    pass
+        
+        # Fallback to year field if available
+        year = data.get('year', 0)
+        return year if year else 0
+    
+    def _extract_genres(self, genres_data: List) -> List[str]:
+        """Extract genre names from Jikan data."""
+        if not genres_data:
+            return ['Unknown']
+        return [genre.get('name', 'Unknown') for genre in genres_data if genre.get('name')]
     
     def _extract_studios(self, studios_data: List) -> List[str]:
-        """Extract studio names."""
+        """Extract studio names from Jikan data."""
         if not studios_data:
             return ['Unknown']
         return [studio.get('name', 'Unknown') for studio in studios_data if studio.get('name')]
     
-    def _extract_cover_image(self, cover_data: Dict) -> Optional[str]:
-        """Extract cover image URL."""
-        if not cover_data:
+    def _extract_source(self, source: str) -> str:
+        """Extract source from Jikan data without extensive mapping."""
+        return source if source else 'Unknown'
+    
+    def _extract_format(self, format_type: str) -> str:
+        """Extract format from Jikan data without mapping."""
+        return format_type if format_type else 'Unknown'
+    
+    def _extract_season(self, data: Dict) -> str:
+        """Extract season from Jikan data."""
+        # Jikan provides season separately from year
+        season = data.get('season', '').title() if data.get('season') else ''
+        
+        if season:
+            return season
+        else:
+            return 'Unknown'
+    
+    def _extract_themes(self, themes_data: List) -> List[str]:
+        """Extract theme names from Jikan data."""
+        if not themes_data:
+            return ['Unknown']
+        themes = [theme.get('name', 'Unknown') for theme in themes_data if theme.get('name')]
+        return themes if themes else ['Unknown']
+    
+    def _extract_cover_image(self, images_data: Dict) -> Optional[str]:
+        """Extract cover image URL from Jikan data."""
+        if not images_data:
             return None
-        return cover_data.get('large') or cover_data.get('medium')
+        
+        # Jikan images structure: {"jpg": {"image_url": "...", "large_image_url": "..."}}
+        jpg_images = images_data.get('jpg', {})
+        if jpg_images:
+            return (jpg_images.get('large_image_url') or 
+                   jpg_images.get('image_url'))
+        
+        webp_images = images_data.get('webp', {})
+        if webp_images:
+            return (webp_images.get('large_image_url') or 
+                   webp_images.get('image_url'))
+        
+        return None
     
     def get_all_titles(self) -> List[str]:
         """Get all possible titles including synonyms for matching, filtered for English/Latin characters only."""
@@ -147,11 +238,11 @@ class AnimeWordle:
         
         # Score comparison
         if guess.score == self.target.score:
-            comparison['score'] = f"{guess.score}/100 ✅"
+            comparison['score'] = f"{guess.score}/10 ✅"
         elif guess.score < self.target.score:
-            comparison['score'] = f"{guess.score}/100 ⬆️"
+            comparison['score'] = f"{guess.score}/10 ⬆️"
         else:
-            comparison['score'] = f"{guess.score}/100 ⬇️"
+            comparison['score'] = f"{guess.score}/10 ⬇️"
         
         # Episodes comparison
         if guess.episodes == self.target.episodes:
@@ -197,6 +288,24 @@ class AnimeWordle:
         # Format comparison
         comparison['format'] = f"{guess.format} {'✅' if guess.format == self.target.format else '❌'}"
         
+        # Season comparison
+        comparison['season'] = f"{guess.season} {'✅' if guess.season == self.target.season else '❌'}"
+        
+        # Themes comparison - show individual matches
+        guess_themes = set(guess.themes)
+        target_themes = set(self.target.themes)
+        if guess_themes == target_themes:
+            comparison['themes'] = f"{', '.join(sorted(guess.themes))} ✅"
+        else:
+            # Show individual theme matches
+            theme_matches = []
+            for theme in guess.themes:
+                if theme in target_themes:
+                    theme_matches.append(f"{theme} ✅")
+                else:
+                    theme_matches.append(f"{theme} ❌")
+            comparison['themes'] = ', '.join(theme_matches) if theme_matches else '❌'
+        
         return comparison
 
 
@@ -204,362 +313,368 @@ class AnimeWordleCog(BaseCommand):
     def __init__(self, bot: commands.Bot, services: ServiceContainer):
         super().__init__(bot, services)
         self.games: Dict[int, AnimeWordle] = {}  # channel_id -> game
-        self.anilist_url = "https://graphql.anilist.co"
+        self.jikan_base_url = "https://api.jikan.moe/v4"
         self.page_cache: Dict[str, int] = {}  # Cache for max page results
+        self.rate_limit_delay = 1.0  # Jikan has rate limits, add delay between requests
+        self.autocomplete_cache: Dict[str, Tuple[List[Dict[str, str]], float]] = {}  # Cache for autocomplete results
+        self.autocomplete_cache_timeout = 300  # 5 minutes cache timeout
+        self.last_autocomplete_time = 0
     
-    async def _query_anilist(self, query: str, variables: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
-        """Make a GraphQL query to AniList API."""
+    async def _query_jikan(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """Make a REST API call to Jikan API with rate limiting."""
         try:
+            # Add rate limiting delay to respect Jikan's limits
+            await asyncio.sleep(self.rate_limit_delay)
+            
+            url = f"{self.jikan_base_url}{endpoint}"
+            
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.anilist_url,
-                    json={'query': query, 'variables': variables or {}},
-                    timeout=aiohttp.ClientTimeout(total=10)
+                async with session.get(
+                    url,
+                    params=params or {},
+                    timeout=aiohttp.ClientTimeout(total=15)
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        return data.get('data')
+                        return data
+                    elif response.status == 429:  # Rate limited
+                        self.logger.warning("Jikan API rate limit hit, waiting longer")
+                        await asyncio.sleep(3.0)
+                        return None
                     else:
-                        self.logger.warning(f"AniList API returned status {response.status}")
+                        self.logger.warning(f"Jikan API returned status {response.status}")
                         return None
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            self.logger.error(f"Error querying AniList API: {e}")
+            self.logger.error(f"Error querying Jikan API: {e}")
+            return None
+
+    async def _query_jikan_autocomplete(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """Make a REST API call to Jikan API with lighter rate limiting for autocomplete."""
+        try:
+            current_time = time.time()
+            
+            # Light rate limiting for autocomplete - only allow one request per 0.1 seconds
+            time_since_last = current_time - self.last_autocomplete_time
+            if time_since_last < 0.1:
+                await asyncio.sleep(0.1 - time_since_last)
+            
+            self.last_autocomplete_time = time.time()
+            
+            url = f"{self.jikan_base_url}{endpoint}"
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    url,
+                    params=params or {},
+                    timeout=aiohttp.ClientTimeout(total=2)  # Very short timeout for autocomplete
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data
+                    elif response.status == 400:
+                        # Log the specific error for 400 responses
+                        response_text = await response.text()
+                        query = params.get('q', 'None') if params else 'None'
+                        self.logger.warning(f"Jikan API 400 error for query '{query}': {response_text}")
+                        return None
+                    elif response.status == 429:  # Rate limited
+                        self.logger.warning("Jikan API rate limit hit during autocomplete")
+                        return None
+                    else:
+                        self.logger.warning(f"Jikan API returned status {response.status} during autocomplete")
+                        return None
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            query = params.get('q', 'None') if params else 'None'
+            self.logger.error(f"Error querying Jikan API for autocomplete (query: '{query}'): {e}")
             return None
     
-    async def _find_max_page_binary_search(self, min_score: int, max_score: int, sort_method: str) -> int:
-        """Find the maximum page number using binary search to locate the boundary between content and empty pages."""
+    async def _get_max_page_from_jikan(self, sort_method: str) -> int:
+        """Get the maximum page number from Jikan API pagination info."""
         # Create cache key
-        cache_key = f"{min_score}-{max_score}-{sort_method}"
+        cache_key = f"general-{sort_method}"
         
         # Check if result is already cached
         if cache_key in self.page_cache:
             cached_result = self.page_cache[cache_key]
-            self.logger.info(f"Using cached max page: {cached_result} for range {min_score}-{max_score}")
+            self.logger.info(f"Using cached max page: {cached_result} for sort method {sort_method}")
             return cached_result
         
         try:
-            # Start with a reasonable upper bound for binary search
-            left, right = 1, 1000
-            max_page_found = 1
+            # Query first page to get pagination info
+            params = {
+                'page': 1,
+                'limit': 25,  # Jikan default limit
+                'order_by': sort_method,
+                'sort': 'desc'
+            }
             
-            # Binary search to find the last page with content
-            while left <= right:
-                mid = (left + right) // 2
-                
-                # Check if this page has content
-                query = """
-                query ($page: Int, $minScore: Int, $maxScore: Int, $sort: [MediaSort]) {
-                    Page(page: $page, perPage: 50) {
-                        media(type: ANIME, sort: $sort, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
-                            id
-                        }
-                    }
-                }
-                """
-                
-                variables = {
-                    'page': mid,
-                    'minScore': min_score,
-                    'maxScore': max_score,
-                    'sort': [sort_method]
-                }
-                
-                data = await self._query_anilist(query, variables)
-                has_content = data and data.get('Page', {}).get('media') and len(data['Page']['media']) > 0
-                
-                if has_content:
-                    max_page_found = mid
-                    left = mid + 1  # Search for a higher page
-                else:
-                    right = mid - 1  # Search for a lower page
+            data = await self._query_jikan('/anime', params)
             
-            # Cache the result
-            self.page_cache[cache_key] = max_page_found
-            self.logger.info(f"Binary search found and cached max page: {max_page_found} for range {min_score}-{max_score}")
-            return max_page_found
+            if data and data.get('pagination'):
+                # Use last_visible_page from Jikan's pagination response
+                max_page = data['pagination'].get('last_visible_page', 1)
+                
+                # Cache the result
+                self.page_cache[cache_key] = max_page
+                self.logger.info(f"Jikan API returned max page: {max_page} for sort method {sort_method}")
+                return max_page
+            else:
+                self.logger.warning(f"No pagination data found for sort method {sort_method}")
+                return 1
             
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            self.logger.error(f"Error in binary search for max page: {e}")
+        except Exception as e:
+            self.logger.error(f"Error getting max page from Jikan API: {e}")
             return 1  # Fallback to page 1
 
-    def _get_difficulty_weights(self, difficulty: str) -> Dict[str, int]:
-        """Get score weights based on difficulty level from config."""
+    def _get_selection_config(self, difficulty: str) -> Tuple[str, Dict[str, int]]:
+        """Get selection method and ranges based on difficulty level from config."""
         try:
             # Get config settings - now access anime_wordle directly as a dict
             anime_config = self.services.config.anime_wordle
-            difficulty_weights = anime_config.get('difficulty_weights', {})
             
-            # Get difficulty-specific weights from config
-            if isinstance(difficulty_weights, dict) and difficulty in difficulty_weights:
-                weights = difficulty_weights[difficulty]
-                self.logger.info(f"Successfully loaded {difficulty} difficulty weights: {len(weights)} score ranges")
-                return weights
+            # Get selection method for this difficulty
+            selection_methods = anime_config.get('selection_method', {})
+            selection_method = selection_methods.get(difficulty, 'score')  # Default to score
             
-            # Fallback to legacy score_weights if difficulty not found
-            self.logger.warning(f"Difficulty '{difficulty}' not found in config, falling back to legacy weights")
-            legacy_weights = anime_config.get('score_weights', {
-                '80-100': 15, '60-79': 15, '50-59': 2, '40-49': 1, '0-39': 1
-            })
-            return legacy_weights
+            # Get selection ranges for this method and difficulty
+            selection_ranges = anime_config.get('selection_ranges', {})
+            method_ranges = selection_ranges.get(selection_method, {})
+            difficulty_ranges = method_ranges.get(difficulty, {})
+            
+            if difficulty_ranges:
+                self.logger.info(f"Using {selection_method} selection for {difficulty} difficulty: {len(difficulty_ranges)} ranges")
+                return selection_method, difficulty_ranges
+            
+            # Fallback to hard-coded defaults if config not found
+            self.logger.warning(f"Selection config not found for {difficulty}, using fallback defaults")
+            fallback_weights = {
+                '8.0-10': 15, '6.0-7.9': 15, '5.0-5.9': 2, '4.0-4.9': 1, '0-3.9': 1
+            }
+            return 'score', fallback_weights
             
         except (AttributeError, KeyError, TypeError) as e:
-            self.logger.error(f"Error reading difficulty weights from config: {e}")
-            # Hard fallback to updated default normal weights to match your config style
+            self.logger.error(f"Error reading selection config: {e}")
+            # Hard fallback to default score-based selection
             fallback_weights = {
-                '80-100': 15, '60-79': 15, '50-59': 2, '40-49': 1, '0-39': 1
+                '8.0-10': 15, '6.0-7.9': 15, '5.0-5.9': 2, '4.0-4.9': 1, '0-3.9': 1
             }
-            self.logger.info(f"Using hard fallback weights: {len(fallback_weights)} score ranges")
-            return fallback_weights
+            self.logger.info(f"Using hard fallback score weights: {len(fallback_weights)} ranges")
+            return 'score', fallback_weights
 
     async def _get_random_anime(self, difficulty: str = "normal") -> Optional[AnimeData]:
-        """Get a random anime for the game using weighted selection based on score ranges and difficulty."""
+        """Get a random anime for the game using weighted selection based on selection ranges and difficulty."""
         try:
             # Get config settings - now access anime_wordle directly as a dict
             anime_config = self.services.config.anime_wordle
             
-            # Use difficulty-specific weights instead of config weights
-            score_weights = self._get_difficulty_weights(difficulty)
-            sort_method = anime_config.get('sort_method', 'POPULARITY_DESC')
+            # Get selection method and ranges for this difficulty
+            selection_method, selection_ranges = self._get_selection_config(difficulty)
+            sort_method = anime_config.get('sort_method', 'popularity')
             
-            # Create weighted list of score ranges
+            # Create weighted list of ranges
             weighted_ranges = []
-            for score_range, weight in score_weights.items():
-                min_score, max_score = map(int, score_range.split('-'))
-                weighted_ranges.extend([(min_score, max_score)] * weight)
+            for range_str, weight in selection_ranges.items():
+                min_val, max_val = map(float, range_str.split('-'))
+                weighted_ranges.extend([(min_val, max_val)] * weight)
             
-            # Randomly select a score range based on weights
+            # Randomly select a range based on weights
             selected_range = random.choice(weighted_ranges)
-            min_score, max_score = selected_range
+            min_val, max_val = selected_range
             
-            # Find the true maximum page using binary search
-            max_pages = await self._find_max_page_binary_search(min_score, max_score, sort_method)
-            if max_pages == 1:
-                # If only 1 page found, try a broader range
-                self.logger.warning(f"Only 1 page found in score range {min_score}-{max_score}, expanding range")
-                min_score = max(0, min_score - 20)
-                max_score = min(100, max_score + 20)
-                max_pages = await self._find_max_page_binary_search(min_score, max_score, sort_method)
-            
-            self.logger.info(f"Selected score range: {min_score}-{max_score}, True max pages: {max_pages}")
-            
-            # Query anime within the selected score range with configurable sorting
-            query = """
-            query ($page: Int, $minScore: Int, $maxScore: Int, $sort: [MediaSort]) {
-                Page(page: $page, perPage: 50) {
-                    media(type: ANIME, sort: $sort, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
-                        id
-                        title {
-                            english
-                            romaji
-                            native
-                        }
-                        synonyms
-                        startDate {
-                            year
-                        }
-                        averageScore
-                        episodes
-                        genres  
-                        studios(isMain: true) {
-                            nodes {
-                                name
-                            }
-                        }
-                        source
-                        format
-                        coverImage {
-                            large
-                            medium
-                        }
-                    }
+            # Build API parameters based on selection method
+            if selection_method == 'score':
+                self.logger.info(f"Using score selection: {min_val}-{max_val}")
+                # For score-based selection, we need to use sort by score
+                api_params = {
+                    'min_score': min_val,
+                    'max_score': max_val,
+                    'order_by': 'score'
                 }
-            }
-            """
-            
-            # Try once with a random page within the true range
-            random_page = random.randint(1, max_pages)
-            variables = {
-                'page': random_page,
-                'minScore': min_score,
-                'maxScore': max_score,
-                'sort': [sort_method]
-            }
-            
-            data = await self._query_anilist(query, variables)
-            if data and data.get('Page', {}).get('media'):
-                anime_list = data['Page']['media']
-                if anime_list:
-                    # Randomly select one anime from the page
-                    selected_anime = random.choice(anime_list)
-                    self.logger.info(f"Selected anime: {selected_anime.get('title', {}).get('english', 'Unknown')} (Score: {selected_anime.get('averageScore', 'N/A')})")
-                    return AnimeData(selected_anime)
-            
-            # If no results on the selected page, fall back to page 1
-            self.logger.warning(f"No anime found on page {random_page}, trying page 1")
-            variables['page'] = 1
-            data = await self._query_anilist(query, variables)
-            if data and data.get('Page', {}).get('media'):
-                anime_list = data['Page']['media']
-                if anime_list:
-                    selected_anime = random.choice(anime_list)
-                    self.logger.info(f"Fallback selected anime: {selected_anime.get('title', {}).get('english', 'Unknown')} (Score: {selected_anime.get('averageScore', 'N/A')})")
-                    return AnimeData(selected_anime)
-            
-            # Final fallback - get any popular anime with configurable sorting
-            self.logger.warning("Falling back to general popular anime selection")
-            fallback_query = """
-            query ($page: Int, $sort: [MediaSort]) {
-                Page(page: $page, perPage: 1) {
-                    media(type: ANIME, sort: $sort, episodes_greater: 0) {
-                        id
-                        title {
-                            english
-                            romaji
-                            native
-                        }
-                        synonyms
-                        startDate {
-                            year
-                        }
-                        averageScore
-                        episodes
-                        genres  
-                        studios(isMain: true) {
-                            nodes {
-                                name
-                            }
-                        }
-                        source
-                        format
-                        coverImage {
-                            large
-                            medium
-                        }
-                    }
+            elif selection_method == 'popularity':
+                self.logger.info(f"Using popularity selection: rank {int(min_val)}-{int(max_val)}")
+                # For popularity-based selection, we need to calculate page range
+                # Jikan shows 25 anime per page, so rank 1-25 = page 1, rank 26-50 = page 2, etc.
+                start_page = max(1, int(min_val) // 25)
+                end_page = max(start_page, int(max_val) // 25)
+                
+                # Select a random page within the calculated range
+                random_page = random.randint(start_page, end_page)
+                api_params = {
+                    'page': random_page,
+                    'order_by': 'popularity'
                 }
-            }
-            """
+            else:
+                # Fallback to popularity-based selection
+                self.logger.warning(f"Unknown selection method '{selection_method}', falling back to popularity")
+                api_params = {
+                    'page': random.randint(1, 10),
+                    'order_by': 'popularity'
+                }
             
-            random_page = random.randint(1, 100)  # Use smaller range for fallback
-            data = await self._query_anilist(fallback_query, {
-                'page': random_page,
-                'sort': [sort_method]
+            # Add common parameters
+            api_params.update({
+                'limit': 25
             })
-            if data and data.get('Page', {}).get('media'):
-                return AnimeData(data['Page']['media'][0])
             
-            return None
+            # Query anime using Jikan API
+            data = await self._query_jikan('/anime', api_params)
+            if data and data.get('data'):
+                anime_list = data['data']
+                if anime_list:
+                    # Filter results based on selection method if needed
+                    if selection_method == 'popularity':
+                        # For popularity selection, filter by actual rank within range
+                        filtered_anime = []
+                        for anime in anime_list:
+                            popularity = anime.get('popularity')
+                            if popularity and min_val <= popularity <= max_val:
+                                filtered_anime.append(anime)
+                        
+                        if filtered_anime:
+                            anime_list = filtered_anime
+                    
+                    # Randomly select one anime from the filtered list
+                    selected_anime = random.choice(anime_list)
+                    
+                    # Log selection details
+                    anime_title = selected_anime.get('title', 'Unknown')
+                    anime_score = selected_anime.get('score', 'N/A')
+                    anime_popularity = selected_anime.get('popularity', 'N/A')
+                    
+                    self.logger.info(f"Selected anime: {anime_title} (Score: {anime_score}, Popularity: {anime_popularity})")
+                    return AnimeData(selected_anime)
             
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            self.logger.error(f"Error in weighted anime selection: {e}")
-            return None
-    
-    async def _search_anime(self, search_term: str) -> Optional[AnimeData]:
-        """Search for an anime by name."""
-        query = """
-        query ($search: String) {
-            Media(search: $search, type: ANIME) {
-                id
-                title {
-                    english
-                    romaji
-                    native
-                }
-                synonyms
-                startDate {
-                    year
-                }
-                averageScore
-                episodes
-                genres
-                studios(isMain: true) {
-                    nodes {
-                        name
-                    }
-                }
-                source
-                format
-                coverImage {
-                    large
-                    medium
-                }
+            # Fallback if no results found
+            self.logger.warning(f"No anime found with {selection_method} selection, trying fallback")
+            fallback_params = {
+                'page': random.randint(1, 10),
+                'limit': 25,
+                'order_by': sort_method
             }
-        }
-        """
-        
-        variables = {'search': search_term}
-        data = await self._query_anilist(query, variables)
-        
-        if data and data.get('Media'):
-            return AnimeData(data['Media'])
-        
-        return None
+            
+            data = await self._query_jikan('/anime', fallback_params)
+            if data and data.get('data') and data['data']:
+                selected_anime = random.choice(data['data'])
+                anime_title = selected_anime.get('title', 'Unknown')
+                self.logger.info(f"Fallback selected anime: {anime_title}")
+                return AnimeData(selected_anime)
+            
+            self.logger.error("Could not retrieve any anime from API")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error in anime selection: {e}")
+            return None
+
+    async def _search_anime(self, search_term: str) -> Optional[AnimeData]:
+        """Search for an anime by name using Jikan API."""
+        try:
+            params = {
+                'q': search_term,
+                'limit': 1
+            }
+            
+            data = await self._query_jikan('/anime', params)
+            
+            if data and data.get('data') and data['data']:
+                return AnimeData(data['data'][0])
+            
+            return None
+        except Exception as e:
+            self.logger.error(f"Error searching anime: {e}")
+            return None
     
-    async def _search_multiple_anime(self, search_term: str, limit: int = 25) -> List[Dict[str, str]]:
-        """Search for multiple anime and return choices with all titles/synonyms."""
-        if not search_term or len(search_term.strip()) < 2:
+    async def _search_multiple_anime_cached(self, search_term: str, limit: int = 25) -> List[Dict[str, str]]:
+        """Search for multiple anime with caching for autocomplete efficiency."""
+        if not search_term or len(search_term.strip()) < 2:  # Reduced to 2 characters for better UX
             return []
         
-        query = """
-        query ($search: String, $perPage: Int) {
-            Page(page: 1, perPage: $perPage) {
-                media(search: $search, type: ANIME) {
-                    id
-                    title {
-                        english
-                        romaji
-                        native
-                    }
-                    synonyms
-                    startDate {
-                        year
-                    }
-                }
+        # Create cache key
+        search_key = search_term.lower().strip()
+        
+        # Check cache first
+        current_time = time.time()
+        if search_key in self.autocomplete_cache:
+            cached_data, timestamp = self.autocomplete_cache[search_key]
+            if current_time - timestamp < self.autocomplete_cache_timeout:
+                # Return cached results
+                return cached_data[:limit]
+        
+        try:
+            # Clean and validate search term
+            clean_term = search_term.strip()
+            if len(clean_term) < 2:  # Match the earlier check
+                return []
+            
+            params = {
+                'q': clean_term,
+                'limit': min(limit, 25)  # Jikan has a limit of 25
             }
-        }
-        """
-        
-        variables = {'search': search_term.strip(), 'perPage': limit}
-        data = await self._query_anilist(query, variables)
-        
-        choices = []
-        if data and data.get('Page', {}).get('media'):
-            for anime in data['Page']['media']:
-                anime_data = AnimeData(anime)
-                
-                # Get all possible titles for this anime (already filtered for Latin characters)
-                all_titles = anime_data.get_all_titles()
-                
-                # Filter titles that contain the search term (case-insensitive)
-                search_lower = search_term.lower().strip()
-                matching_titles = [
-                    title for title in all_titles 
-                    if search_lower in title.lower()
-                ]
-                
-                # If no direct matches in filtered titles, skip this anime
-                # (don't include non-Latin titles even as fallback)
-                if not matching_titles:
-                    continue
-                
-                # Add each matching title as a choice
-                for title in matching_titles[:3]:  # Limit to 3 titles per anime to avoid clutter
-                    if len(choices) < 25:  # Discord limit
-                        # Create display name with year for clarity
-                        display_name = f"{title}"
-                        if anime_data.year:
-                            display_name += f" ({anime_data.year})"
-                        
-                        # Truncate if too long (Discord choice name limit is 100 chars)
-                        if len(display_name) > 100:
-                            display_name = display_name[:97] + "..."
-                        
-                        choices.append({
-                            'name': display_name,
-                            'value': title
-                        })
-        
-        return choices
+            
+            # Use the autocomplete-specific query method
+            data = await self._query_jikan_autocomplete('/anime', params)
+            
+            if not data:  # API returned None (could be 400, 429, or other error)
+                return []
+            
+            choices = []
+            if data.get('data'):
+                for anime in data['data']:
+                    anime_data = AnimeData(anime)
+                    
+                    # Get all possible titles for this anime (already filtered for Latin characters)
+                    all_titles = anime_data.get_all_titles()
+                    
+                    # Filter titles that contain the search term (case-insensitive)
+                    search_lower = clean_term.lower()
+                    matching_titles = [
+                        title for title in all_titles 
+                        if search_lower in title.lower()
+                    ]
+                    
+                    # If no direct matches in filtered titles, include the main title anyway
+                    # since Jikan's search already filtered relevant results
+                    if not matching_titles and anime_data.title:
+                        matching_titles = [anime_data.title]
+                    
+                    # Add each matching title as a choice
+                    for title in matching_titles[:3]:  # Limit to 3 titles per anime to avoid clutter
+                        if len(choices) < 25:  # Discord limit
+                            # Create display name with year for clarity
+                            display_name = f"{title}"
+                            if anime_data.year:
+                                display_name += f" ({anime_data.year})"
+                            
+                            # Truncate display name if too long (Discord choice name limit is 100 chars)
+                            if len(display_name) > 100:
+                                display_name = display_name[:97] + "..."
+                            
+                            # Truncate value if too long (Discord choice value limit is also 100 chars)
+                            choice_value = title
+                            if len(choice_value) > 100:
+                                choice_value = choice_value[:100]
+                            
+                            choices.append({
+                                'name': display_name,
+                                'value': choice_value
+                            })
+            
+            # Cache the results
+            self.autocomplete_cache[search_key] = (choices, current_time)
+            
+            # Clean old cache entries (keep cache size reasonable)
+            if len(self.autocomplete_cache) > 100:
+                # Remove oldest entries
+                old_keys = sorted(self.autocomplete_cache.keys(), 
+                                key=lambda k: self.autocomplete_cache[k][1])[:50]
+                for key in old_keys:
+                    del self.autocomplete_cache[key]
+            
+            return choices[:limit]
+            
+        except Exception as e:
+            self.logger.error(f"Error in cached multiple anime search for '{search_term}': {e}")
+            return []
     
     async def anime_autocomplete(
         self,
@@ -569,14 +684,29 @@ class AnimeWordleCog(BaseCommand):
         """Autocomplete function for anime names."""
         # interaction parameter is required by Discord.py but not used
         del interaction  # Suppress unused argument warning
+        
+        # Return empty list for very short queries to avoid unnecessary API calls
+        if not current or len(current.strip()) < 2:
+            return []
+        
         try:
-            choices_data = await self._search_multiple_anime(current, limit=20)
+            # Use asyncio.wait_for to ensure we don't exceed Discord's autocomplete timeout
+            choices_data = await asyncio.wait_for(
+                self._search_multiple_anime_cached(current, limit=20),
+                timeout=2.0  # 2 second max timeout
+            )
             return [
                 app_commands.Choice(name=choice['name'], value=choice['value'])
                 for choice in choices_data
             ]
+        except asyncio.TimeoutError:
+            self.logger.warning(f"Autocomplete timeout for query: '{current}'")
+            return []
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             self.logger.error(f"Error in anime autocomplete: {e}")
+            return []
+        except Exception as e:
+            self.logger.error(f"Unexpected error in autocomplete: {e}")
             return []
     
     def _create_guess_embed(self, game: AnimeWordle, guess: AnimeData, comparison: Dict[str, str]) -> discord.Embed:
@@ -611,7 +741,8 @@ class AnimeWordleCog(BaseCommand):
             f"**Score:** {comparison['score']}\n"
             f"**Episodes:** {comparison['episodes']}\n"
             f"**Source:** {comparison['source']}\n"
-            f"**Format:** {comparison['format']}"
+            f"**Format:** {comparison['format']}\n"
+            f"**Season:** {comparison['season']}"
         )
         
         embed.add_field(
@@ -631,6 +762,13 @@ class AnimeWordleCog(BaseCommand):
         embed.add_field(
             name="🏢 Studio",
             value=comparison['studio'],
+            inline=False
+        )
+        
+        # Add themes comparison separately to handle longer text
+        embed.add_field(
+            name="🎨 Themes",
+            value=comparison['themes'],
             inline=False
         )
         
@@ -676,12 +814,14 @@ class AnimeWordleCog(BaseCommand):
         target_info = (
             f"**Title:** {game.target.title}\n"
             f"**Year:** {game.target.year}\n"
-            f"**Score:** {game.target.score}/100\n"
+            f"**Score:** {game.target.score}/10\n"
             f"**Episodes:** {game.target.episodes}\n"
             f"**Genres:** {', '.join(game.target.genres)}\n"
             f"**Studio:** {', '.join(game.target.studios)}\n"
             f"**Source:** {game.target.source}\n"
-            f"**Format:** {game.target.format}"
+            f"**Format:** {game.target.format}\n"
+            f"**Season:** {game.target.season}\n"
+            f"**Themes:** {', '.join(game.target.themes)}"
         )
         
         embed.add_field(
@@ -746,11 +886,14 @@ class AnimeWordleCog(BaseCommand):
     
     async def _start_game(self, interaction: discord.Interaction, channel_id: int, difficulty: str = "normal"):
         """Start a new anime wordle game with specified difficulty."""
+        # Defer immediately to prevent timeout
+        await interaction.response.defer(thinking=True)
+        
         # Check if there's already an active game in this channel
         if channel_id in self.games:
             existing_game = self.games[channel_id]
             if not existing_game.is_complete:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "❌ There's already an active game in this channel! Finish the current game or use `/animewordle giveup` to end it.",
                     ephemeral=True
                 )
@@ -758,8 +901,6 @@ class AnimeWordleCog(BaseCommand):
             else:
                 # Clean up completed game before starting new one
                 del self.games[channel_id]
-        
-        await interaction.response.defer(thinking=True)
         
         try:
             target_anime = await self._get_random_anime(difficulty)
@@ -788,7 +929,8 @@ class AnimeWordleCog(BaseCommand):
                     f"Use `/animewordle guess <anime_name>` to make a guess.\n\n"
                     f"**Properties to match:**\n"
                     f"• Title, Year, Score, Episodes\n"
-                    f"• Genres, Studio, Source, Format"
+                    f"• Genres, Studio, Source, Format\n"
+                    f"• Season, Themes"
                 ),
                 color=0x02A9FF
             )
