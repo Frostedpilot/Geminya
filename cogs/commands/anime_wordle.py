@@ -249,7 +249,7 @@ class AnimeWordleCog(BaseCommand):
                 query = """
                 query ($page: Int, $minScore: Int, $maxScore: Int, $sort: [MediaSort]) {
                     Page(page: $page, perPage: 50) {
-                        media(type: ANIME, sort: $sort, isAdult: false, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
+                        media(type: ANIME, sort: $sort, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
                             id
                         }
                     }
@@ -317,7 +317,7 @@ class AnimeWordleCog(BaseCommand):
             query = """
             query ($page: Int, $minScore: Int, $maxScore: Int, $sort: [MediaSort]) {
                 Page(page: $page, perPage: 50) {
-                    media(type: ANIME, sort: $sort, isAdult: false, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
+                    media(type: ANIME, sort: $sort, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
                         id
                         title {
                             english
@@ -381,7 +381,7 @@ class AnimeWordleCog(BaseCommand):
             fallback_query = """
             query ($page: Int, $sort: [MediaSort]) {
                 Page(page: $page, perPage: 1) {
-                    media(type: ANIME, sort: $sort, isAdult: false, episodes_greater: 0) {
+                    media(type: ANIME, sort: $sort, episodes_greater: 0) {
                         id
                         title {
                             english
@@ -429,7 +429,7 @@ class AnimeWordleCog(BaseCommand):
         """Search for an anime by name."""
         query = """
         query ($search: String) {
-            Media(search: $search, type: ANIME, isAdult: false) {
+            Media(search: $search, type: ANIME) {
                 id
                 title {
                     english
@@ -474,7 +474,7 @@ class AnimeWordleCog(BaseCommand):
         query = """
         query ($search: String, $perPage: Int) {
             Page(page: 1, perPage: $perPage) {
-                media(search: $search, type: ANIME, isAdult: false) {
+                media(search: $search, type: ANIME) {
                     id
                     title {
                         english
@@ -595,15 +595,15 @@ class AnimeWordleCog(BaseCommand):
             inline=False
         )
         
-        # Add legend
-        legend = (
-            "**Legend:**\n"
-            "✅ = Correct/Match\n"
-            "⬆️ = Target is higher\n"
-            "⬇️ = Target is lower\n"
-            "❌ = Incorrect/No match"
-        )
-        embed.add_field(name="ℹ️ Legend", value=legend, inline=False)
+        # # Add legend
+        # legend = (
+        #     "**Legend:**\n"
+        #     "✅ = Correct/Match\n"
+        #     "⬆️ = Target is higher\n"
+        #     "⬇️ = Target is lower\n"
+        #     "❌ = Incorrect/No match"
+        # )
+        # embed.add_field(name="ℹ️ Legend", value=legend, inline=False)
         
         return embed
     
