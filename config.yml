@@ -21,3 +21,22 @@ active_servers:
   []
   # - "1393258849867272325"
   # - "700261922259599420"
+
+# Anime Wordle Configuration
+anime_wordle:
+  # Weighted random selection based on score ranges
+  # Higher weights mean more likely to be selected
+  # Scores are out of 100 (AniList format)
+  score_weights:
+    90-100: 5    # Masterpieces (very high weight)
+    80-89: 15    # Great anime (highest weight)
+    70-79: 10     # Good anime (high weight)
+    60-69: 5     # Decent anime (medium weight)
+    50-59: 2     # Below average (low weight)
+    40-49: 1     # Poor anime (very low weight)
+    30-39: 1     # Bad anime (minimal weight)
+    0-29: 1      # Very bad anime (minimal weight)
+  
+  # Maximum number of pages to search through (each page = 50 anime)
+  # Higher values = more anime variety but slower startup
+  max_search_pages: 200

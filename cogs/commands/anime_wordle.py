@@ -199,46 +199,120 @@ class AnimeWordleCog(BaseCommand):
             return None
     
     async def _get_random_anime(self) -> Optional[AnimeData]:
-        """Get a random popular anime for the game."""
-        query = """
-        query ($page: Int) {
-            Page(page: $page, perPage: 1) {
-                media(type: ANIME, sort: POPULARITY_DESC, isAdult: false, episodes_greater: 0) {
-                    id
-                    title {
-                        english
-                        romaji
-                        native
-                    }
-                    synonyms
-                    startDate {
-                        year
-                    }
-                    averageScore
-                    episodes
-                    genres
-                    studios {
-                        nodes {
-                            name
+        """Get a random anime for the game using weighted selection based on score ranges."""
+        try:
+            # Get score weights from config
+            anime_config = getattr(self.services.config, 'anime_wordle', {})
+            score_weights = anime_config.get('score_weights', {
+                '90-100': 5, '80-89': 10, '70-79': 8, '60-69': 6,
+                '50-59': 3, '40-49': 2, '30-39': 1, '0-29': 1
+            })
+            max_pages = anime_config.get('max_search_pages', 200)
+            
+            # Create weighted list of score ranges
+            weighted_ranges = []
+            for score_range, weight in score_weights.items():
+                min_score, max_score = map(int, score_range.split('-'))
+                weighted_ranges.extend([(min_score, max_score)] * weight)
+            
+            # Randomly select a score range based on weights
+            selected_range = random.choice(weighted_ranges)
+            min_score, max_score = selected_range
+            
+            # Query anime within the selected score range
+            query = """
+            query ($page: Int, $minScore: Int, $maxScore: Int) {
+                Page(page: $page, perPage: 50) {
+                    media(type: ANIME, sort: POPULARITY_DESC, isAdult: false, episodes_greater: 0, averageScore_greater: $minScore, averageScore_lesser: $maxScore) {
+                        id
+                        title {
+                            english
+                            romaji
+                            native
                         }
+                        synonyms
+                        startDate {
+                            year
+                        }
+                        averageScore
+                        episodes
+                        genres  
+                        studios(isMain: true) {
+                            nodes {
+                                name
+                            }
+                        }
+                        source
+                        format
                     }
-                    source
-                    format
                 }
             }
-        }
-        """
-        
-        # Get a random page from the top 500 anime
-        random_page = random.randint(1, 500)
-        variables = {'page': random_page}
-        
-        data = await self._query_anilist(query, variables)
-        if data and data.get('Page', {}).get('media'):
-            anime_data = data['Page']['media'][0]
-            return AnimeData(anime_data)
-        
-        return None
+            """
+            
+            # Try to get anime from random pages within the score range
+            max_attempts = 10
+            for attempt in range(max_attempts):
+                random_page = random.randint(1, max_pages)
+                variables = {
+                    'page': random_page,
+                    'minScore': min_score,
+                    'maxScore': max_score
+                }
+                
+                data = await self._query_anilist(query, variables)
+                if data and data.get('Page', {}).get('media'):
+                    anime_list = data['Page']['media']
+                    if anime_list:
+                        # Randomly select one anime from the page
+                        selected_anime = random.choice(anime_list)
+                        return AnimeData(selected_anime)
+                
+                # If no results, try a broader range or different page
+                if attempt > 5:
+                    # Fallback to a broader score range
+                    min_score = max(0, min_score - 10)
+                    max_score = min(100, max_score + 10)
+            
+            # Final fallback - get any popular anime
+            fallback_query = """
+            query ($page: Int) {
+                Page(page: $page, perPage: 1) {
+                    media(type: ANIME, sort: POPULARITY_DESC, isAdult: false, episodes_greater: 0) {
+                        id
+                        title {
+                            english
+                            romaji
+                            native
+                        }
+                        synonyms
+                        startDate {
+                            year
+                        }
+                        averageScore
+                        episodes
+                        genres  
+                        studios(isMain: true) {
+                            nodes {
+                                name
+                            }
+                        }
+                        source
+                        format
+                    }
+                }
+            }
+            """
+            
+            random_page = random.randint(1, 500)
+            data = await self._query_anilist(fallback_query, {'page': random_page})
+            if data and data.get('Page', {}).get('media'):
+                return AnimeData(data['Page']['media'][0])
+            
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error in weighted anime selection: {e}")
+            return None
     
     async def _search_anime(self, search_term: str) -> Optional[AnimeData]:
         """Search for an anime by name."""
@@ -258,7 +332,7 @@ class AnimeWordleCog(BaseCommand):
                 averageScore
                 episodes
                 genres
-                studios {
+                studios(isMain: true) {
                     nodes {
                         name
                     }
