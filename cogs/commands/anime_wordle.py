@@ -655,6 +655,7 @@ class AnimeWordleCog(BaseCommand):
         app_commands.Choice(name="Start New Game", value="start"),
         app_commands.Choice(name="Make a Guess", value="guess"),
         app_commands.Choice(name="Get Hint", value="hint"),
+        app_commands.Choice(name="Game Status", value="status"),
         app_commands.Choice(name="Give Up", value="giveup")
     ])
     @app_commands.autocomplete(guess=anime_autocomplete)
@@ -680,11 +681,26 @@ class AnimeWordleCog(BaseCommand):
             await self._make_guess(interaction, channel_id, guess or "")
         elif action.value == "hint":
             await self._give_hint(interaction, channel_id)
+        elif action.value == "status":
+            await self._show_status(interaction, channel_id)
         elif action.value == "giveup":
             await self._give_up(interaction, channel_id)
     
     async def _start_game(self, interaction: discord.Interaction, channel_id: int):
         """Start a new anime wordle game."""
+        # Check if there's already an active game in this channel
+        if channel_id in self.games:
+            existing_game = self.games[channel_id]
+            if not existing_game.is_complete:
+                await interaction.response.send_message(
+                    "❌ There's already an active game in this channel! Finish the current game or use `/animewordle giveup` to end it.",
+                    ephemeral=True
+                )
+                return
+            else:
+                # Clean up completed game before starting new one
+                del self.games[channel_id]
+        
         await interaction.response.defer(thinking=True)
         
         try:
@@ -734,22 +750,17 @@ class AnimeWordleCog(BaseCommand):
     
     async def _make_guess(self, interaction: discord.Interaction, channel_id: int, guess: str):
         """Make a guess in the anime wordle game."""
+        # Check if there's an active game
         if channel_id not in self.games:
             await interaction.response.send_message(
-                "❌ No active game in this channel! Use `/animewordle start` to begin.",
-                ephemeral=True
-            )
-            return
-        
-        if not guess:
-            await interaction.response.send_message(
-                "❌ Please provide an anime name to guess!",
+                "❌ No active game in this channel! Use `/animewordle start` to begin a new game.",
                 ephemeral=True
             )
             return
         
         game = self.games[channel_id]
         
+        # Check if game is already completed
         if game.is_complete:
             await interaction.response.send_message(
                 "❌ This game is already completed! Start a new game with `/animewordle start`.",
@@ -757,16 +768,33 @@ class AnimeWordleCog(BaseCommand):
             )
             return
         
+        # Validate guess input
+        if not guess or not guess.strip():
+            await interaction.response.send_message(
+                "❌ Please provide an anime name to guess! Use the autocomplete feature to help find the correct title.",
+                ephemeral=True
+            )
+            return
+        
         await interaction.response.defer(thinking=True)
         
         try:
-            anime_data = await self._search_anime(guess)
+            anime_data = await self._search_anime(guess.strip())
             if not anime_data:
                 await interaction.followup.send(
-                    f"❌ Couldn't find anime: '{guess}'. Please check the spelling and try again!",
+                    f"❌ Couldn't find anime: '{guess}'. Please check the spelling and try again, or use the autocomplete feature for suggestions!",
                     ephemeral=True
                 )
                 return
+            
+            # Check if this anime has already been guessed
+            for previous_guess in game.guesses:
+                if previous_guess.id == anime_data.id:
+                    await interaction.followup.send(
+                        f"❌ You've already guessed '{anime_data.title}'! Try a different anime.",
+                        ephemeral=True
+                    )
+                    return
             
             game.add_guess(anime_data)
             comparison = game.get_comparison(anime_data)
@@ -794,18 +822,20 @@ class AnimeWordleCog(BaseCommand):
     
     async def _give_hint(self, interaction: discord.Interaction, channel_id: int):
         """Display the anime poster image and add 10 guess penalty."""
+        # Check if there's an active game
         if channel_id not in self.games:
             await interaction.response.send_message(
-                "❌ No active game in this channel! Use `/animewordle start` to begin.",
+                "❌ No active game in this channel! Use `/animewordle start` to begin a new game.",
                 ephemeral=False
             )
             return
         
         game = self.games[channel_id]
         
+        # Check if game is already completed
         if game.is_complete:
             await interaction.response.send_message(
-                "❌ This game is already completed!",
+                "❌ This game is already completed! Start a new game with `/animewordle start`.",
                 ephemeral=False
             )
             return
@@ -814,7 +844,15 @@ class AnimeWordleCog(BaseCommand):
         total_guesses = len(game.guesses) + game.hint_penalty
         if total_guesses + 10 > game.max_guesses:
             await interaction.response.send_message(
-                f"❌ Cannot use hint! Adding 10 guesses would exceed the maximum limit of {game.max_guesses} guesses.",
+                f"❌ Cannot use hint! Adding 10 guesses would exceed the maximum limit of {game.max_guesses} guesses. Current total: {total_guesses}/{game.max_guesses}",
+                ephemeral=False
+            )
+            return
+        
+        # Check if there are any guesses made yet (optional: you might want hints only after some attempts)
+        if len(game.guesses) == 0:
+            await interaction.response.send_message(
+                "💡 **Hint available!** But consider making at least one guess first to get a feel for the game. Using a hint adds +10 to your guess count!",
                 ephemeral=False
             )
             return
@@ -843,18 +881,28 @@ class AnimeWordleCog(BaseCommand):
     
     async def _give_up(self, interaction: discord.Interaction, channel_id: int):
         """Give up the current game."""
+        # Check if there's an active game
         if channel_id not in self.games:
             await interaction.response.send_message(
-                "❌ No active game in this channel!",
+                "❌ No active game in this channel! Use `/animewordle start` to begin a new game.",
                 ephemeral=True
             )
             return
         
         game = self.games[channel_id]
         
+        # Check if game is already completed
         if game.is_complete:
             await interaction.response.send_message(
-                "❌ This game is already completed!",
+                "❌ This game is already completed! The results were already shown.",
+                ephemeral=True
+            )
+            return
+        
+        # Check if any guesses have been made
+        if len(game.guesses) == 0:
+            await interaction.response.send_message(
+                "❓ Are you sure you want to give up without making any guesses? Try at least one guess first!",
                 ephemeral=True
             )
             return
@@ -869,7 +917,71 @@ class AnimeWordleCog(BaseCommand):
         # Clean up
         del self.games[channel_id]
         
-        self.logger.info(f"User gave up anime wordle game in channel {channel_id}")
+        self.logger.info(f"User gave up anime wordle game in channel {channel_id} after {len(game.guesses)} guesses")
+    
+    async def _show_status(self, interaction: discord.Interaction, channel_id: int):
+        """Show the current game status."""
+        # Check if there's an active game
+        if channel_id not in self.games:
+            await interaction.response.send_message(
+                "❌ No active game in this channel! Use `/animewordle start` to begin a new game.",
+                ephemeral=True
+            )
+            return
+        
+        game = self.games[channel_id]
+        
+        # Check if game is already completed
+        if game.is_complete:
+            await interaction.response.send_message(
+                "❌ This game is already completed! The results were already shown. Use `/animewordle start` to begin a new game.",
+                ephemeral=True
+            )
+            return
+        
+        total_guesses = len(game.guesses) + game.hint_penalty
+        remaining_guesses = game.max_guesses - total_guesses
+        
+        embed = discord.Embed(
+            title="📊 Game Status",
+            color=0x02A9FF
+        )
+        
+        embed.add_field(
+            name="🎯 Progress",
+            value=(
+                f"**Guesses Made:** {len(game.guesses)}\n"
+                f"**Hint Penalty:** +{game.hint_penalty}\n"
+                f"**Total Used:** {total_guesses}/{game.max_guesses}\n"
+                f"**Remaining:** {remaining_guesses}"
+            ),
+            inline=False
+        )
+        
+        if len(game.guesses) > 0:
+            recent_guesses = game.guesses[-3:]  # Show last 3 guesses
+            guess_list = []
+            for i, guess in enumerate(recent_guesses):
+                guess_number = len(game.guesses) - len(recent_guesses) + i + 1
+                guess_list.append(f"{guess_number}. {guess.title}")
+            
+            embed.add_field(
+                name="🕰️ Recent Guesses",
+                value="\n".join(guess_list),
+                inline=False
+            )
+        
+        embed.add_field(
+            name="ℹ️ Available Actions",
+            value=(
+                "• `/animewordle guess <anime>` - Make a guess\n"
+                "• `/animewordle hint` - Get poster hint (+10 penalty)\n"
+                "• `/animewordle giveup` - End the game"
+            ),
+            inline=False
+        )
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
