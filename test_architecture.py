@@ -106,12 +106,14 @@ class ArchitectureTest:
         from config import Config
         from services.state_manager import StateManager
         from services.ai_service import AIService
+        from services.mcp_client import MCPClientManager
         from utils.logging import setup_logging
 
         config = Config.create()
         logger_manager = setup_logging(config)
         state_manager = StateManager(config, logger_manager.get_logger("test"))
-        ai_service = AIService(config, state_manager, logger_manager.get_ai_logger())
+        mcp_client = MCPClientManager(config, state_manager, logger_manager.get_logger("test"))
+        ai_service = AIService(config, state_manager, logger_manager.get_ai_logger(), mcp_client)
 
         await state_manager.initialize()
         await ai_service.initialize()

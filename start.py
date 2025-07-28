@@ -72,6 +72,9 @@ async def run_bot(config, test_mode=False):
     from services.container import ServiceContainer
     from base import GeminyaBot
 
+    services = None
+    bot = None
+    
     try:
         # Create service container
         services = ServiceContainer(config)
@@ -105,7 +108,7 @@ async def run_bot(config, test_mode=False):
             logger.info("Test mode completed successfully")
             return
 
-        # Start the bot
+        # Start the bot - the original working method
         async with bot:
             await bot.start(config.discord_token)
 
@@ -114,6 +117,19 @@ async def run_bot(config, test_mode=False):
     except Exception as e:
         print(f"💥 Fatal error: {e}")
         raise
+    finally:
+        # Cleanup
+        if bot:
+            try:
+                if not bot.is_closed():
+                    await bot.close()
+            except Exception:
+                pass
+        if services:
+            try:
+                await services.cleanup_all()
+            except Exception:
+                pass
 
 
 def main():
@@ -190,10 +206,14 @@ def main():
     # Start the bot
     try:
         print("🚀 Starting bot...")
+        print("Press Ctrl+C to stop the bot")
         asyncio.run(run_bot(config, test_mode=args.test))
     except KeyboardInterrupt:
         print("\n🛑 Shutdown requested by user")
         sys.exit(0)
+    except SystemExit:
+        # Re-raise SystemExit to allow clean shutdown
+        raise
     except Exception as e:
         print(f"💥 Fatal error: {e}")
         if args.verbose:
