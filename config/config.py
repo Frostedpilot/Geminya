@@ -31,6 +31,7 @@ class Config:
     # Core API credentials
     discord_token: str
     openrouter_api_key: str
+    saucenao_api_key: str
 
     # Bot behavior settings
     language: str = "en"
@@ -118,6 +119,7 @@ class Config:
         """
         discord_token = os.getenv("DISCORD_BOT_TOKEN", "")
         openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+        saucenao_key = os.getenv("SAUCENAO_API_KEY", "")
 
         if not discord_token:
             raise ConfigError("DISCORD_BOT_TOKEN environment variable is required")
@@ -133,6 +135,7 @@ class Config:
         return cls(
             discord_token=discord_token,
             openrouter_api_key=openrouter_key,
+            saucenao_api_key=saucenao_key,
             language=os.getenv("LANGUAGE", "en"),
             max_history_length=int(os.getenv("MAX_HISTORY_LENGTH", "7")),
             debug=os.getenv("DEBUG", "false").lower() == "true",
@@ -179,6 +182,7 @@ class Config:
 
         discord_token = secrets.get("DISCORD_BOT_TOKEN")
         openrouter_key = secrets.get("OPENROUTER_API_KEY")
+        saucenao_key = secrets.get("SAUCENAO_API_KEY")
 
         if not discord_token:
             raise ConfigError("DISCORD_BOT_TOKEN not found in secrets file")
@@ -208,6 +212,7 @@ class Config:
         return cls(
             discord_token=discord_token,
             openrouter_api_key=openrouter_key,
+            saucenao_api_key=saucenao_key,
             language=config_data.get("language", "en"),
             max_history_length=config_data.get("max_history_length", 7),
             debug=config_data.get("debug", False),
