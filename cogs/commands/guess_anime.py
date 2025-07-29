@@ -282,17 +282,27 @@ class GuessAnimeCog(BaseCommand):
             del self.games[channel_id]
     
     def _get_difficulty_filters(self, difficulty: str) -> Dict[str, Any]:
-        """Get Shikimori query filters based on difficulty level."""
-        if difficulty == "easy":
-            return {"score": 8, "censored": True}
-        elif difficulty == "normal":
-            return {"score": 7, "censored": True}
-        elif difficulty == "hard":
-            return {"score": 6, "censored": True}
-        elif difficulty == "expert":
-            return {"score": 5, "censored": True}
+        """Get Shikimori query filters based on difficulty level using config ranges."""
+        # Get config from services (same as anidle)
+        anime_config = self.services.config.anidle
+        score_ranges = anime_config.get('selection_ranges', {}).get('score', {})
+        
+        # Define score ranges based on anidle config (use min/max approach)
+        if difficulty == "easy" and difficulty in score_ranges:
+            # Easy: High-rated anime (7-10)
+            return {"score": 8}  # Minimum score filter
+        elif difficulty == "normal" and difficulty in score_ranges:
+            # Normal: Mid to high-rated anime (5-10)
+            return {"score": 6}  # Minimum score filter
+        elif difficulty == "hard" and difficulty in score_ranges:
+            # Hard: Lower to mid-rated anime (3-8, but we'll use min filter)
+            return {"score": 4}  # Minimum score filter
+        elif difficulty == "expert" and difficulty in score_ranges:
+            # Expert: All anime including low-rated (no score filter for maximum variety)
+            return {}  # No score filter - includes all ratings
         else:
-            return {"score": 7, "censored": True}  # Default to normal
+            # Default to normal range if config not found
+            return {"score": 6}
     
     async def _fetch_random_anime(self, difficulty: str) -> Optional[ShikimoriAnimeData]:
         """Fetch a random anime from Shikimori with sufficient screenshots."""
@@ -300,8 +310,8 @@ class GuessAnimeCog(BaseCommand):
         
         # GraphQL query to get anime with screenshots
         query = """
-        query GetAnimeWithScreenshots($limit: PositiveInt!, $score: Int, $censored: Boolean) {
-          animes(limit: $limit, score: $score, censored: $censored, order: random) {
+        query GetAnimeWithScreenshots($limit: PositiveInt!, $score: Int) {
+          animes(limit: $limit, score: $score, order: random) {
             id
             malId
             name
@@ -331,9 +341,11 @@ class GuessAnimeCog(BaseCommand):
         for attempt in range(5):
             variables = {
                 "limit": 20,  # Get multiple anime to choose from
-                "score": filters["score"],
-                "censored": filters["censored"]
             }
+            
+            # Only add score filter if it exists
+            if "score" in filters:
+                variables["score"] = filters["score"]
             
             data = await self._query_shikimori(query, variables)
             if not data or not data.get('animes'):
@@ -377,6 +389,115 @@ class GuessAnimeCog(BaseCommand):
         
         return None
     
+    async def _search_anime_autocomplete(self, search_term: str, limit: int = 25) -> List[Tuple[str, str]]:
+        """Search for anime names for autocomplete. Returns list of (display_name, value) tuples."""
+        if not search_term or len(search_term.strip()) < 2:
+            return []
+        
+        query = """
+        query SearchAnimeAutocomplete($search: String!, $limit: PositiveInt!) {
+          animes(search: $search, limit: $limit) {
+            name
+            english
+            russian
+            synonyms
+            airedOn { year }
+          }
+        }
+        """
+        
+        variables = {
+            "search": search_term.strip(),
+            "limit": limit
+        }
+        
+        try:
+            data = await self._query_shikimori(query, variables)
+            if not data or not data.get('animes'):
+                return []
+            
+            results = []
+            for anime_data in data['animes']:
+                name = anime_data.get('name', '')
+                english = anime_data.get('english', '')
+                russian = anime_data.get('russian', '')
+                synonyms = anime_data.get('synonyms', [])
+                year = anime_data.get('airedOn', {}).get('year', '')
+                
+                # Primary name (usually Japanese romanized)
+                if name:
+                    display_name = f"{name}"
+                    if year:
+                        display_name += f" ({year})"
+                    results.append((display_name, name))
+                
+                # English name if different and available
+                if english and english != name and len(results) < limit:
+                    display_name = f"{english}"
+                    if year:
+                        display_name += f" ({year})"
+                    results.append((display_name, english))
+                
+                # Russian name if different and available
+                if russian and russian != name and russian != english and len(results) < limit:
+                    display_name = f"{russian}"
+                    if year:
+                        display_name += f" ({year})"
+                    results.append((display_name, russian))
+                
+                # Add synonyms (alternative titles)
+                if synonyms and len(results) < limit:
+                    for synonym in synonyms:
+                        if synonym and synonym.strip() and len(results) < limit:
+                            # Check if synonym is different from existing titles
+                            if synonym not in [name, english, russian]:
+                                display_name = f"{synonym}"
+                                if year:
+                                    display_name += f" ({year})"
+                                results.append((display_name, synonym))
+                
+                # Stop if we have enough results
+                if len(results) >= limit:
+                    break
+            
+            return results[:limit]
+            
+        except Exception as e:
+            self.logger.error(f"Error in anime autocomplete search: {e}")
+            return []
+    
+    async def anime_name_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        """Autocomplete function for anime names."""
+        if not current or len(current.strip()) < 2:
+            return []
+        
+        try:
+            # Search for anime names
+            results = await self._search_anime_autocomplete(current, limit=25)
+            
+            # Convert to app_commands.Choice objects
+            choices = []
+            for display_name, value in results:
+                # Ensure display name fits Discord's limit (100 characters)
+                if len(display_name) > 100:
+                    display_name = display_name[:97] + "..."
+                
+                # Ensure value fits Discord's limit (100 characters)  
+                if len(value) > 100:
+                    value = value[:100]
+                
+                choices.append(app_commands.Choice(name=display_name, value=value))
+            
+            return choices[:25]  # Discord limit is 25 choices
+            
+        except Exception as e:
+            self.logger.error(f"Error in anime name autocomplete: {e}")
+            return []
+    
     @app_commands.command(name="guessanime", description="Start a visual anime guessing game!")
     @app_commands.describe(
         action="Choose an action: start, guess, giveup",
@@ -396,6 +517,7 @@ class GuessAnimeCog(BaseCommand):
             app_commands.Choice(name="expert", value="expert")
         ]
     )
+    @app_commands.autocomplete(anime_name=anime_name_autocomplete)
     async def guessanime(
         self, 
         interaction: discord.Interaction, 
@@ -497,7 +619,7 @@ class GuessAnimeCog(BaseCommand):
             embed.set_footer(text="🎮 Good luck!")
             
             await interaction.edit_original_response(embed=embed)
-            self.logger.info(f"Started guess anime game in channel {channel_id}, target: {target_anime.name}")
+            self.logger.info(f"Started guess anime game in channel {channel_id}, target: {target_anime.name} (Score: {target_anime.score}/10, Difficulty: {difficulty})")
             
         except Exception as e:
             self.logger.error(f"Error starting guess anime game: {e}")
