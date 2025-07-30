@@ -1,4 +1,5 @@
 import asyncio
+import re
 import json
 import logging
 from typing import Optional, List, Dict
@@ -243,7 +244,11 @@ class MCPClientManager:
                 model=self.state_manager.get_model(server_id=server_id),
                 messages=messages,
                 tools=all_tools,
-                parallel_tool_calls=False,
+                parallel_tool_calls=True,
+            )
+
+            additional_tools = self.__deepseek_tool_patch(
+                response.choices[0].message.content
             )
 
             self.logger.debug(
@@ -264,13 +269,15 @@ class MCPClientManager:
                 }
             )
 
-            if content.tool_calls is not None:
+            if content.tool_calls is not None or additional_tools:
                 self.logger.debug(
                     f"Processing {len(content.tool_calls)} tool calls in iteration {iteration_count}"
                 )
 
                 # Execute all tool calls in this iteration
-                tool_results = await self._execute_tool_calls(content.tool_calls)
+                tool_results = await self._execute_tool_calls(
+                    content.tool_calls, additional_tools
+                )
 
                 # Add tool results to messages
                 for tool_result in tool_results:
@@ -313,7 +320,7 @@ class MCPClientManager:
         self.logger.info(f"Completed tool processing in {iteration_count} iterations")
         return result
 
-    async def _execute_tool_calls(self, tool_calls) -> List[dict]:
+    async def _execute_tool_calls(self, tool_calls, additional_tools) -> List[dict]:
         """Execute a list of tool calls and return their results as message objects."""
         tool_results = []
 
@@ -355,9 +362,65 @@ class MCPClientManager:
                 content_str = f"Error calling tool {original_tool_name}: {e}"
 
             # Create tool result message
+            # Handle both OpenAI tool calls (with .id) and DeepSeek patch tool calls (dict without id)
+            tool_call_id = getattr(tool_call, "id", f"regular_tool_{len(tool_results)}")
             tool_result = {
                 "role": "tool",
-                "tool_call_id": tool_call.id,
+                "tool_call_id": tool_call_id,
+                "name": tool_name,
+                "content": content_str,
+            }
+            tool_results.append(tool_result)
+
+        # Handle additional tools from DeepSeek patch
+        for tool_call in additional_tools:
+            tool_name = tool_call["function"]["name"]
+            tool_args = tool_call["function"]["arguments"]
+            # Ensure tool_args is a dict
+            if isinstance(tool_args, str):
+                try:
+                    tool_args = json.loads(tool_args)
+                except json.JSONDecodeError:
+                    tool_args = {}
+
+            # Parse server name and original tool name
+            if "__" in tool_name:
+                server_name, original_tool_name = tool_name.split("__", 1)
+            else:
+                # Fallback: try to find the tool in any server
+                server_name, original_tool_name = await self._find_tool_server(
+                    tool_name
+                )
+
+            self.logger.debug(
+                f"Calling tool {original_tool_name} on {server_name} with args {tool_args}"
+            )
+
+            try:
+                client = self.clients.get(server_name)
+                if not client or not client.is_connected:
+                    raise RuntimeError(f"Server {server_name} not available")
+
+                result = await client.call_tool(original_tool_name, tool_args)
+                content_str = self._extract_content_from_result(result)
+
+                # Log a snippet of the server response for debugging
+                response_snippet = self._format_response_snippet(content_str)
+                self.logger.debug(
+                    f"Tool {original_tool_name} on {server_name} returned: {response_snippet}"
+                )
+            except Exception as e:
+                self.logger.error(
+                    f"Error calling tool {original_tool_name} on {server_name}: {e}"
+                )
+                content_str = f"Error calling tool {original_tool_name}: {e}"
+
+            # Create tool result message
+            # For DeepSeek patch tools, generate a unique ID since they don't have one
+            tool_call_id = tool_call.get("id", f"deepseek_tool_{len(tool_results)}")
+            tool_result = {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
                 "name": tool_name,
                 "content": content_str,
             }
@@ -471,7 +534,7 @@ class MCPClientManager:
             model=self.state_manager.get_model(server_id=server_id),
             messages=messages,
             tools=available_tools,
-            parallel_tool_calls=False,
+            parallel_tool_calls=True,
         )
 
         self.logger.debug(
@@ -597,3 +660,51 @@ class MCPClientManager:
                     "blacklisted_tools": blacklist,
                 }
         return info
+
+    def __deepseek_tool_patch(self, content):
+        """
+        Patch for DeepSeek tool calls.
+        The pattern is:
+        \n<｜tool▁call▁begin｜>function<｜tool▁sep｜>func_name\njson\nargs\n
+        \n<｜tool▁call▁begin｜>function<｜tool▁sep｜> ...
+        Other normal texts can be mixed in between these calls.
+        """
+        if "<｜tool▁call▁begin｜>function<｜tool▁sep｜>" not in content:
+            self.logger.debug("No DeepSeek tool calls found in content, skipping patch")
+            return []
+        self.logger.debug("Patching DeepSeek tool calls in content")
+        patched_tools = []
+
+        # First, find all occurences of the DeepSeek tool call pattern
+        pattern = re.compile(
+            r"\n<｜tool▁call▁begin｜>function<｜tool▁sep｜>(.*?)\njson\n({.*?})\n",
+            re.DOTALL,
+        )
+
+        matches = pattern.findall(content)
+        if not matches:
+            self.logger.debug("No DeepSeek tool calls found in content, skipping patch")
+            return []
+        self.logger.debug(f"Found {len(matches)} DeepSeek tool calls in content")
+
+        for match in matches:
+            func_name, args_json = match
+            try:
+                args = json.loads(args_json)
+                patched_tools.append(
+                    {
+                        "function": {
+                            "name": func_name,
+                            "arguments": args,
+                        }
+                    }
+                )
+            except json.JSONDecodeError as e:
+                self.logger.error(f"Failed to parse DeepSeek tool args: {e}")
+                continue
+
+        if not patched_tools:
+            self.logger.debug("No valid DeepSeek tool calls found after patching")
+            return []
+        self.logger.debug(f"Patched {len(patched_tools)} DeepSeek tool calls")
+        return patched_tools

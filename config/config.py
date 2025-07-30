@@ -100,6 +100,10 @@ class Config:
                     "favourite_studio",
                 ],
             },
+            "sequential-thinking": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+            },
         }
     )
 
