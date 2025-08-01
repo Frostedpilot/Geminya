@@ -8,7 +8,7 @@ from utils.logging import setup_logging
 from services.state_manager import StateManager
 from services.ai_service import AIService
 from services.error_handler import ErrorHandler
-from services.mcp_client import MCPClientManager
+from services.mcp import MCPClientManager
 
 
 class ServiceContainer:

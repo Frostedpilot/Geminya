@@ -62,6 +62,7 @@ class Config:
             "DeepSeek Chimera": "tngtech/deepseek-r1t2-chimera:free",
             "DeepSeek R1 0528": "deepseek/deepseek-r1-0528:free",
             "Gemini 2.5 Flash": "google/gemini-2.5-flash",
+            "Qwen 3 235B A22B Instruct 2507": "qwen/qwen3-235b-a22b-2507",
         }
     )
 

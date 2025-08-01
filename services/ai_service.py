@@ -12,7 +12,7 @@ from openai import AsyncOpenAI
 
 from config import Config
 from services.state_manager import StateManager
-from services.mcp_client import MCPClientManager
+from services.mcp import MCPClientManager
 
 
 class AIService:
@@ -103,15 +103,19 @@ class AIService:
 
             response = await self.mcp_client.process_query(prompt, server_id)
 
-            if not response:
-                self.logger.warning("Empty response from MCP client")
+            if not response or not response.success:
+                self.logger.warning(
+                    f"MCP client returned error: {response.error if response else 'Empty response'}"
+                )
                 return "Nya! Something went wrong, please try again later."
 
             self.logger.info(
-                f"Generated MCP response for {message.author.name} ({len(response)} chars)"
+                f"Generated MCP response for {message.author.name} "
+                f"({len(response.content)} chars, {response.tool_calls_made} tool calls, "
+                f"{response.iterations} iterations, {response.execution_time:.2f}s)"
             )
 
-            return response.strip()
+            return response.content.strip()
 
         except Exception as e:
             self.logger.error(f"Error generating MCP AI response: {e}")
@@ -325,7 +329,7 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
 {lore_prompt}
 [Start a new group chat. Group members: {persona_name}, {', '.join(authors)}]
 {history_prompt}
-[Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly. Do not start with "From {persona_name}:" or similar. You have access to tools, so leverage them as much as possible. You can use more than one tool at a time, and you can iteratively call them up to {self.config.max_tool_iterations} times with consecutive messages before giving answer, so plan accordingly. Always start with the sequential_thinking tool.]
+[Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly. Do not start with "From {persona_name}:" or similar. You have access to tools, so leverage them as much as possible.]
 """.replace(
             "{{user}}", author_name
         )
