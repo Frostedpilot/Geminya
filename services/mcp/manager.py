@@ -240,6 +240,10 @@ class MCPClientManager:
 
             content = response.choices[0].message
 
+            self.logger.debug(
+                f"Received response from AI:\n{content.content}\nwith {len(content.tool_calls or [])} tool calls"
+            )
+
             # Handle tool calls
             tool_processing_result = await self._process_iteration_tools(
                 content,
@@ -443,6 +447,8 @@ class MCPClientManager:
         tool_name = tool_call.function.name
         tool_args = tool_call.function.arguments
 
+        self.logger.debug(f"Executing tool call: {tool_name} with args: {tool_args}")
+
         # Parse arguments if they're a string
         if isinstance(tool_args, str):
             try:
@@ -468,6 +474,13 @@ class MCPClientManager:
 
             result = await client.call_tool(original_tool_name, tool_args)
             result.tool_call_id = tool_call.id
+
+            self.logger.debug(
+                f"Tool {original_tool_name} executed successfully on {server_name}"
+            )
+            self.logger.debug(
+                f"Tool result:\n{result.content}\n(success: {result.success})"
+            )
 
             return result
 

@@ -32,6 +32,7 @@ class Config:
     discord_token: str
     openrouter_api_key: str
     saucenao_api_key: str
+    tavily_api_key: str
 
     # Bot behavior settings
     language: str = "en"
@@ -72,12 +73,12 @@ class Config:
     # MCP server folders
     mcp_server_instruction: Dict = field(
         default_factory=lambda: {
-            "duckduckgo": {
-                "command": "python",
-                "args": ["mcp_servers/duckduckgo.py"],
-                "env": None,
-                "blacklist": [],  # No tools blacklisted for duckduckgo
-            },
+            # "duckduckgo": {
+            #     "command": "python",
+            #     "args": ["mcp_servers/duckduckgo.py"],
+            #     "env": None,
+            #     "blacklist": [],  # No tools blacklisted for duckduckgo
+            # },
             "anilist": {
                 "command": "npx",
                 "args": ["-y", "anilist-mcp"],
@@ -105,12 +106,28 @@ class Config:
                 "command": "npx",
                 "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
             },
+            "tavily-remote-mcp": {
+                "command": "npx",
+                "args": [
+                    "-y",
+                    "mcp-remote",
+                    "https://mcp.tavily.com/mcp/",  # URL will be updated in __post_init__
+                ],
+                "env": {},
+            },
         }
     )
 
     def __post_init__(self):
         """Initialize reverse mapping for available models."""
         self.quick_models_reverse = {v: k for k, v in self.available_models.items()}
+
+        # Safely construct Tavily MCP URL if API key is available
+        if self.tavily_api_key:
+            tavily_url = (
+                f"https://mcp.tavily.com/mcp/?tavilyApiKey={self.tavily_api_key}"
+            )
+            self.mcp_server_instruction["tavily-remote-mcp"]["args"][2] = tavily_url
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -125,6 +142,7 @@ class Config:
         discord_token = os.getenv("DISCORD_BOT_TOKEN", "")
         openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
         saucenao_key = os.getenv("SAUCENAO_API_KEY", "")
+        tavily_key = os.getenv("TAVILY_API_KEY", "")
 
         if not discord_token:
             raise ConfigError("DISCORD_BOT_TOKEN environment variable is required")
@@ -141,6 +159,7 @@ class Config:
             discord_token=discord_token,
             openrouter_api_key=openrouter_key,
             saucenao_api_key=saucenao_key,
+            tavily_api_key=tavily_key,
             language=os.getenv("LANGUAGE", "en"),
             max_history_length=int(os.getenv("MAX_HISTORY_LENGTH", "7")),
             debug=os.getenv("DEBUG", "false").lower() == "true",
@@ -188,6 +207,7 @@ class Config:
         discord_token = secrets.get("DISCORD_BOT_TOKEN")
         openrouter_key = secrets.get("OPENROUTER_API_KEY")
         saucenao_key = secrets.get("SAUCENAO_API_KEY")
+        tavily_key = secrets.get("TAVILY_API_KEY", "")
 
         if not discord_token:
             raise ConfigError("DISCORD_BOT_TOKEN not found in secrets file")
@@ -218,6 +238,7 @@ class Config:
             discord_token=discord_token,
             openrouter_api_key=openrouter_key,
             saucenao_api_key=saucenao_key,
+            tavily_api_key=tavily_key,
             language=config_data.get("language", "en"),
             max_history_length=config_data.get("max_history_length", 7),
             debug=config_data.get("debug", False),
