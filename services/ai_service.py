@@ -329,7 +329,8 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
 {lore_prompt}
 [Start a new group chat. Group members: {persona_name}, {', '.join(authors)}]
 {history_prompt}
-[Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly. Do not start with "From {persona_name}:" or similar. You have access to tools, so leverage them as much as possible.]
+[Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly. Do not start with "From {persona_name}:" or similar.]
+[You have access to tools, so leverage them as much as possible. You can use more than one tool at a time, and you can iteratively call them up to {self.config.max_tool_iterations} times with consecutive messages before giving answer, so plan accordingly. For tasks you deemed as hard, start with the sequential-thinking tool.]
 """.replace(
             "{{user}}", author_name
         )

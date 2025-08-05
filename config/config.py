@@ -33,6 +33,8 @@ class Config:
     openrouter_api_key: str
     saucenao_api_key: str
     tavily_api_key: str
+    google_console_api_key: str
+    google_search_engine_id: str
 
     # Bot behavior settings
     language: str = "en"
@@ -115,6 +117,16 @@ class Config:
                 ],
                 "env": {},
             },
+            "google-search": {
+                "command": "node",
+                "args": [
+                    "C:\\python\\personal\\Geminya\\mcp_servers\\mcp-google-custom-search-server\\build\\index.js"
+                ],
+                "env": {
+                    "GOOGLE_API_KEY": "",  # Will be set in __post_init__
+                    "GOOGLE_SEARCH_ENGINE_ID": "",  # Will be set in __post_init__
+                },
+            },
         }
     )
 
@@ -127,7 +139,39 @@ class Config:
             tavily_url = (
                 f"https://mcp.tavily.com/mcp/?tavilyApiKey={self.tavily_api_key}"
             )
-            self.mcp_server_instruction["tavily-remote-mcp"]["args"][2] = tavily_url
+            self.mcp_server_instruction["tavily-remote-mcp"]["args"][-1] = tavily_url
+
+            assert (
+                self.mcp_server_instruction["tavily-remote-mcp"]["args"][-1]
+                != "https://mcp.tavily.com/mcp/"
+            )  # Ensure URL is not empty
+
+        else:
+            # If no API key, remove Tavily MCP from instructions
+            self.mcp_server_instruction.pop("tavily-remote-mcp", None)
+
+        # Set Google API keys in the MCP server instructions
+        if self.google_console_api_key and self.google_search_engine_id:
+            self.mcp_server_instruction["google-search"]["env"][
+                "GOOGLE_API_KEY"
+            ] = self.google_console_api_key
+            self.mcp_server_instruction["google-search"]["env"][
+                "GOOGLE_SEARCH_ENGINE_ID"
+            ] = self.google_search_engine_id
+
+            assert (
+                self.mcp_server_instruction["google-search"]["env"]["GOOGLE_API_KEY"]
+                != ""
+            )  # Ensure API key is not empty
+            assert (
+                self.mcp_server_instruction["google-search"]["env"][
+                    "GOOGLE_SEARCH_ENGINE_ID"
+                ]
+                != ""
+            )  # Ensure search engine ID is not empty
+        else:
+            # If no Google API keys, remove Google Search MCP from instructions
+            self.mcp_server_instruction.pop("google-search", None)
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -143,6 +187,8 @@ class Config:
         openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
         saucenao_key = os.getenv("SAUCENAO_API_KEY", "")
         tavily_key = os.getenv("TAVILY_API_KEY", "")
+        google_console_api_key = os.getenv("GOOGLE_CONSOLE_API_KEY", "")
+        google_search_engine_id = os.getenv("GOOGLE_SEARCH_ENGINE_ID", "")
 
         if not discord_token:
             raise ConfigError("DISCORD_BOT_TOKEN environment variable is required")
@@ -160,6 +206,8 @@ class Config:
             openrouter_api_key=openrouter_key,
             saucenao_api_key=saucenao_key,
             tavily_api_key=tavily_key,
+            google_console_api_key=google_console_api_key,
+            google_search_engine_id=google_search_engine_id,
             language=os.getenv("LANGUAGE", "en"),
             max_history_length=int(os.getenv("MAX_HISTORY_LENGTH", "7")),
             debug=os.getenv("DEBUG", "false").lower() == "true",
@@ -208,6 +256,8 @@ class Config:
         openrouter_key = secrets.get("OPENROUTER_API_KEY")
         saucenao_key = secrets.get("SAUCENAO_API_KEY")
         tavily_key = secrets.get("TAVILY_API_KEY", "")
+        google_console_api_key = secrets.get("GOOGLE_CONSOLE_API_KEY", "")
+        google_search_engine_id = secrets.get("GOOGLE_SEARCH_ENGINE_ID", "")
 
         if not discord_token:
             raise ConfigError("DISCORD_BOT_TOKEN not found in secrets file")
@@ -239,6 +289,8 @@ class Config:
             openrouter_api_key=openrouter_key,
             saucenao_api_key=saucenao_key,
             tavily_api_key=tavily_key,
+            google_console_api_key=google_console_api_key,
+            google_search_engine_id=google_search_engine_id,
             language=config_data.get("language", "en"),
             max_history_length=config_data.get("max_history_length", 7),
             debug=config_data.get("debug", False),

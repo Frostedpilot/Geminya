@@ -130,15 +130,8 @@ class MCPClientManager:
             if client.is_connected:
                 try:
                     tools = await client.get_available_tools()
-
-                    # Add server prefix to tool names to avoid conflicts
-                    for tool in tools:
-                        original_name = tool["function"]["name"]
-                        tool["function"]["name"] = f"{server_name}__{original_name}"
-                        tool["_original_name"] = original_name
-                        tool["_server_name"] = server_name
-                        all_tools.append(tool)
-
+                    processed_tools = self._process_server_tools(tools, server_name)
+                    all_tools.extend(processed_tools)
                 except Exception as e:
                     self.logger.error(f"Error getting tools from {server_name}: {e}")
 
@@ -146,6 +139,64 @@ class MCPClientManager:
             f"Retrieved {len(all_tools)} tools from {len(self.clients)} servers"
         )
         return all_tools
+
+    def _process_server_tools(
+        self, tools: List[Dict[str, Any]], server_name: str
+    ) -> List[Dict[str, Any]]:
+        """Process tools from a server, adding prefixes and metadata.
+
+        Args:
+            tools: List of tools from the server
+            server_name: Name of the server
+
+        Returns:
+            List of processed tools with server prefixes
+        """
+        processed_tools = []
+
+        for tool in tools:
+            # Create a deep copy to avoid modifying the original cached tool
+            tool_copy = self._create_tool_copy(tool)
+
+            # Store original name and apply server prefix
+            original_name = tool_copy["function"]["name"]
+
+            # Check if prefix is already applied to avoid duplication
+            if not original_name.startswith(f"{server_name}__"):
+                tool_copy["function"]["name"] = f"{server_name}__{original_name}"
+            else:
+                # If prefix already exists, use the tool as-is but log a warning
+                self.logger.warning(
+                    f"Tool {original_name} already has server prefix, using as-is"
+                )
+
+            tool_copy["_original_name"] = original_name
+            tool_copy["_server_name"] = server_name
+            processed_tools.append(tool_copy)
+
+        return processed_tools
+
+    def _create_tool_copy(self, tool: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a deep copy of a tool to avoid modifying cached versions.
+
+        Args:
+            tool: Original tool dictionary
+
+        Returns:
+            Deep copy of the tool
+        """
+        return {
+            "type": tool["type"],
+            "function": {
+                "name": tool["function"]["name"],
+                "description": tool["function"]["description"],
+                "parameters": (
+                    tool["function"]["parameters"].copy()
+                    if "parameters" in tool["function"]
+                    else {}
+                ),
+            },
+        }
 
     async def process_query(self, prompt: str, server_id: str) -> MCPResponse:
         """Process a query using all available MCP servers automatically.
@@ -459,11 +510,7 @@ class MCPClientManager:
             tool_args = {}
 
         # Parse server name and original tool name
-        if "__" in tool_name:
-            server_name, original_tool_name = tool_name.split("__", 1)
-        else:
-            # Fallback: try to find the tool in any server
-            server_name, original_tool_name = await self._find_tool_server(tool_name)
+        server_name, original_tool_name = await self._parse_tool_name(tool_name)
 
         self.logger.debug(f"Calling tool {original_tool_name} on {server_name}")
 
@@ -512,10 +559,7 @@ class MCPClientManager:
         tool_args = tool_call["function"]["arguments"]
 
         # Parse server name and original tool name
-        if "__" in tool_name:
-            server_name, original_tool_name = tool_name.split("__", 1)
-        else:
-            server_name, original_tool_name = await self._find_tool_server(tool_name)
+        server_name, original_tool_name = await self._parse_tool_name(tool_name)
 
         self.logger.debug(
             f"Calling DeepSeek tool {original_tool_name} on {server_name}"
@@ -635,6 +679,38 @@ class MCPClientManager:
 
         self.clients.clear()
         self.logger.info("All MCP clients disconnected")
+
+    async def _parse_tool_name(self, tool_name: str) -> tuple[str, str]:
+        """Parse a tool name to extract server name and original tool name.
+
+        Handles both single and double server prefixes to fix duplication issues.
+
+        Args:
+            tool_name: The full tool name (potentially with server prefix)
+
+        Returns:
+            Tuple of (server_name, original_tool_name)
+        """
+        if "__" not in tool_name:
+            # No prefix, try to find the tool in any server
+            return await self._find_tool_server(tool_name)
+
+        # Split on first occurrence of __
+        parts = tool_name.split("__", 1)
+        server_name = parts[0]
+        remaining_name = parts[1]
+
+        # Check if the remaining name also has the server prefix (double prefix case)
+        if remaining_name.startswith(f"{server_name}__"):
+            # Remove the duplicate prefix
+            original_tool_name = remaining_name[len(f"{server_name}__") :]
+            self.logger.warning(
+                f"Detected double prefix in tool name {tool_name}, using original name: {original_tool_name}"
+            )
+        else:
+            original_tool_name = remaining_name
+
+        return server_name, original_tool_name
 
     def list_connected_servers(self) -> List[str]:
         """Get list of connected server names.
