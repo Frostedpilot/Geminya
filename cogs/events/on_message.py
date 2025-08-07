@@ -152,7 +152,11 @@ class OnMessage(BaseEventHandler):
                 )
 
             # Get AI response
-            response = await self.ai_service.get_check_response(check_prompt, message)
+            response = await self.llm_manager.get_response(
+                message=check_prompt,
+                server_id=str(message.guild.id) if message.guild else "DM",
+                is_check=True,  # Indicate this is a check
+            )
 
             return "yes" in response.lower()
 
@@ -171,8 +175,11 @@ class OnMessage(BaseEventHandler):
 
         try:
             async with message.channel.typing():
-                # Generate response using AI service
-                response = await self.ai_service.get_response(message, server_id)
+                # Generate response using LLM Manager
+                response = await self.llm_manager.get_response(
+                    message=message,
+                    server_id=server_id,
+                )
 
                 if not response:
                     self.logger.warning(

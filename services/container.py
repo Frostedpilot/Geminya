@@ -6,7 +6,7 @@ from typing import Optional
 from config import Config
 from utils.logging import setup_logging
 from services.state_manager import StateManager
-from services.ai_service import AIService
+from services.llm import LLMManager
 from services.error_handler import ErrorHandler
 from services.mcp import MCPClientManager
 
@@ -35,11 +35,11 @@ class ServiceContainer:
             config, self.state_manager, self.logger_manager.get_mcp_logger()
         )
 
-        self.ai_service = AIService(
+        self.llm_manager = LLMManager(
             config,
             self.state_manager,
-            self.logger_manager.get_ai_logger(),
             self.mcp_client,
+            self.logger_manager.get_ai_logger(),
         )
 
         self.logger.info("Service container created")
@@ -50,7 +50,7 @@ class ServiceContainer:
 
         try:
             await self.state_manager.initialize()
-            await self.ai_service.initialize()
+            await self.llm_manager.initialize()
 
             # MCP servers will connect automatically when needed
             self.logger.info(
@@ -69,8 +69,8 @@ class ServiceContainer:
         self.logger.info("Cleaning up all services...")
 
         try:
-            if hasattr(self, "ai_service"):
-                await self.ai_service.cleanup()
+            if hasattr(self, "llm_manager"):
+                await self.llm_manager.cleanup()
             if hasattr(self, "mcp_client"):
                 await self.mcp_client.disconnect_all()
             if hasattr(self, "state_manager"):

@@ -14,7 +14,7 @@ class BaseEventHandler(commands.Cog):
         self.services = services
         self.config = services.config
         self.state_manager = services.state_manager
-        self.ai_service = services.ai_service
+        self.llm_manager = services.llm_manager
         self.logger = services.get_logger(self.__class__.__name__)
 
         self.logger.debug(f"Initialized {self.__class__.__name__}")
