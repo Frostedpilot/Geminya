@@ -11,6 +11,7 @@ class OnMessage(BaseEventHandler):
     def __init__(self, bot: commands.Bot, services: ServiceContainer):
         super().__init__(bot, services)
         self.message_logger = services.get_message_logger()
+        self.ai_service = services.get_ai_service()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -126,6 +127,7 @@ class OnMessage(BaseEventHandler):
 
         return False
 
+    # NOTE: Already disabled upstream, fix later!
     async def _check_if_should_respond(self, message: discord.Message) -> bool:
         """Use AI to check if bot should respond to a message mentioning its name.
 
@@ -152,13 +154,12 @@ class OnMessage(BaseEventHandler):
                 )
 
             # Get AI response
-            response = await self.llm_manager.get_response(
-                message=check_prompt,
-                server_id=str(message.guild.id) if message.guild else "DM",
-                is_check=True,  # Indicate this is a check
-            )
+            # response = await self.llm_manager.get_response(
+            #     message=check_prompt,
+            #     server_id=str(message.guild.id) if message.guild else "DM",
+            # )
 
-            return "yes" in response.lower()
+            # return "yes" in response.lower()
 
         except Exception as e:
             self.logger.error(f"Error in response check: {e}")
@@ -175,8 +176,8 @@ class OnMessage(BaseEventHandler):
 
         try:
             async with message.channel.typing():
-                # Generate response using LLM Manager
-                response = await self.llm_manager.get_response(
+                # Generate response using AI Service
+                response = await self.ai_service.get_response(
                     message=message,
                     server_id=server_id,
                 )

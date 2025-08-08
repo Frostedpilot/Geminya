@@ -7,7 +7,8 @@ import re
 import time
 from typing import Dict, List, Optional, Any
 
-from openai import AsyncOpenAI
+from services.llm.manager import LLMManager
+from services.llm.types import LLMRequest, LLMResponse
 
 from config import Config
 from services.state_manager import StateManager
@@ -28,21 +29,20 @@ class MCPClientManager:
     """Enhanced manager for multiple MCP clients with improved monitoring and error handling."""
 
     def __init__(
-        self, config: Config, state_manager: StateManager, logger: logging.Logger
+        self,
+        config: Config,
+        state_manager: StateManager,
+        llm_manager: LLMManager,
+        logger: logging.Logger,
     ):
         self.config = config
         self.state_manager = state_manager
+        self.llm_manager = llm_manager
         self.logger = logger
 
         # Client management
         self.clients: Dict[str, MCPClient] = {}
         self.registry = MCPServerRegistry(logger)
-
-        # OpenAI client for tool processing
-        self.openai = AsyncOpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=config.openrouter_api_key,
-        )
 
         # Load server configurations
         self._load_server_configs()
@@ -118,6 +118,7 @@ class MCPClientManager:
         except Exception as e:
             self.logger.warning(f"Failed to connect to {server_name}: {e}")
 
+    # TODO: Fix this to return List[mcp.types.Tool]
     async def get_all_available_tools(self) -> List[Dict[str, Any]]:
         """Get all available tools from all connected servers with server prefixes.
 
@@ -198,12 +199,16 @@ class MCPClientManager:
             },
         }
 
-    async def process_query(self, prompt: str, server_id: str) -> MCPResponse:
+    # TODO: Implement query processing logic that use provided model.
+    async def process_query(
+        self, prompt: str, server_id: str, model: str
+    ) -> MCPResponse:
         """Process a query using all available MCP servers automatically.
 
         Args:
             prompt: User query to process
             server_id: Server ID for model selection
+            model: Model to use for the query
 
         Returns:
             MCP response with processing details
@@ -289,15 +294,15 @@ class MCPClientManager:
                     servers_used,
                 )
 
-            content = response.choices[0].message
+            content = response.content
 
             self.logger.debug(
-                f"Received response from AI:\n{content.content}\nwith {len(content.tool_calls or [])} tool calls"
+                f"Received response from AI:\n{content}\nwith {len(response.tool_calls or [])} tool calls"
             )
 
             # Handle tool calls
             tool_processing_result = await self._process_iteration_tools(
-                content,
+                response,
                 messages,
                 total_tool_calls,
                 servers_used,
@@ -312,7 +317,7 @@ class MCPClientManager:
                 total_tool_calls = tool_processing_result["total_tool_calls"]
             else:
                 # No tool calls - final response
-                final_text.append(content.content)
+                final_text.append(response.content)
                 break
 
         return self._create_success_response(
@@ -324,14 +329,22 @@ class MCPClientManager:
         messages: List[Dict[str, Any]],
         all_tools: List[Dict[str, Any]],
         server_id: str,
-    ):
+    ) -> LLMResponse:
         """Get AI response with tools."""
-        return await self.openai.chat.completions.create(
-            model=self.state_manager.get_model(server_id=server_id),
+        if not self.llm_manager:
+            raise MCPError("LLM Manager not set - cannot get AI response")
+
+        # Convert messages and tools to LLM Request format
+        request = LLMRequest(
             messages=messages,
+            model=self.state_manager.get_model(server_id=server_id),
             tools=all_tools,
-            parallel_tool_calls=True,
+            temperature=0.7,
         )
+
+        # Use LLM Manager to get response
+        response = await self.llm_manager._generate_with_provider(request)
+        return response
 
     async def _process_iteration_tools(
         self,
@@ -391,17 +404,24 @@ class MCPClientManager:
                 )
 
                 # Get final response without tools
-                final_response = await self.openai.chat.completions.create(
+                if not self.llm_manager:
+                    raise MCPError("LLM Manager not set - cannot get final response")
+
+                final_messages = messages + [
+                    {
+                        "role": "user",
+                        "content": "Please provide a final response based on the information gathered.",
+                    }
+                ]
+
+                request = LLMRequest(
+                    messages=final_messages,
                     model=self.state_manager.get_model(server_id=server_id),
-                    messages=messages
-                    + [
-                        {
-                            "role": "user",
-                            "content": "Please provide a final response based on the information gathered.",
-                        }
-                    ],
+                    temperature=0.7,
                 )
-                return {"final_text": final_response.choices[0].message.content}
+
+                final_response = await self.llm_manager._generate_with_provider(request)
+                return {"final_text": final_response.content}
 
             return {"continue": True, "total_tool_calls": total_tool_calls}
 
@@ -490,13 +510,29 @@ class MCPClientManager:
         """Execute a single OpenAI format tool call.
 
         Args:
-            tool_call: OpenAI tool call object
+            tool_call: OpenAI tool call object or dictionary
 
         Returns:
             Tool execution result
         """
-        tool_name = tool_call.function.name
-        tool_args = tool_call.function.arguments
+        # Handle both object format and dictionary format
+        if hasattr(tool_call, "function"):
+            # OpenAI object format
+            tool_name = tool_call.function.name
+            tool_args = tool_call.function.arguments
+        elif isinstance(tool_call, dict) and "function" in tool_call:
+            # Dictionary format from LLM provider
+            tool_name = tool_call["function"]["name"]
+            tool_args = tool_call["function"]["arguments"]
+        else:
+            self.logger.error(f"Unsupported tool call format: {type(tool_call)}")
+            return ToolResult(
+                tool_call_id=getattr(
+                    tool_call, "id", str(tool_call.get("id", "unknown"))
+                ),
+                content="",
+                error="Unsupported tool call format",
+            )
 
         self.logger.debug(f"Executing tool call: {tool_name} with args: {tool_args}")
 
@@ -520,7 +556,14 @@ class MCPClientManager:
                 raise MCPServerError(f"Server {server_name} not available", server_name)
 
             result = await client.call_tool(original_tool_name, tool_args)
-            result.tool_call_id = tool_call.id
+
+            # Handle both object and dictionary formats for tool_call_id
+            if hasattr(tool_call, "id"):
+                result.tool_call_id = tool_call.id
+            elif isinstance(tool_call, dict) and "id" in tool_call:
+                result.tool_call_id = tool_call["id"]
+            else:
+                result.tool_call_id = "unknown"
 
             self.logger.debug(
                 f"Tool {original_tool_name} executed successfully on {server_name}"
@@ -536,8 +579,15 @@ class MCPClientManager:
                 f"Error calling tool {original_tool_name} on {server_name}: {e}"
             )
 
+            # Handle both object and dictionary formats for tool_call_id
+            tool_call_id = "unknown"
+            if hasattr(tool_call, "id"):
+                tool_call_id = tool_call.id
+            elif isinstance(tool_call, dict) and "id" in tool_call:
+                tool_call_id = tool_call["id"]
+
             return ToolResult(
-                tool_call_id=tool_call.id,
+                tool_call_id=tool_call_id,
                 name=tool_name,
                 content=f"Error calling tool {original_tool_name}: {e}",
                 success=False,

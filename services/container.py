@@ -7,6 +7,7 @@ from config import Config
 from utils.logging import setup_logging
 from services.state_manager import StateManager
 from services.llm import LLMManager
+from services.ai_service import AIService
 from services.error_handler import ErrorHandler
 from services.mcp import MCPClientManager
 
@@ -31,13 +32,24 @@ class ServiceContainer:
             config, self.logger_manager.get_logger("state")
         )
 
-        self.mcp_client = MCPClientManager(
-            config, self.state_manager, self.logger_manager.get_mcp_logger()
-        )
-
         self.llm_manager = LLMManager(
             config,
             self.state_manager,
+            self.logger_manager.get_ai_logger(),
+        )
+
+        self.mcp_client = MCPClientManager(
+            config,
+            self.state_manager,
+            self.llm_manager,
+            self.logger_manager.get_mcp_logger(),
+        )
+
+        # Create AI Service as the main orchestrator
+        self.ai_service = AIService(
+            config,
+            self.state_manager,
+            self.llm_manager,
             self.mcp_client,
             self.logger_manager.get_ai_logger(),
         )
@@ -99,3 +111,7 @@ class ServiceContainer:
     def get_error_logger(self) -> logging.Logger:
         """Get the error logger."""
         return self.logger_manager.get_error_logger()
+
+    def get_ai_service(self) -> AIService:
+        """Get the AI service."""
+        return self.ai_service

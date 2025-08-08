@@ -22,11 +22,11 @@ class OpenRouterProvider(LLMProvider):
     async def initialize(self) -> None:
         """Initialize the OpenRouter provider."""
         try:
-            api_key = self.config.get("api_key")
+            api_key = self.config.openrouter_api_key
             if not api_key:
                 raise ProviderError("openrouter", "API key not provided")
 
-            base_url = self.config.get("base_url", "https://openrouter.ai/api/v1")
+            base_url = "https://openrouter.ai/api/v1"
 
             self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
 
@@ -203,7 +203,13 @@ class OpenRouterProvider(LLMProvider):
 
     def _load_models(self) -> None:
         """Load available models from configuration."""
-        models_config = self.config.get("models", {})
+
+        # TODO: Maybe change the config to be provider specific?
+        models_config = (
+            self.config.available_models
+            if hasattr(self.config, "available_models")
+            else {}
+        )
 
         for display_name, model_id in models_config.items():
             self.available_models[model_id] = ModelInfo(
@@ -217,6 +223,7 @@ class OpenRouterProvider(LLMProvider):
 
         self.logger.info(f"Loaded {len(self.available_models)} models for OpenRouter")
 
+    # TODO: Fix later.
     def _get_context_length(self, model_id: str) -> int:
         """Get context length for a model (approximate)."""
         # Common context lengths - this could be enhanced with actual API data
