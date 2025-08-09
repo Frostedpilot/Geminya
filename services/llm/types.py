@@ -57,3 +57,14 @@ class ToolResult:
     tool_call_id: str
     content: str
     error: Optional[str] = None
+
+
+@dataclass
+class ProviderConfig:
+    """Configuration settings for a specific LLM provider."""
+
+    api_key: str
+    base_url: str
+    timeout: int
+    available_models: Dict[str, str] = field(default_factory=dict)
+    model_infos: Dict[str, ModelInfo] = field(default_factory=dict)

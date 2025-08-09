@@ -1,7 +1,7 @@
 """LLM Manager - Provider-focused service for managing multiple LLM providers."""
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Type
 import asyncio
 
 from config import Config
@@ -30,13 +30,16 @@ class LLMManager:
         self.default_provider: Optional[str] = None
         self._initialized = False
 
+        self.provider_mapping: Dict[str, Type[LLMProvider]] = {
+            "openrouter": OpenRouterProvider,
+        }
+
     async def initialize(self) -> None:
         """Initialize the LLM Manager and all providers."""
         try:
             self.logger.info("Initializing LLM Manager...")
 
-            # Initialize OpenRouter provider (for now, only this one)
-            await self._initialize_openrouter_provider()
+            await self._initialize_providers()
 
             # Set default provider
             self.default_provider = "openrouter"
@@ -131,15 +134,27 @@ class LLMManager:
             for name, provider in self.providers.items()
         }
 
-    async def _initialize_openrouter_provider(self) -> None:
-        """Initialize the OpenRouter provider."""
-        try:
-            provider = OpenRouterProvider(self.config, self.logger)
-            await provider.initialize()
+    async def _initialize_providers(self) -> None:
+        """Initialize all configured LLM providers."""
+        self.logger.info("Initializing LLM providers...")
 
-            self.providers["openrouter"] = provider
-            self.logger.info("OpenRouter provider initialized")
+        try:
+            for provider_name in self.config.available_providers:
+                self.logger.info(f"Initializing provider: {provider_name}")
+                provider_class = self.provider_mapping.get(provider_name)
+
+                if provider_class:
+                    provider = provider_class(
+                        self.config.llm_providers[provider_name], self.logger
+                    )
+                    await provider.initialize()
+                    self.providers[provider_name] = provider
+                    self.logger.info(
+                        f"Provider {provider_name} initialized successfully"
+                    )
+                else:
+                    self.logger.warning(f"No provider class found for {provider_name}")
 
         except Exception as e:
-            self.logger.error(f"Failed to initialize OpenRouter provider: {e}")
-            raise ConfigurationError(f"OpenRouter initialization failed: {str(e)}")
+            self.logger.error(f"Failed to initialize LLM providers: {e}")
+            raise ConfigurationError(f"LLM providers initialization failed: {str(e)}")

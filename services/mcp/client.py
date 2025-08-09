@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.types import Tool
 
 from .types import ServerConfig, ServerStatus, ToolResult, ServerInfo
 from .exceptions import MCPConnectionError, MCPToolError, MCPServerError
@@ -33,7 +34,7 @@ class MCPClient:
         self.retry_count = 0
 
         # Tools cache
-        self._tools_cache: List[Dict[str, Any]] = []
+        self._tools_cache: List[Tool] = []
         self._tools_cache_time: Optional[float] = None
         self._tools_cache_ttl = 600  # 10 minutes
 
@@ -146,7 +147,7 @@ class MCPClient:
                     f"Error during disconnect from {self.config.name}: {e}"
                 )
 
-    async def get_available_tools(self, use_cache: bool = True) -> List[Dict[str, Any]]:
+    async def get_available_tools(self, use_cache: bool = True) -> List[Tool]:
         """Get list of available tools from server, filtered by blacklist.
 
         Args:
@@ -174,8 +175,7 @@ class MCPClient:
 
             for tool in response.tools:
                 if tool.name not in self.config.blacklist:
-                    converted_tool = convert_tool_format(tool)
-                    filtered_tools.append(converted_tool)
+                    filtered_tools.append(tool)
                 else:
                     self.logger.debug(
                         f"Blacklisted tool '{tool.name}' filtered out from {self.config.name}"

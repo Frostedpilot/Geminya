@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any
 
 from services.llm.manager import LLMManager
 from services.llm.types import LLMRequest, LLMResponse
+from mcp.types import Tool
 
 from config import Config
 from services.state_manager import StateManager
@@ -118,8 +119,7 @@ class MCPClientManager:
         except Exception as e:
             self.logger.warning(f"Failed to connect to {server_name}: {e}")
 
-    # TODO: Fix this to return List[mcp.types.Tool]
-    async def get_all_available_tools(self) -> List[Dict[str, Any]]:
+    async def get_all_available_tools(self) -> List[Tool]:
         """Get all available tools from all connected servers with server prefixes.
 
         Returns:
@@ -141,9 +141,7 @@ class MCPClientManager:
         )
         return all_tools
 
-    def _process_server_tools(
-        self, tools: List[Dict[str, Any]], server_name: str
-    ) -> List[Dict[str, Any]]:
+    def _process_server_tools(self, tools: List[Tool], server_name: str) -> List[Tool]:
         """Process tools from a server, adding prefixes and metadata.
 
         Args:
@@ -160,19 +158,17 @@ class MCPClientManager:
             tool_copy = self._create_tool_copy(tool)
 
             # Store original name and apply server prefix
-            original_name = tool_copy["function"]["name"]
+            original_name = tool_copy.function["name"]
 
             # Check if prefix is already applied to avoid duplication
             if not original_name.startswith(f"{server_name}__"):
-                tool_copy["function"]["name"] = f"{server_name}__{original_name}"
+                tool_copy.function["name"] = f"{server_name}__{original_name}"
             else:
                 # If prefix already exists, use the tool as-is but log a warning
                 self.logger.warning(
                     f"Tool {original_name} already has server prefix, using as-is"
                 )
 
-            tool_copy["_original_name"] = original_name
-            tool_copy["_server_name"] = server_name
             processed_tools.append(tool_copy)
 
         return processed_tools
@@ -186,20 +182,19 @@ class MCPClientManager:
         Returns:
             Deep copy of the tool
         """
-        return {
-            "type": tool["type"],
-            "function": {
-                "name": tool["function"]["name"],
-                "description": tool["function"]["description"],
+        return Tool(
+            type=tool.type,
+            function={
+                "name": tool.function["name"],
+                "description": tool.function["description"],
                 "parameters": (
-                    tool["function"]["parameters"].copy()
-                    if "parameters" in tool["function"]
+                    tool.function["parameters"].copy()
+                    if "parameters" in tool.function
                     else {}
                 ),
             },
-        }
+        )
 
-    # TODO: Implement query processing logic that use provided model.
     async def process_query(
         self, prompt: str, server_id: str, model: str
     ) -> MCPResponse:
@@ -235,7 +230,7 @@ class MCPClientManager:
                 )
 
             return await self._process_with_all_tools(
-                all_tools, prompt, server_id, start_time
+                all_tools, prompt, server_id, start_time, model
             )
 
         except Exception as e:
@@ -255,10 +250,11 @@ class MCPClientManager:
 
     async def _process_with_all_tools(
         self,
-        all_tools: List[Dict[str, Any]],
+        all_tools: List[Tool],
         prompt: str,
         server_id: str,
         start_time: float,
+        model: str,
     ) -> MCPResponse:
         """Process query with tools from all servers, supporting iterative tool calls.
 
@@ -267,6 +263,7 @@ class MCPClientManager:
             prompt: User query
             server_id: Server ID for model selection
             start_time: Query start time
+            model: Model to use for the query
 
         Returns:
             MCP response with processing results
@@ -284,7 +281,9 @@ class MCPClientManager:
             )
 
             # Get AI response
-            response = await self._get_ai_response(messages, all_tools, server_id)
+            response = await self._get_ai_response(
+                messages, all_tools, server_id, model
+            )
             if not response:
                 return self._create_error_response(
                     "Empty response from AI",
@@ -329,6 +328,7 @@ class MCPClientManager:
         messages: List[Dict[str, Any]],
         all_tools: List[Dict[str, Any]],
         server_id: str,
+        model: str,
     ) -> LLMResponse:
         """Get AI response with tools."""
         if not self.llm_manager:
@@ -337,7 +337,7 @@ class MCPClientManager:
         # Convert messages and tools to LLM Request format
         request = LLMRequest(
             messages=messages,
-            model=self.state_manager.get_model(server_id=server_id),
+            model=model,
             tools=all_tools,
             temperature=0.7,
         )
@@ -605,8 +605,24 @@ class MCPClientManager:
         Returns:
             Tool execution result
         """
-        tool_name = tool_call["function"]["name"]
-        tool_args = tool_call["function"]["arguments"]
+        # Handle both object format and dictionary format
+        if hasattr(tool_call, "function"):
+            # OpenAI object format
+            tool_name = tool_call.function.name
+            tool_args = tool_call.function.arguments
+        elif isinstance(tool_call, dict) and "function" in tool_call:
+            # Dictionary format from LLM provider
+            tool_name = tool_call["function"]["name"]
+            tool_args = tool_call["function"]["arguments"]
+        else:
+            self.logger.error(f"Unsupported tool call format: {type(tool_call)}")
+            return ToolResult(
+                tool_call_id=getattr(
+                    tool_call, "id", str(tool_call.get("id", "unknown"))
+                ),
+                content="",
+                error="Unsupported tool call format",
+            )
 
         # Parse server name and original tool name
         server_name, original_tool_name = await self._parse_tool_name(tool_name)
