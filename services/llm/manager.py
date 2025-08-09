@@ -1,10 +1,13 @@
 """LLM Manager - Provider-focused service for managing multiple LLM providers."""
 
+from __future__ import annotations
 import logging
-from typing import Dict, Any, List, Optional, Type
+from typing import Dict, Any, List, Optional, Type, TYPE_CHECKING
 import asyncio
 
-from config import Config
+if TYPE_CHECKING:
+    from config import Config
+
 from services.state_manager import StateManager
 
 from .provider import LLMProvider

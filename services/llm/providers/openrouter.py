@@ -19,7 +19,6 @@ class OpenRouterProvider(LLMProvider):
     ):
         super().__init__("openrouter", config, logger)
         self.client: Optional[AsyncOpenAI] = None
-        self.available_models: Dict[str, ModelInfo] = {}
 
     async def initialize(self) -> None:
         """Initialize the OpenRouter provider."""
@@ -36,9 +35,6 @@ class OpenRouterProvider(LLMProvider):
                 raise ProviderError("openrouter", "API key not provided")
 
             self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
-
-            # Load available models from config
-            self._load_models()
 
             self._set_initialized(True)
             self.logger.info("OpenRouter provider initialized successfully")
@@ -65,9 +61,12 @@ class OpenRouterProvider(LLMProvider):
             raise ModelNotFoundError(request.model, "openrouter")
 
         try:
+            # Resolve the model ID to the full OpenRouter format
+            resolved_model_id = self._resolve_model_id(request.model)
+
             # Prepare the request
             api_request = {
-                "model": request.model,
+                "model": resolved_model_id,
                 "messages": request.messages,
                 "temperature": request.temperature,
             }
@@ -147,11 +146,69 @@ class OpenRouterProvider(LLMProvider):
 
     def get_models(self) -> Dict[str, ModelInfo]:
         """Get available models from OpenRouter."""
-        return self.available_models.copy()
+        # Get model info from config and filter for this provider
+        model_infos = (
+            self.config.model_infos
+            if isinstance(self.config, ProviderConfig)
+            else self.config.get("model_infos", {})
+        )
+
+        # Return only models for this provider
+        return {
+            display_name: model_info
+            for display_name, model_info in model_infos.items()
+            if model_info.provider == "openrouter"
+        }
 
     def supports_model(self, model_id: str) -> bool:
         """Check if OpenRouter supports the given model."""
-        return model_id in self.available_models
+        # Get model info from config
+        model_infos = (
+            self.config.model_infos
+            if isinstance(self.config, ProviderConfig)
+            else self.config.get("model_infos", {})
+        )
+
+        # Check if model_id is in display name keys (direct match)
+        if model_id in model_infos:
+            return model_infos[model_id].provider == "openrouter"
+
+        # Check if model_id matches any ModelInfo.id values for this provider
+        for model_info in model_infos.values():
+            if model_info.provider == "openrouter" and model_info.id == model_id:
+                return True
+
+        return False
+
+    def _resolve_model_id(self, model_id: str) -> str:
+        """Resolve model ID to the format expected by OpenRouter API."""
+        # Get model info from config
+        model_infos = (
+            self.config.model_infos
+            if isinstance(self.config, ProviderConfig)
+            else self.config.get("model_infos", {})
+        )
+
+        # Check if it's a display name key
+        if model_id in model_infos and model_infos[model_id].provider == "openrouter":
+            api_model_id = model_infos[model_id].id
+            # Strip the provider prefix for the API call
+            if api_model_id.startswith("openrouter/"):
+                return api_model_id[len("openrouter/") :]
+            return api_model_id
+
+        # Check if it's already a full model ID for this provider
+        for model_info in model_infos.values():
+            if model_info.provider == "openrouter" and model_info.id == model_id:
+                # Strip the provider prefix for the API call
+                if model_id.startswith("openrouter/"):
+                    return model_id[len("openrouter/") :]
+                return model_id
+
+        # Return as-is but strip openrouter prefix if present
+        if model_id.startswith("openrouter/"):
+            return model_id[len("openrouter/") :]
+        return model_id
 
     def convert_mcp_tools(self, mcp_tools: List[Tool]) -> List[Dict[str, Any]]:
         """Convert MCP Tool objects to OpenAI format for OpenRouter."""
@@ -208,13 +265,3 @@ class OpenRouterProvider(LLMProvider):
 
         self.logger.debug(f"Converted {len(tools)} MCP tools to OpenAI format")
         return tools
-
-    def _load_models(self) -> None:
-        """Load available models from configuration."""
-        # Handle both ProviderConfig and dict configurations
-        if isinstance(self.config, ProviderConfig):
-            self.available_models = self.config.model_infos
-        else:
-            self.available_models = self.config.get("model_infos", {})
-
-        self.logger.info(f"Loaded {len(self.available_models)} models for OpenRouter")

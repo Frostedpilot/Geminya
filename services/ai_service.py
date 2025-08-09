@@ -1,10 +1,13 @@
 """AI Service - High-level orchestrator for all AI operations."""
 
+from __future__ import annotations
 import logging
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from discord import Message
 
-from config import Config
+if TYPE_CHECKING:
+    from config import Config
+
 from services.state_manager import StateManager
 from services.llm import LLMManager
 from services.mcp import MCPClientManager

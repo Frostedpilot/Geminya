@@ -1,12 +1,14 @@
 """Centralized error handling service for the Geminya bot."""
 
+from __future__ import annotations
 import logging
 import traceback
-from typing import Optional, Any
+from typing import Optional, Any, TYPE_CHECKING
 from discord.ext import commands
 import discord
 
-from config import Config
+if TYPE_CHECKING:
+    from config import Config
 
 
 class ErrorHandler:

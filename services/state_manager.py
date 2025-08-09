@@ -4,13 +4,15 @@ This module handles all bot state including conversation history,
 model preferences, lore book data, and server-specific settings.
 """
 
+from __future__ import annotations
 import logging
 from collections import defaultdict
-from typing import Dict, List, Optional, Any, Set
+from typing import Dict, List, Optional, Any, Set, TYPE_CHECKING
 import discord
 from pathlib import Path
 
-from config import Config
+if TYPE_CHECKING:
+    from config import Config
 
 
 class StateManager:

@@ -1,9 +1,12 @@
 """Service container for dependency injection in Geminya bot."""
 
+from __future__ import annotations
 import logging
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from config import Config
+if TYPE_CHECKING:
+    from config import Config
+
 from utils.logging import setup_logging
 from services.state_manager import StateManager
 from services.llm import LLMManager

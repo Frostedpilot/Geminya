@@ -31,7 +31,10 @@ try:
     SENTENCE_ENDINGS = _config.sentence_endings
     MAX_HISTORY_LENGTH = _config.max_history_length
     ACTIVE_SERVERS = _config.active_servers
-    AVAILABLE_MODELS = _config.available_models
+    # Import MODEL_INFOS and MODEL_NAMES for model information
+    from config.models import MODEL_INFOS, MODEL_NAMES
+
+    AVAILABLE_MODELS = MODEL_NAMES
 
 except Exception as e:
     # Fallback to old behavior if new config fails
@@ -50,9 +53,7 @@ except Exception as e:
 
     ACTIVE_SERVERS = ("1393258849867272325", "700261922259599420")
 
-    AVAILABLE_MODELS = {
-        "DeepSeek V3 0324": "deepseek/deepseek-chat-v3-0324:free",
-        "Kimi K2": "moonshotai/kimi-k2:free",
-        "DeepSeek Chimera": "tngtech/deepseek-r1t2-chimera:free",
-        "DeepSeek R1 0528": "deepseek/deepseek-r1-0528:free",
-    }
+    # Use MODEL_NAMES from models.py for consistency
+    from config.models import MODEL_NAMES
+
+    AVAILABLE_MODELS = MODEL_NAMES

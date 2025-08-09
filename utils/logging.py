@@ -1,13 +1,15 @@
 """Centralized logging configuration for Geminya bot."""
 
+from __future__ import annotations
 import logging
 import logging.handlers
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import discord
 
-from config import Config
+if TYPE_CHECKING:
+    from config import Config
 
 
 class GeminyaLogger:

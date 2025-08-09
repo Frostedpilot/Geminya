@@ -75,7 +75,7 @@ MODEL_INFOS: Dict[str, ModelInfo] = {
         provider="openrouter",
         context_length=1048576,
         supports_tools=True,
-        cost_per_million_tokens={"in": 1.25, "out": 5.0},
+        cost_per_million_tokens={"in": 0.30, "out": 2.50},
         description='Gemini 2.5 Flash is Google\'s state-of-the-art workhorse model, specifically designed for advanced reasoning, coding, mathematics, and scientific tasks. It includes built-in "thinking" capabilities, enabling it to provide responses with greater accuracy and nuanced context handling. Additionally, Gemini 2.5 Flash is configurable through the "max tokens for reasoning" parameter, as described in the documentation.',
     ),
     QWEN_3_235B_NAME: ModelInfo(
@@ -84,7 +84,7 @@ MODEL_INFOS: Dict[str, ModelInfo] = {
         provider="openrouter",
         context_length=32768,
         supports_tools=True,
-        cost_per_million_tokens={"in": 1.8, "out": 1.8},
+        cost_per_million_tokens={"in": 0.078, "out": 0.312},
         description='Qwen3-235B-A22B-Instruct-2507 is a multilingual, instruction-tuned mixture-of-experts language model based on the Qwen3-235B architecture, with 22B active parameters per forward pass. It is optimized for general-purpose text generation, including instruction following, logical reasoning, math, code, and tool usage. The model supports a native 262K context length and does not implement "thinking mode" (<think> blocks). Compared to its base variant, this version delivers significant gains in knowledge coverage, long-context reasoning, coding benchmarks, and alignment with open-ended tasks. It is particularly strong on multilingual understanding, math reasoning (e.g., AIME, HMMT), and alignment evaluations like Arena-Hard and WritingBench.',
     ),
 }

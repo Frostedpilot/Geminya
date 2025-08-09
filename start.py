@@ -10,6 +10,7 @@ import sys
 import os
 import argparse
 from pathlib import Path
+from config import Config, ConfigError
 
 
 def setup_environment():

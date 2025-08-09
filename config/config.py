@@ -65,22 +65,17 @@ class Config:
     # Server restrictions (empty tuple means no restrictions)
     active_servers: tuple = ()
 
-    # Available models mapping
-    available_models: Dict[str, str] = field(default_factory=lambda: MODEL_NAMES.copy())
-
-    # Reverse mapping for quick access
-    quick_models_reverse: Dict[str, str] = field(init=False)
-
     # LLM Providers specific configs
     available_providers: List[str] = field(default_factory=lambda: ["openrouter"])
     llm_providers: Dict[str, ProviderConfig] = field(default_factory=dict)
 
-    openrouter_config: ProviderConfig = ProviderConfig(
-        api_key=openrouter_api_key,
-        base_url="https://openrouter.ai/api/v1",
-        timeout=30,
-        available_models=MODEL_NAMES.copy(),
-        model_infos=MODEL_INFOS.copy(),
+    openrouter_config: ProviderConfig = field(
+        default_factory=lambda: ProviderConfig(
+            api_key="",
+            base_url="https://openrouter.ai/api/v1",
+            timeout=30,
+            model_infos=MODEL_INFOS.copy(),
+        )
     )
 
     # MCP server folders
@@ -142,9 +137,7 @@ class Config:
     )
 
     def __post_init__(self):
-        """Initialize reverse mapping for available models."""
-        self.quick_models_reverse = {v: k for k, v in self.available_models.items()}
-
+        """Initialize post-configuration setup."""
         # Safely construct Tavily MCP URL if API key is available
         if self.tavily_api_key:
             tavily_url = (
@@ -185,6 +178,15 @@ class Config:
             self.mcp_server_instruction.pop("google-search", None)
 
         # Set up provider config
+
+        if self.openrouter_api_key:
+            self.openrouter_config.api_key = self.openrouter_api_key
+            assert self.openrouter_config.api_key != ""  # Ensure API key is not empty
+        else:
+            raise ConfigError(
+                "OPENROUTER_API_KEY is required because it is the default provider"
+            )
+
         for provider in self.available_providers:
             self.llm_providers[provider] = self.__getattribute__(provider + "_config")
 
@@ -227,7 +229,7 @@ class Config:
             max_history_length=int(os.getenv("MAX_HISTORY_LENGTH", "7")),
             debug=os.getenv("DEBUG", "false").lower() == "true",
             default_model=os.getenv(
-                "DEFAULT_MODEL", "deepseek/deepseek-chat-v3-0324:free"
+                "DEFAULT_MODEL", "openrouter/deepseek/deepseek-chat-v3-0324:free"
             ),
             check_model=os.getenv(
                 "CHECK_MODEL",
@@ -310,7 +312,7 @@ class Config:
             max_history_length=config_data.get("max_history_length", 7),
             debug=config_data.get("debug", False),
             default_model=config_data.get(
-                "default_model", "deepseek/deepseek-chat-v3-0324:free"
+                "default_model", "openrouter/deepseek/deepseek-chat-v3-0324:free"
             ),
             check_model=config_data.get(
                 "check_model",
@@ -386,7 +388,16 @@ class Config:
             "sentence_endings": self.sentence_endings,
             "max_response_length": self.max_response_length,
             "active_servers": self.active_servers,
-            "available_models": self.available_models,
+            "available_providers": self.available_providers,
+            "llm_providers": {
+                name: {
+                    "api_key": "***HIDDEN***",
+                    "base_url": provider.base_url,
+                    "timeout": provider.timeout,
+                    "model_count": len(provider.model_infos),
+                }
+                for name, provider in self.llm_providers.items()
+            },
             "discord_token": "***HIDDEN***",
             "openrouter_api_key": "***HIDDEN***",
         }

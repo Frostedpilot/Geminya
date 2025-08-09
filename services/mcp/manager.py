@@ -1,17 +1,21 @@
 """Manager for multiple MCP clients with improved architecture and monitoring."""
 
+from __future__ import annotations
 import asyncio
 import json
 import logging
 import re
 import time
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 
 from services.llm.manager import LLMManager
 from services.llm.types import LLMRequest, LLMResponse
 from mcp.types import Tool
+from utils.utils import convert_tool_format
 
-from config import Config
+if TYPE_CHECKING:
+    from config import Config
+
 from services.state_manager import StateManager
 from .client import MCPClient
 from .registry import MCPServerRegistry
@@ -158,11 +162,12 @@ class MCPClientManager:
             tool_copy = self._create_tool_copy(tool)
 
             # Store original name and apply server prefix
-            original_name = tool_copy.function["name"]
+            original_name = tool_copy.name
 
             # Check if prefix is already applied to avoid duplication
             if not original_name.startswith(f"{server_name}__"):
-                tool_copy.function["name"] = f"{server_name}__{original_name}"
+                # Create a new tool with prefixed name
+                tool_copy.name = f"{server_name}__{original_name}"
             else:
                 # If prefix already exists, use the tool as-is but log a warning
                 self.logger.warning(
@@ -173,27 +178,18 @@ class MCPClientManager:
 
         return processed_tools
 
-    def _create_tool_copy(self, tool: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_tool_copy(self, tool: Tool) -> Tool:
         """Create a deep copy of a tool to avoid modifying cached versions.
 
         Args:
-            tool: Original tool dictionary
+            tool: Original MCP Tool object
 
         Returns:
             Deep copy of the tool
         """
-        return Tool(
-            type=tool.type,
-            function={
-                "name": tool.function["name"],
-                "description": tool.function["description"],
-                "parameters": (
-                    tool.function["parameters"].copy()
-                    if "parameters" in tool.function
-                    else {}
-                ),
-            },
-        )
+        import copy
+
+        return copy.deepcopy(tool)
 
     async def process_query(
         self, prompt: str, server_id: str, model: str
@@ -280,9 +276,12 @@ class MCPClientManager:
                 f"Starting tool iteration {iteration_count}/{self.config.max_tool_iterations}"
             )
 
+            # Convert MCP tools to OpenAI format for LLM
+            openai_tools = [convert_tool_format(tool) for tool in all_tools]
+
             # Get AI response
             response = await self._get_ai_response(
-                messages, all_tools, server_id, model
+                messages, openai_tools, server_id, model
             )
             if not response:
                 return self._create_error_response(
@@ -671,7 +670,7 @@ class MCPClientManager:
                 try:
                     tools = await client.get_available_tools()
                     for tool in tools:
-                        if tool["function"]["name"] == tool_name:
+                        if tool.name == tool_name:
                             return server_name, tool_name
                 except Exception:
                     continue

@@ -66,5 +66,4 @@ class ProviderConfig:
     api_key: str
     base_url: str
     timeout: int
-    available_models: Dict[str, str] = field(default_factory=dict)
     model_infos: Dict[str, ModelInfo] = field(default_factory=dict)
