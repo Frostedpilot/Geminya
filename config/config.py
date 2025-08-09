@@ -12,6 +12,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from services.llm.types import ProviderConfig, ModelInfo
+from .models import (
+    MODEL_NAMES,
+    MODEL_INFOS,
+    DEEPSEEK_V3_0324_SHORT,
+    DOLPHIN_MISTRAL_24B,
+)
 
 load_dotenv()
 
@@ -44,8 +50,8 @@ class Config:
     debug: bool = False
 
     # Model configuration
-    default_model: str = "deepseek/deepseek-chat-v3-0324:free"
-    check_model: str = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+    default_model: str = DEEPSEEK_V3_0324_SHORT
+    check_model: str = DOLPHIN_MISTRAL_24B
 
     default_persona: str = "Geminya_Exp"
 
@@ -60,92 +66,21 @@ class Config:
     active_servers: tuple = ()
 
     # Available models mapping
-    available_models: Dict[str, str] = field(
-        default_factory=lambda: {
-            "DeepSeek V3 0324": "openrouter/deepseek/deepseek-chat-v3-0324:free",
-            "Kimi K2": "openrouter/moonshotai/kimi-k2:free",
-            "DeepSeek Chimera": "openrouter/tngtech/deepseek-r1t2-chimera:free",
-            "DeepSeek R1 0528": "openrouter/deepseek/deepseek-r1-0528:free",
-            "Gemini 2.5 Flash": "openrouter/google/gemini-2.5-flash",
-            "Qwen 3 235B A22B Instruct 2507": "openrouter/qwen/qwen3-235b-a22b-2507",
-        }
-    )
+    available_models: Dict[str, str] = field(default_factory=lambda: MODEL_NAMES.copy())
 
     # Reverse mapping for quick access
     quick_models_reverse: Dict[str, str] = field(init=False)
 
     # LLM Providers specific configs
-    available_providers: List[str] = field(default_factory=["openrouter"])
+    available_providers: List[str] = field(default_factory=lambda: ["openrouter"])
     llm_providers: Dict[str, ProviderConfig] = field(default_factory=dict)
 
     openrouter_config: ProviderConfig = ProviderConfig(
         api_key=openrouter_api_key,
         base_url="https://openrouter.ai/api/v1",
         timeout=30,
-        available_models={
-            "DeepSeek V3 0324": "openrouter/deepseek/deepseek-chat-v3-0324:free",
-            "Kimi K2": "openrouter/moonshotai/kimi-k2:free",
-            "DeepSeek Chimera": "openrouter/tngtech/deepseek-r1t2-chimera:free",
-            "DeepSeek R1 0528": "openrouter/deepseek/deepseek-r1-0528:free",
-            "Gemini 2.5 Flash": "openrouter/google/gemini-2.5-flash",
-            "Qwen 3 235B A22B Instruct 2507": "openrouter/qwen/qwen3-235b-a22b-2507",
-        },
-        model_infos={
-            "DeepSeek V3 0324": ModelInfo(
-                id="openrouter/deepseek/deepseek-chat-v3-0324:free",
-                name="DeepSeek V3 0324 (free)",
-                provider="openrouter",
-                context_length=163840,
-                supports_tools=True,
-                cost_per_million_tokens={"in": 0, "out": 0},
-                description="DeepSeek V3, a 685B-parameter, mixture-of-experts model, is the latest iteration of the flagship chat model family from the DeepSeek team. It succeeds the DeepSeek V3 model and performs really well on a variety of tasks.",
-            ),
-            "Kimi K2": ModelInfo(
-                id="openrouter/moonshotai/kimi-k2:free",
-                name="Kimi K2 (free)",
-                provider="openrouter",
-                context_length=32768,
-                supports_tools=True,
-                cost_per_million_tokens={"in": 0, "out": 0},
-                description="Kimi K2 Instruct is a large-scale Mixture-of-Experts (MoE) language model developed by Moonshot AI, featuring 1 trillion total parameters with 32 billion active per forward pass. It is optimized for agentic capabilities, including advanced tool use, reasoning, and code synthesis. Kimi K2 excels across a broad range of benchmarks, particularly in coding (LiveCodeBench, SWE-bench), reasoning (ZebraLogic, GPQA), and tool-use (Tau2, AceBench) tasks. It supports long-context inference up to 128K tokens and is designed with a novel training stack that includes the MuonClip optimizer for stable large-scale MoE training.",
-            ),
-            "DeepSeek Chimera": ModelInfo(
-                id="openrouter/tngtech/deepseek-r1t2-chimera:free",
-                name="DeepSeek R1T2 Chimera (free)",
-                provider="openrouter",
-                context_length=163840,
-                supports_tools=False,
-                cost_per_million_tokens={"in": 0, "out": 0},
-                description="DeepSeek-TNG-R1T2-Chimera is the second-generation Chimera model from TNG Tech. It is a 671 B-parameter mixture-of-experts text-generation model assembled from DeepSeek-AI’s R1-0528, R1, and V3-0324 checkpoints with an Assembly-of-Experts merge. The tri-parent design yields strong reasoning performance while running roughly 20 % faster than the original R1 and more than 2× faster than R1-0528 under vLLM, giving a favorable cost-to-intelligence trade-off. The checkpoint supports contexts up to 60 k tokens in standard use (tested to ~130 k) and maintains consistent <think> token behaviour, making it suitable for long-context analysis, dialogue and other open-ended generation tasks.",
-            ),
-            "DeepSeek R1 0528": ModelInfo(
-                id="openrouter/deepseek/deepseek-r1-0528:free",
-                name="DeepSeek R1 0528 (free)",
-                provider="openrouter",
-                context_length=163840,
-                supports_tools=False,
-                cost_per_million_tokens={"in": 0, "out": 0},
-                description="May 28th update to the original DeepSeek R1 Performance on par with OpenAI o1, but open-sourced and with fully open reasoning tokens. It's 671B parameters in size, with 37B active in an inference pass. Fully open-source model.",
-            ),
-            "Gemini 2.5 Flash": ModelInfo(
-                id="openrouter/google/gemini-2.5-flash",
-                name="Gemini 2.5 Flash",
-                provider="openrouter",
-                context_length=1048576,
-                supports_tools=True,
-                cost_per_million_tokens={"in": 0.30, "out": 2.50, "image": 1.238},
-                description='Gemini 2.5 Flash is Google\'s state-of-the-art workhorse model, specifically designed for advanced reasoning, coding, mathematics, and scientific tasks. It includes built-in "thinking" capabilities, enabling it to provide responses with greater accuracy and nuanced context handling. Additionally, Gemini 2.5 Flash is configurable through the "max tokens for reasoning" parameter, as described in the documentation ',
-            ),
-            "Qwen 3 235B A22B Instruct 2507": ModelInfo(
-                id="openrouter/qwen/qwen3-235b-a22b-2507",
-                name="Qwen 3 235B A22B Instruct 2507",
-                provider="openrouter",
-                context_length=262144,
-                supports_tools=True,
-                cost_per_million_tokens={"in": 0.078, "out": 0.312},
-                description='Qwen3-235B-A22B-Instruct-2507 is a multilingual, instruction-tuned mixture-of-experts language model based on the Qwen3-235B architecture, with 22B active parameters per forward pass. It is optimized for general-purpose text generation, including instruction following, logical reasoning, math, code, and tool usage. The model supports a native 262K context length and does not implement "thinking mode" (<think> blocks). Compared to its base variant, this version delivers significant gains in knowledge coverage, long-context reasoning, coding benchmarks, and alignment with open-ended tasks. It is particularly strong on multilingual understanding, math reasoning (e.g., AIME, HMMT), and alignment evaluations like Arena-Hard and WritingBench.',
-            ),
-        },
+        available_models=MODEL_NAMES.copy(),
+        model_infos=MODEL_INFOS.copy(),
     )
 
     # MCP server folders

@@ -1,18 +1,23 @@
 """Abstract base provider interface for LLM services."""
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 import logging
 
 from mcp.types import Tool
-from .types import LLMRequest, LLMResponse, ModelInfo
+from .types import LLMRequest, LLMResponse, ModelInfo, ProviderConfig
 from .exceptions import LLMError
 
 
 class LLMProvider(ABC):
     """Abstract base class for LLM providers."""
 
-    def __init__(self, name: str, config: Dict[str, Any], logger: logging.Logger):
+    def __init__(
+        self,
+        name: str,
+        config: Union[ProviderConfig, Dict[str, Any]],
+        logger: logging.Logger,
+    ):
         self.name = name
         self.config = config
         self.logger = logger

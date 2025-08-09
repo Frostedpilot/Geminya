@@ -2,19 +2,21 @@
 
 import asyncio
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union
 from openai import AsyncOpenAI
 
 from mcp.types import Tool
 from ..provider import LLMProvider
-from ..types import LLMRequest, LLMResponse, ModelInfo, ToolCall
+from ..types import LLMRequest, LLMResponse, ModelInfo, ToolCall, ProviderConfig
 from ..exceptions import ProviderError, ModelNotFoundError, QuotaExceededError
 
 
 class OpenRouterProvider(LLMProvider):
     """OpenRouter provider using OpenAI-compatible API."""
 
-    def __init__(self, config: Dict[str, Any], logger: logging.Logger):
+    def __init__(
+        self, config: Union[ProviderConfig, Dict[str, Any]], logger: logging.Logger
+    ):
         super().__init__("openrouter", config, logger)
         self.client: Optional[AsyncOpenAI] = None
         self.available_models: Dict[str, ModelInfo] = {}
@@ -22,11 +24,16 @@ class OpenRouterProvider(LLMProvider):
     async def initialize(self) -> None:
         """Initialize the OpenRouter provider."""
         try:
-            api_key = self.config.api_key
+            # Get API key from config (handle both ProviderConfig and dict)
+            if isinstance(self.config, ProviderConfig):
+                api_key = self.config.api_key
+                base_url = self.config.base_url
+            else:
+                api_key = self.config.get("api_key")
+                base_url = self.config.get("base_url", "https://openrouter.ai/api/v1")
+
             if not api_key:
                 raise ProviderError("openrouter", "API key not provided")
-
-            base_url = self.config.base_url
 
             self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
 
@@ -185,7 +192,7 @@ class OpenRouterProvider(LLMProvider):
 
             except Exception:
                 # Fallback to basic tool format
-                return {
+                fallback_tool = {
                     "type": "function",
                     "function": {
                         "name": tool.name,
@@ -197,12 +204,17 @@ class OpenRouterProvider(LLMProvider):
                         },
                     },
                 }
+                tools.append(fallback_tool)
 
         self.logger.debug(f"Converted {len(tools)} MCP tools to OpenAI format")
         return tools
 
     def _load_models(self) -> None:
         """Load available models from configuration."""
-        self.available_models = self.config["model_info"]
+        # Handle both ProviderConfig and dict configurations
+        if isinstance(self.config, ProviderConfig):
+            self.available_models = self.config.model_infos
+        else:
+            self.available_models = self.config.get("model_infos", {})
 
         self.logger.info(f"Loaded {len(self.available_models)} models for OpenRouter")
