@@ -8,6 +8,7 @@ from .exceptions import (
     ModelNotFoundError,
     QuotaExceededError,
     ConfigurationError,
+    RetriableError,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "ModelNotFoundError",
     "QuotaExceededError",
     "ConfigurationError",
+    "RetriableError",
 ]

@@ -243,6 +243,7 @@ class MCPClient:
                 content=content,
                 success=True,
                 execution_time=execution_time,
+                server_name=self.config.name,
             )
 
         except Exception as e:
@@ -257,6 +258,7 @@ class MCPClient:
                 success=False,
                 error=str(e),
                 execution_time=execution_time,
+                server_name=self.config.name,
             )
 
     def _extract_content_from_result(self, result) -> str:

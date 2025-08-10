@@ -24,6 +24,7 @@ class StateManager:
 
         # State storage
         self.models: Dict[str, str] = {}  # server_id -> model_id
+        self.tool_models: Dict[str, str] = {}  # server_id -> tool model_id
         self.histories: Dict[int, List[Dict[str, Any]]] = defaultdict(
             list
         )  # channel_id -> messages
@@ -57,6 +58,7 @@ class StateManager:
         # Clear large objects
         self.histories.clear()
         self.models.clear()
+        self.tool_models.clear()
         self.lore_books = None
         self._channel_cache.clear()
 
@@ -73,6 +75,12 @@ class StateManager:
             self.persona[server_id] = self.config.default_persona
             self.logger.info(
                 f"Initialized server {server_id} with default model: {self.config.default_model}"
+            )
+
+        if server_id not in self.tool_models:
+            self.tool_models[server_id] = self.config.default_tool_model
+            self.logger.info(
+                f"Initialized server {server_id} with default tool model: {self.config.default_tool_model}"
             )
 
     def initialize_channel(self, channel_id: int) -> None:
@@ -97,6 +105,17 @@ class StateManager:
         """
         return self.models.get(server_id, self.config.default_model)
 
+    def get_tool_model(self, server_id: str) -> str:
+        """Get the current tool model for a server.
+
+        Args:
+            server_id: Discord server ID as string
+
+        Returns:
+            str: Tool model identifier
+        """
+        return self.tool_models.get(server_id, self.config.default_tool_model)
+
     def set_model(self, server_id: str, model_id: str) -> None:
         """Set the AI model for a server.
 
@@ -108,6 +127,19 @@ class StateManager:
         self.models[server_id] = model_id
         self.logger.info(
             f"Changed model for server {server_id}: {old_model} -> {model_id}"
+        )
+
+    def set_tool_model(self, server_id: str, model_id: str) -> None:
+        """Set the tool model for a server.
+
+        Args:
+            server_id: Discord server ID as string
+            model_id: Tool model identifier to set
+        """
+        old_model = self.tool_models.get(server_id, "none")
+        self.tool_models[server_id] = model_id
+        self.logger.info(
+            f"Changed tool model for server {server_id}: {old_model} -> {model_id}"
         )
 
     def set_persona(self, server_id: str, persona_name: str) -> None:

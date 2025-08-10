@@ -42,7 +42,7 @@ class AIService:
             # Determine if we should use MCP tools
             use_mcp = self.state_manager.use_mcp
 
-            model = self.state_manager.get_model(server_id)
+            model = self.state_manager.get_tool_model(server_id)
             model_info = self.llm_manager.get_model_info(model)
 
             model_tool_capabilities = model_info.supports_tools
@@ -119,7 +119,8 @@ class AIService:
             )
         self.state_manager.initialize_server(server_id_str)
 
-        model = self.state_manager.get_model(server_id_str)
+        tool_model = self.state_manager.get_tool_model(server_id_str)
+        core_model = self.state_manager.get_model(server_id_str)
 
         # NOTE: Race condition! This could lead to inconsistent history being used
         history = self.state_manager.get_history(message.channel.id)
@@ -132,14 +133,35 @@ class AIService:
         lore_book = lore_books.get(persona_name) if lore_books else None
 
         # Build initial prompt
-        prompt = self._build_prompt(message, history, lore_book)
+        prompt = self._build_tool_prompt(message, history)
 
         # Start iterative tool calling process
-        response = await self.mcp_client.process_query(prompt, server_id_str, model)
+        tool_response = await self.mcp_client.process_query(
+            prompt, server_id_str, tool_model
+        )
+
+        core_prompt = self._build_augment_prompt(
+            message, tool_response.content, lore_book
+        )
+
+        # Use core model for final response generation
+        core_response = await self.llm_manager._generate_with_provider(
+            LLMRequest(
+                messages=[{"role": "user", "content": core_prompt}],
+                model=core_model,
+                temperature=getattr(self.config, "temperature", 0.7),
+            )
+        )
 
         # NOTE: response is MCPResponse type, additional information can be return together with the information.
 
-        return response.content.strip()
+        tool_calls_made = tool_response.tool_calls_made
+        execution_time = tool_response.execution_time
+        server_used = tool_response.servers_used
+
+        pre_message = f"[{tool_calls_made} tools called, {execution_time:.2f}s elapsed, servers used: {', '.join(server_used)}]\n"
+
+        return pre_message + core_response.content.strip()
 
     def _build_prompt(
         self, message: Message, history, lore_book, use_tools: bool = True
@@ -200,6 +222,99 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
 {history_prompt}
 [Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly. Do not start with "From {persona_name}:" or similar.]
 {"[You have access to tools, so leverage them as much as possible. You can use more than one tool at a time, and you can iteratively call them up to {self.config.max_tool_iterations} times with consecutive messages before giving answer, so plan accordingly. For tasks you deemed as hard, start with the sequential-thinking tool.]" if use_tools else ""}
+""".replace(
+            "{{user}}", author_name
+        )
+
+        return final_prompt.strip()
+
+    def _build_tool_prompt(self, message: Message, history):
+        """Build the tool prompt for AI generation."""
+        author = message.author
+        author_name = author.name
+        if author.nick:
+            author_name = f"{author.nick} ({author.name})"
+
+        # Build history section
+        history_prompt = ""
+        if history:
+            for entry in history:
+                nick_part = f" (aka {entry['nick']})" if entry["nick"] else ""
+                line = f"From: {entry['name']}{nick_part}\n{entry['content']}\n\n"
+                history_prompt += line
+        history_prompt = history_prompt.strip()
+        # Collect all participants
+        authors = {author_name}
+        if history:
+            for entry in history:
+                authors.add(entry["name"])
+
+        # Get persona name
+        server_id = str(message.guild.id) if message.guild else "default"
+        persona_name = self.state_manager.persona.get(
+            server_id, self.config.default_persona
+        )
+
+        # Build final prompt
+        final_prompt = f"""
+Write {persona_name}'s next reply in a fictional chat between participants and {author_name}.
+[Start a new group chat. Group members: {persona_name}, {', '.join(authors)}]
+{history_prompt}
+[Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly.]
+[You have access to tools, so leverage them as much as possible. You can use more than one tool at a time, and you can iteratively call them up to {self.config.max_tool_iterations} times with consecutive messages before giving answer, so plan accordingly. For tasks you deem as hard, start with the sequential-thinking tool.]
+[Based on the results from tool calls, make your answer as detailed as possible.]
+""".replace(
+            "{{user}}", author_name
+        )
+
+        return final_prompt.strip()
+
+    def _build_augment_prompt(
+        self, message: Message, tool_response_content: str, lore_book
+    ):
+        """Build the augment prompt for AI generation."""
+        """Build the complete prompt for AI generation."""
+        # This is copied from LLM Manager but simplified for tools
+        author = message.author
+        author_name = author.name
+        if author.nick:
+            author_name = f"{author.nick} ({author.name})"
+
+        # Get personality prompt
+        personality_prompt = self._get_personality_prompt(message)
+
+        # Build lore book section
+        lore_prompt = ""
+        if lore_book:
+            for category_name, category_data in lore_book.items():
+                if isinstance(category_data, dict) and "keywords" in category_data:
+                    keywords = category_data.get("keywords", [])
+
+                    if any(keyword in message.content.lower() for keyword in keywords):
+                        example = category_data.get("example", "")
+                        if example:
+                            lore_prompt += f"\n\n{example}"
+                            self.logger.debug(
+                                f"Added lore example from category: {category_name}"
+                            )
+                            break
+
+        # Get persona name
+        server_id = str(message.guild.id) if message.guild else "default"
+        persona_name = self.state_manager.persona.get(
+            server_id, self.config.default_persona
+        )
+
+        # Build final prompt
+        final_prompt = f"""
+Rewrite the following message in {persona_name}'s style. Try to retain the message context and meaning while incorporating relevant personality traits.
+---
+[{persona_name}'s description]
+{personality_prompt}
+{lore_prompt}
+---
+[The message to rewrite]
+{tool_response_content}
 """.replace(
             "{{user}}", author_name
         )

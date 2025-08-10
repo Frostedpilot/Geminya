@@ -15,7 +15,9 @@ from services.llm.types import ProviderConfig, ModelInfo
 from .models import (
     MODEL_NAMES,
     MODEL_INFOS,
-    DEEPSEEK_V3_0324_SHORT,
+    DEEPSEEK_V3_0324,
+    DEEPSEEK_V3_0324_PAID,
+    QWEN_3_235B_A22B_2507,
     DOLPHIN_MISTRAL_24B,
 )
 
@@ -50,7 +52,10 @@ class Config:
     debug: bool = False
 
     # Model configuration
-    default_model: str = DEEPSEEK_V3_0324_SHORT
+    default_model: str = DEEPSEEK_V3_0324
+    default_tool_model: str = DEEPSEEK_V3_0324
+    fall_back_model: str = DEEPSEEK_V3_0324_PAID
+    fall_back_tool_model: str = QWEN_3_235B_A22B_2507
     check_model: str = DOLPHIN_MISTRAL_24B
 
     default_persona: str = "Geminya_Exp"

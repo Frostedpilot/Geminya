@@ -308,6 +308,10 @@ class MCPClientManager:
                 server_id,
             )
 
+            # Update params
+            total_tool_calls += tool_processing_result.get("total_tool_calls", 0)
+            servers_used.update(tool_processing_result.get("servers_used", []))
+
             if tool_processing_result.get("final_text"):
                 final_text.append(tool_processing_result["final_text"])
                 break
@@ -422,7 +426,11 @@ class MCPClientManager:
                 final_response = await self.llm_manager._generate_with_provider(request)
                 return {"final_text": final_response.content}
 
-            return {"continue": True, "total_tool_calls": total_tool_calls}
+            return {
+                "continue": True,
+                "total_tool_calls": total_tool_calls,
+                "servers_used": servers_used,
+            }
 
         return {"no_tools": True}
 
@@ -531,6 +539,7 @@ class MCPClientManager:
                 ),
                 content="",
                 error="Unsupported tool call format",
+                server_name=None,
             )
 
         self.logger.debug(f"Executing tool call: {tool_name} with args: {tool_args}")
@@ -591,6 +600,7 @@ class MCPClientManager:
                 content=f"Error calling tool {original_tool_name}: {e}",
                 success=False,
                 error=str(e),
+                server_name=server_name,
             )
 
     async def _execute_deepseek_tool_call(
@@ -621,6 +631,7 @@ class MCPClientManager:
                 ),
                 content="",
                 error="Unsupported tool call format",
+                server_name=None,
             )
 
         # Parse server name and original tool name
@@ -651,6 +662,7 @@ class MCPClientManager:
                 content=f"Error calling tool {original_tool_name}: {e}",
                 success=False,
                 error=str(e),
+                server_name=server_name,
             )
 
     async def _find_tool_server(self, tool_name: str) -> tuple[str, str]:

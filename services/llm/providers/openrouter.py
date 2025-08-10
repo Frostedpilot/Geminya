@@ -8,7 +8,12 @@ from openai import AsyncOpenAI
 from mcp.types import Tool
 from ..provider import LLMProvider
 from ..types import LLMRequest, LLMResponse, ModelInfo, ToolCall, ProviderConfig
-from ..exceptions import ProviderError, ModelNotFoundError, QuotaExceededError
+from ..exceptions import (
+    ProviderError,
+    ModelNotFoundError,
+    QuotaExceededError,
+    RetriableError,
+)
 
 
 class OpenRouterProvider(LLMProvider):
@@ -114,6 +119,10 @@ class OpenRouterProvider(LLMProvider):
                         }
                     )
 
+            # Check if response is truly empty (no content AND no tool calls)
+            if not content and not tool_calls:
+                raise ProviderError("openrouter", "Empty response from API")
+
             # Extract usage information
             usage = None
             if response.usage:
@@ -138,6 +147,12 @@ class OpenRouterProvider(LLMProvider):
             )
 
         except Exception as e:
+            # Check if this is a retriable error that should trigger fallback
+            if RetriableError.is_retriable_error(e):
+                status_code = RetriableError.extract_status_code(e)
+                raise RetriableError("openrouter", str(e), status_code, e)
+
+            # Keep the old QuotaExceededError for backward compatibility
             if "rate limit" in str(e).lower() or "quota" in str(e).lower():
                 raise QuotaExceededError("openrouter", str(e))
 
@@ -178,6 +193,16 @@ class OpenRouterProvider(LLMProvider):
             if model_info.provider == "openrouter" and model_info.id == model_id:
                 return model_info
 
+        # Check for short format (e.g., "deepseek/deepseek-chat-v3-0324:free")
+        # by checking if "openrouter/" + model_id matches any ModelInfo.id
+        prefixed_model_id = f"openrouter/{model_id}"
+        for model_info in model_infos.values():
+            if (
+                model_info.provider == "openrouter"
+                and model_info.id == prefixed_model_id
+            ):
+                return model_info
+
         raise ModelNotFoundError(model_id, "openrouter")
 
     def supports_model(self, model_id: str) -> bool:
@@ -196,6 +221,16 @@ class OpenRouterProvider(LLMProvider):
         # Check if model_id matches any ModelInfo.id values for this provider
         for model_info in model_infos.values():
             if model_info.provider == "openrouter" and model_info.id == model_id:
+                return True
+
+        # Check for short format (e.g., "deepseek/deepseek-chat-v3-0324:free")
+        # by checking if "openrouter/" + model_id matches any ModelInfo.id
+        prefixed_model_id = f"openrouter/{model_id}"
+        for model_info in model_infos.values():
+            if (
+                model_info.provider == "openrouter"
+                and model_info.id == prefixed_model_id
+            ):
                 return True
 
         return False
@@ -223,6 +258,16 @@ class OpenRouterProvider(LLMProvider):
                 # Strip the provider prefix for the API call
                 if model_id.startswith("openrouter/"):
                     return model_id[len("openrouter/") :]
+                return model_id
+
+        # Check for short format and see if we have a matching full ID
+        prefixed_model_id = f"openrouter/{model_id}"
+        for model_info in model_infos.values():
+            if (
+                model_info.provider == "openrouter"
+                and model_info.id == prefixed_model_id
+            ):
+                # Return the model ID without the openrouter prefix
                 return model_id
 
         # Return as-is but strip openrouter prefix if present

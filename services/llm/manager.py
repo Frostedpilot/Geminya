@@ -12,7 +12,13 @@ from services.state_manager import StateManager
 
 from .provider import LLMProvider
 from .types import LLMRequest, LLMResponse, ModelInfo
-from .exceptions import LLMError, ModelNotFoundError, ConfigurationError, ProviderError
+from .exceptions import (
+    LLMError,
+    ModelNotFoundError,
+    ConfigurationError,
+    ProviderError,
+    RetriableError,
+)
 from .providers import OpenRouterProvider
 
 
@@ -99,13 +105,75 @@ class LLMManager:
                 f"Generating with provider {provider_name} for model {request.model}"
             )
             response = await provider.generate_response(request)
-
-            # If we got here without exception, the response is successful
             return response
+
+        except RetriableError as e:
+            self.logger.warning(
+                f"Retriable error from provider {provider_name} for model {request.model}: {e}"
+            )
+
+            # Try fallback model
+            fallback_response = await self._try_fallback_model(request)
+            if fallback_response:
+                return fallback_response
+
+            # Re-raise original error if fallback failed
+            raise e
 
         except Exception as e:
             self.logger.error(f"Error generating with provider {provider_name}: {e}")
             raise ProviderError(provider_name, f"Provider failed: {str(e)}", e)
+
+    async def _try_fallback_model(
+        self, original_request: LLMRequest
+    ) -> Optional[LLMResponse]:
+        """Try to generate response using fallback model."""
+
+        use_tool = (
+            original_request.tools is not None and len(original_request.tools) > 0
+        )
+
+        if use_tool:
+            fallback_model = self.config.fall_back_tool_model
+        else:
+            fallback_model = self.config.fall_back_model
+        if not fallback_model or fallback_model == original_request.model:
+            self.logger.warning("No fallback model configured or same as current model")
+            return None
+
+        self.logger.info(f"Retrying with fallback model: {fallback_model}")
+
+        # Create fallback request
+        fallback_request = LLMRequest(
+            messages=original_request.messages,
+            model=fallback_model,
+            max_tokens=original_request.max_tokens,
+            temperature=original_request.temperature,
+            tools=original_request.tools,
+        )
+
+        try:
+            # Determine provider for fallback model
+            fallback_provider_name = self._extract_provider_name(fallback_model)
+            if fallback_provider_name not in self.providers:
+                fallback_provider_name = self.default_provider
+
+            if (
+                not fallback_provider_name
+                or fallback_provider_name not in self.providers
+            ):
+                self.logger.error("No fallback provider available")
+                return None
+
+            fallback_provider = self.providers[fallback_provider_name]
+            self.logger.debug(
+                f"Retrying with fallback provider {fallback_provider_name} for model {fallback_model}"
+            )
+            return await fallback_provider.generate_response(fallback_request)
+
+        except Exception as fallback_error:
+            self.logger.error(f"Fallback model also failed: {fallback_error}")
+            return None
 
     def _extract_provider_name(self, model: str) -> str:
         """Extract provider name from model string."""

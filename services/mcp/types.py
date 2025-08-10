@@ -69,6 +69,7 @@ class ToolResult:
     success: bool = True
     error: Optional[str] = None
     execution_time: Optional[float] = None
+    server_name: Optional[str] = None
 
     def to_message_dict(self) -> Dict[str, Any]:
         """Convert to OpenAI message format."""
