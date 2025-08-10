@@ -44,6 +44,11 @@ class LLMProvider(ABC):
         pass
 
     @abstractmethod
+    def get_model_info(self, model_id: str) -> ModelInfo:
+        """Get detailed information about a specific model."""
+        pass
+
+    @abstractmethod
     def supports_model(self, model_id: str) -> bool:
         """Check if this provider supports the given model."""
         pass

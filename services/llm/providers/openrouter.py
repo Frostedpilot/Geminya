@@ -160,6 +160,26 @@ class OpenRouterProvider(LLMProvider):
             if model_info.provider == "openrouter"
         }
 
+    def get_model_info(self, model_id: str) -> ModelInfo:
+        """Get detailed information about a specific model."""
+        # Get model info from config
+        model_infos = (
+            self.config.model_infos
+            if isinstance(self.config, ProviderConfig)
+            else self.config.get("model_infos", {})
+        )
+
+        # Check if model_id is in display name keys (direct match)
+        if model_id in model_infos and model_infos[model_id].provider == "openrouter":
+            return model_infos[model_id]
+
+        # Check if model_id matches any ModelInfo.id values for this provider
+        for model_info in model_infos.values():
+            if model_info.provider == "openrouter" and model_info.id == model_id:
+                return model_info
+
+        raise ModelNotFoundError(model_id, "openrouter")
+
     def supports_model(self, model_id: str) -> bool:
         """Check if OpenRouter supports the given model."""
         # Get model info from config

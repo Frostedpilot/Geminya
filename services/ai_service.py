@@ -42,7 +42,16 @@ class AIService:
             # Determine if we should use MCP tools
             use_mcp = self.state_manager.use_mcp
 
-            if use_mcp:
+            model = self.state_manager.get_model(server_id)
+            model_info = self.llm_manager.get_model_info(model)
+
+            model_tool_capabilities = model_info.supports_tools
+
+            self.logger.debug(
+                f"Model tool capabilities for {model}: {model_tool_capabilities}"
+            )
+
+            if use_mcp and model_tool_capabilities:
                 return await self._get_response_with_tools(message, server_id)
             else:
                 return await self._get_simple_response(message, server_id)
@@ -83,7 +92,7 @@ class AIService:
         lore_book = lore_books.get(persona_name) if lore_books else None
 
         # Build prompt (extracted from LLM Manager)
-        prompt = self._build_prompt(message, history, lore_book)
+        prompt = self._build_prompt(message, history, lore_book, use_tools=False)
 
         # Create LLM request
         request = LLMRequest(
@@ -132,7 +141,9 @@ class AIService:
 
         return response.content.strip()
 
-    def _build_prompt(self, message: Message, history, lore_book) -> str:
+    def _build_prompt(
+        self, message: Message, history, lore_book, use_tools: bool = True
+    ) -> str:
         """Build the complete prompt for AI generation."""
         # This is copied from LLM Manager but simplified for tools
         author = message.author
@@ -188,7 +199,7 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
 [Start a new group chat. Group members: {persona_name}, {', '.join(authors)}]
 {history_prompt}
 [Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly. Do not start with "From {persona_name}:" or similar.]
-[You have access to tools, so leverage them as much as possible. You can use more than one tool at a time, and you can iteratively call them up to {self.config.max_tool_iterations} times with consecutive messages before giving answer, so plan accordingly. For tasks you deemed as hard, start with the sequential-thinking tool.]
+{"[You have access to tools, so leverage them as much as possible. You can use more than one tool at a time, and you can iteratively call them up to {self.config.max_tool_iterations} times with consecutive messages before giving answer, so plan accordingly. For tasks you deemed as hard, start with the sequential-thinking tool.]" if use_tools else ""}
 """.replace(
             "{{user}}", author_name
         )

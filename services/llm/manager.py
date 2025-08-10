@@ -137,6 +137,17 @@ class LLMManager:
             for name, provider in self.providers.items()
         }
 
+    def get_model_info(self, model: str) -> ModelInfo:
+        """Get information about a specific model."""
+        for provider in self.providers.values():
+            try:
+                model_info = provider.get_model_info(model)
+                if model_info:
+                    return model_info
+            except Exception as e:
+                self.logger.warning(f"Failed to get model info from provider: {e}")
+        raise ModelNotFoundError(f"Model {model} not found")
+
     async def _initialize_providers(self) -> None:
         """Initialize all configured LLM providers."""
         self.logger.info("Initializing LLM providers...")
