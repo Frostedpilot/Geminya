@@ -262,7 +262,8 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
 {history_prompt}
 [Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly.]
 [You have access to tools, so leverage them as much as possible. You can use more than one tool at a time, and you can iteratively call them up to {self.config.max_tool_iterations} times with consecutive messages before giving answer, so plan accordingly. For tasks you deem as hard, start with the sequential-thinking tool.]
-[Based on the results from tool calls, make your answer as detailed as possible.]
+[Always try to use the tools to search the web when you need information. When you do so, use both the google and tavily tools together to cross-check information.]
+[Based on the results from tool calls, make your answer as detailed as possible, including information not exactly relevant to {{user}}'s message.]
 """.replace(
             "{{user}}", author_name
         )
