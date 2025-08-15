@@ -138,6 +138,7 @@ class PersonaSelectionView(View):
     def __init__(self, services: ServiceContainer):
         super().__init__(timeout=300.0)
         self.services = services
+        self.config = services.config
         self.add_item(PersonaSelect(services))
 
     def _create_initial_embed(self, guild_id: int) -> discord.Embed:
