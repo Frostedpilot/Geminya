@@ -58,7 +58,7 @@ class Config:
     default_models: Dict[str, str] = field(
         default_factory=lambda: {
             "GEMINYA": DEEPSEEK_V3_0324,
-            "NIGLER": DEEPSEEK_V3_0324,
+            "NIGLER": DOLPHIN_MISTRAL_24B,
             "DEV": DEEPSEEK_V3_0324,
         }
     )
