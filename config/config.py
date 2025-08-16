@@ -40,7 +40,7 @@ class Config:
 
     # Core API credentials
     discord_token: str
-    discord_tokens: Dict[str, str] = field(default_factory=dict)
+    discord_tokens: Dict[str, str]
     openrouter_api_key: str
     saucenao_api_key: str
     tavily_api_key: str
@@ -259,6 +259,7 @@ class Config:
         )
 
         return cls(
+            discord_token=discord_token_dev,
             discord_tokens=discord_tokens,
             openrouter_api_key=openrouter_key,
             saucenao_api_key=saucenao_key,
@@ -349,6 +350,7 @@ class Config:
         active_servers = tuple(str(s) for s in active_servers)
 
         return cls(
+            discord_token=discord_token_dev,
             discord_tokens=discord_tokens,
             openrouter_api_key=openrouter_key,
             saucenao_api_key=saucenao_key,
