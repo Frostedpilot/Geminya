@@ -33,9 +33,6 @@ class StateManager:
         # Cache for performance
         self._channel_cache: Set[int] = set()
 
-        # MCP related state
-        self.use_mcp: bool = True
-
     async def initialize(self) -> None:
         """Initialize the state manager and load initial data."""
         self.logger.info("Initializing state manager...")

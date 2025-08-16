@@ -29,8 +29,7 @@ Geminya is a Discord bot with AI conversation capabilities built using a service
 │   ├── container.py       # Dependency injection container
 │   ├── state_manager.py   # Bot state and conversation history
 │   ├── ai_service.py      # AI operations and OpenRouter integration
-│   ├── error_handler.py   # Error handling and statistics
-│   └── mcp_client.py      # Model Context Protocol client
+│   └── error_handler.py   # Error handling and statistics
 ├── cogs/
 │   ├── __init__.py
 │   ├── base_command.py    # Base class for all commands
@@ -55,9 +54,7 @@ Geminya is a Discord bot with AI conversation capabilities built using a service
 │   ├── geminya.log        # Main application log
 │   ├── messages.log       # Message handling log
 │   └── errors.log         # Error tracking log
-├── personalities/         # Personality files directory
-└── mcp_servers/           # MCP server implementations
-    └── duckduckgo.py
+└── personalities/         # Personality files directory
 ```
 
 ## Configuration
