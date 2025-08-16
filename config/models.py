@@ -26,6 +26,7 @@ DEEPSEEK_R1_NAME = "DeepSeek R1 0528"
 GEMINI_2_5_FLASH_NAME = "Gemini 2.5 Flash"
 QWEN_3_235B_NAME = "Qwen 3 235B A22B Instruct 2507"
 MISTRAL_NEMO_NAME = "Mistral Nemo"
+DOLPHIN_MISTRAL_24B_NAME = "Venice Uncensored"
 
 # Model display names
 MODEL_NAMES = {
@@ -112,5 +113,14 @@ MODEL_INFOS: Dict[str, ModelInfo] = {
         supports_tools=True,
         cost_per_million_tokens={"in": 0.008, "out": 0.05},
         description="A 12B parameter model with a 128k token context length built by Mistral in collaboration with NVIDIA. The model is multilingual, supporting English, French, German, Spanish, Italian, Portuguese, Chinese, Japanese, Korean, Arabic, and Hindi. It supports function calling and is released under the Apache 2.0 license.",
+    ),
+    DOLPHIN_MISTRAL_24B_NAME: ModelInfo(
+        id=DOLPHIN_MISTRAL_24B,
+        name="Venice Uncensored",
+        provider="openrouter",
+        context_length=32768,
+        supports_tools=False,
+        cost_per_million_tokens={"in": 0.0, "out": 0.0},
+        description="Venice Uncensored Dolphin Mistral 24B Venice Edition is a fine-tuned variant of Mistral-Small-24B-Instruct-2501, developed by dphn.ai in collaboration with Venice.ai. This model is designed as an “uncensored” instruct-tuned LLM, preserving user control over alignment, system prompts, and behavior. Intended for advanced and unrestricted use cases, Venice Uncensored emphasizes steerability and transparent behavior, removing default safety and alignment layers typically found in mainstream assistant models.",
     ),
 }
