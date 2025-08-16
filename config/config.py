@@ -73,6 +73,13 @@ class Config:
     fall_back_tool_model: str = QWEN_3_235B_A22B_2507
     check_model: str = DOLPHIN_MISTRAL_24B
 
+    default_personas: Dict[str, str] = field(
+        default_factory=lambda: {
+            "GEMINYA": "Geminya_Exp",
+            "NIGLER": "Nigler",
+            "DEV": "Iris",
+        }
+    )
     default_persona: str = "Geminya_Exp"
 
     # Response configuration
@@ -222,6 +229,7 @@ class Config:
         self.discord_token = self.discord_tokens[mode]
         self.default_model = self.default_models.get(mode, self.default_model)
         self.fall_back_model = self.fall_back_models.get(mode, self.fall_back_model)
+        self.default_persona = self.default_personas.get(mode, self.default_persona)
 
     @classmethod
     def from_env(cls) -> "Config":
