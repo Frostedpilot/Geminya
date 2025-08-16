@@ -21,3 +21,87 @@ active_servers:
   []
   # - "1393258849867272325"
   # - "700261922259599420"
+
+# Anime Wordle Configuration
+anidle:
+  # Selection range configuration by type and difficulty
+  # Each combination has separate score and popularity ranges
+  # Higher weights mean more likely to be selected
+  # Scores use MyAnimeList's native 1-10 scale
+  # Popularity ranges: 1-1000 (1 = most popular, 1000 = less popular)
+  selection_ranges:
+    score:
+      easy:
+        "8.5-10": 10 # Extremely popular/acclaimed anime (highest chance)
+        "7.5-8.4": 10 # Popular anime
+
+      normal:
+        "8.0-10": 15 # Great anime
+        "6.0-7.9": 15 # Good anime
+        "5.0-5.9": 2 # Below average
+        "4.0-4.9": 1 # Poor anime
+        "0-3.9": 1 # Bad anime
+
+      hard:
+        "8.0-10": 1 # Great anime (lowest weight)
+        "6.0-7.9": 10 # Good anime (high weight)
+        "5.0-5.9": 5 # Below average (low weight)
+        "4.0-4.9": 1 # Poor anime (very low weight)
+        "0-3.9": 1 # Bad anime (minimal weight)
+
+      expert:
+        "6.0-6.9": 5 # Obscure average anime
+        "5.0-5.9": 10 # Unknown below average (highest chance)
+        "4.0-4.9": 10 # Obscure poor anime (very high chance)
+        "0-3.9": 1 # Ultra obscure/bad anime (high chance)
+
+    # Popularity ranges: 1-1000 (1 = most popular, 1000 = less popular)
+    # For reference: 500 is 500k member
+    # 1050 is 250k member
+    # 1700 is 150k member
+    # 2300 is 100k member
+    # 3400 is 50k member
+    popularity:
+      easy:
+        "1-500": 10 # Top 50 most popular anime (highest chance)
+        "501-1050": 2 # Top 100 popular anime
+
+      normal:
+        "1-500": 10 # Top 100 popular anime
+        "501-1050": 15 # Moderately popular anime (highest chance)
+        "1051-2300": 15 # Less popular anime
+        "2301-3400": 5 # Obscure anime
+        "3400-25000": 1 # Extremely obscure anime
+
+      hard:
+        "501-1500": 5 # Less popular anime (highest chance)
+        "1501-2300": 10 # Obscure anime
+        "2301-3400": 3 # Very obscure anime
+        "3401-25000": 1 # Ultra obscure anime
+
+      expert:
+        "1051-2300": 5 # Obscure anime
+        "2301-3400": 15 # Very obscure anime (highest chance)
+        "3401-15000": 10 # Ultra obscure anime
+        "15001-25000": 1 # Extremely obscure anime
+
+  # Selection method configuration by difficulty
+  # Determines whether to use 'score' or 'popularity' ranges for each difficulty
+  # This setting controls which set of ranges from selection_ranges to use
+  selection_method:
+    easy: "popularity" # Use score-based ranges for easy difficulty
+    normal: "popularity" # Use score-based ranges for normal difficulty
+    hard: "popularity" # Use popularity-based ranges for hard difficulty
+    expert: "popularity" # Use popularity-based ranges for expert difficulty
+
+  # Maximum number of pages to search through (each page = 25 anime for Jikan)
+  # Higher values = more anime variety but slower startup
+  max_search_pages: 100
+
+  # Sorting method for anime selection
+  # Options: popularity, score, favorites, start_date, end_date, episodes, rank, title
+  # popularity = Most popular/well-known anime first
+  # score = Highest rated anime first
+  # favorites = Most favorited anime first
+  # rank = Highest ranked anime first
+  sort_method: "popularity"
