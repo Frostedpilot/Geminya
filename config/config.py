@@ -19,6 +19,7 @@ from .models import (
     DEEPSEEK_V3_0324_PAID,
     QWEN_3_235B_A22B_2507,
     DOLPHIN_MISTRAL_24B,
+    MISTRAL_NEMO,
 )
 
 load_dotenv()
@@ -65,7 +66,7 @@ class Config:
     fall_back_models: Dict[str, str] = field(
         default_factory=lambda: {
             "GEMINYA": DEEPSEEK_V3_0324_PAID,
-            "NIGLER": DEEPSEEK_V3_0324_PAID,
+            "NIGLER": MISTRAL_NEMO,
             "DEV": DEEPSEEK_V3_0324_PAID,
         }
     )
