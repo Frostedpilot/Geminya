@@ -293,12 +293,12 @@ class MCPHealthMonitor:
         """Check the configuration validity."""
         try:
             # Check if OpenAI client is properly configured
-            if not hasattr(self.manager, "openai") or not self.manager.openai:
+            if not hasattr(self.manager, "llm_manager") or not self.manager.llm_manager:
                 return HealthCheck(
                     name="configuration",
                     status=HealthStatus.CRITICAL,
-                    message="OpenAI client not configured",
-                    details={"issue": "missing_openai_client"},
+                    message="LLM manager not configured",
+                    details={"issue": "missing_llm_manager"},
                 )
 
             # Check max iterations setting

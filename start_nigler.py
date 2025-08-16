@@ -56,6 +56,7 @@ def check_configuration():
         from config import Config, ConfigError
 
         config = Config.create()
+        config.set_mode("NIGLER")  # Set default mode
         config.validate()
 
         return True, config

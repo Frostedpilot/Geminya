@@ -40,6 +40,7 @@ class Config:
 
     # Core API credentials
     discord_token: str
+    discord_tokens: Dict[str, str] = field(default_factory=dict)
     openrouter_api_key: str
     saucenao_api_key: str
     tavily_api_key: str
@@ -53,7 +54,21 @@ class Config:
 
     # Model configuration
     default_model: str = DEEPSEEK_V3_0324
+    default_models: Dict[str, str] = field(
+        default_factory=lambda: {
+            "GEMINYA": DEEPSEEK_V3_0324,
+            "NIGLER": DEEPSEEK_V3_0324,
+            "DEV": DEEPSEEK_V3_0324,
+        }
+    )
     default_tool_model: str = DEEPSEEK_V3_0324
+    fall_back_models: Dict[str, str] = field(
+        default_factory=lambda: {
+            "GEMINYA": DEEPSEEK_V3_0324_PAID,
+            "NIGLER": DEEPSEEK_V3_0324_PAID,
+            "DEV": DEEPSEEK_V3_0324_PAID,
+        }
+    )
     fall_back_model: str = DEEPSEEK_V3_0324_PAID
     fall_back_tool_model: str = QWEN_3_235B_A22B_2507
     check_model: str = DOLPHIN_MISTRAL_24B
@@ -69,6 +84,9 @@ class Config:
 
     # Server restrictions (empty tuple means no restrictions)
     active_servers: tuple = ()
+
+    # Anidle game configuration
+    anidle: Dict[str, Any] = field(default_factory=dict)
 
     # LLM Providers specific configs
     available_providers: List[str] = field(default_factory=lambda: ["openrouter"])
@@ -195,6 +213,16 @@ class Config:
         for provider in self.available_providers:
             self.llm_providers[provider] = self.__getattribute__(provider + "_config")
 
+    def set_mode(self, mode: str):
+        """Set the mode for the configuration."""
+
+        assert mode in self.discord_tokens, "Invalid mode specified"
+
+        self.mode = mode
+        self.discord_token = self.discord_tokens[mode]
+        self.default_model = self.default_models.get(mode, self.default_model)
+        self.fall_back_model = self.fall_back_models.get(mode, self.fall_back_model)
+
     @classmethod
     def from_env(cls) -> "Config":
         """Load configuration from environment variables.
@@ -205,14 +233,21 @@ class Config:
         Raises:
             ConfigError: If required environment variables are missing
         """
-        discord_token = os.getenv("DISCORD_BOT_TOKEN", "")
+        discord_token_geminya = os.getenv("DISCORD_BOT_TOKEN_GEMINYA", "")
+        discord_token_nigler = os.getenv("DISCORD_BOT_TOKEN_NIGLER", "")
+        discord_token_dev = os.getenv("DISCORD_BOT_TOKEN_DEV", "")
+        discord_tokens = {
+            "GEMINYA": discord_token_geminya,
+            "NIGLER": discord_token_nigler,
+            "DEV": discord_token_dev,
+        }
         openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
         saucenao_key = os.getenv("SAUCENAO_API_KEY", "")
         tavily_key = os.getenv("TAVILY_API_KEY", "")
         google_console_api_key = os.getenv("GOOGLE_CONSOLE_API_KEY", "")
         google_search_engine_id = os.getenv("GOOGLE_SEARCH_ENGINE_ID", "")
 
-        if not discord_token:
+        if not discord_tokens:
             raise ConfigError("DISCORD_BOT_TOKEN environment variable is required")
         if not openrouter_key:
             raise ConfigError("OPENROUTER_API_KEY environment variable is required")
@@ -224,7 +259,7 @@ class Config:
         )
 
         return cls(
-            discord_token=discord_token,
+            discord_tokens=discord_tokens,
             openrouter_api_key=openrouter_key,
             saucenao_api_key=saucenao_key,
             tavily_api_key=tavily_key,
@@ -274,14 +309,21 @@ class Config:
         except json.JSONDecodeError as e:
             raise ConfigError(f"Invalid JSON in secrets file {secrets_path}: {e}")
 
-        discord_token = secrets.get("DISCORD_BOT_TOKEN")
+        discord_token_geminya = secrets.get("DISCORD_BOT_TOKEN_GEMINYA", "")
+        discord_token_nigler = secrets.get("DISCORD_BOT_TOKEN_NIGLER", "")
+        discord_token_dev = secrets.get("DISCORD_BOT_TOKEN_DEV", "")
+        discord_tokens = {
+            "GEMINYA": discord_token_geminya,
+            "NIGLER": discord_token_nigler,
+            "DEV": discord_token_dev,
+        }
         openrouter_key = secrets.get("OPENROUTER_API_KEY")
         saucenao_key = secrets.get("SAUCENAO_API_KEY")
         tavily_key = secrets.get("TAVILY_API_KEY", "")
         google_console_api_key = secrets.get("GOOGLE_CONSOLE_API_KEY", "")
         google_search_engine_id = secrets.get("GOOGLE_SEARCH_ENGINE_ID", "")
 
-        if not discord_token:
+        if not discord_tokens:
             raise ConfigError("DISCORD_BOT_TOKEN not found in secrets file")
         if not openrouter_key:
             raise ConfigError("OPENROUTER_API_KEY not found in secrets file")
@@ -307,7 +349,7 @@ class Config:
         active_servers = tuple(str(s) for s in active_servers)
 
         return cls(
-            discord_token=discord_token,
+            discord_tokens=discord_tokens,
             openrouter_api_key=openrouter_key,
             saucenao_api_key=saucenao_key,
             tavily_api_key=tavily_key,
@@ -325,6 +367,7 @@ class Config:
             ),
             max_response_length=config_data.get("max_response_length", 1999),
             active_servers=active_servers,
+            anidle=config_data.get("anidle", {}),
         )
 
     @classmethod
