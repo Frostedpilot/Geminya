@@ -119,7 +119,7 @@ class Config:
             #     "blacklist": [],  # No tools blacklisted for duckduckgo
             # },
             "anilist": {
-                "command": "npx",
+                "command": "npx.cmd",
                 "args": ["-y", "anilist-mcp"],
                 "env": None,
                 "blacklist": [
@@ -142,11 +142,11 @@ class Config:
                 ],
             },
             "sequential-thinking": {
-                "command": "npx",
+                "command": "npx.cmd",
                 "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
             },
             "tavily-remote-mcp": {
-                "command": "npx",
+                "command": "npx.cmd",
                 "args": [
                     "-y",
                     "mcp-remote",

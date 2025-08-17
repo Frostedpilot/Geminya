@@ -22,7 +22,7 @@ class MCPClient:
     def __init__(self, config: ServerConfig, logger: logging.Logger):
         self.config = config
         self.logger = logger
-
+        print(f"Attempting to launch command: {self.config.command} with args: {self.config.args}") 
         # Connection state
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
@@ -98,11 +98,10 @@ class MCPClient:
     async def _attempt_connection(self) -> None:
         """Attempt a single connection to the server."""
         try:
-            # Build server parameters
             server_params = StdioServerParameters(
                 command=self.config.command, args=self.config.args, env=self.config.env
             )
-
+            
             # Create connection
             stdio_transport = await asyncio.wait_for(
                 self.exit_stack.enter_async_context(stdio_client(server_params)),
