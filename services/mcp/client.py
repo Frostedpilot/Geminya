@@ -22,7 +22,6 @@ class MCPClient:
     def __init__(self, config: ServerConfig, logger: logging.Logger):
         self.config = config
         self.logger = logger
-        print(f"Attempting to launch command: {self.config.command} with args: {self.config.args}") 
         # Connection state
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
