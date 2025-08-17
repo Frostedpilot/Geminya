@@ -24,7 +24,7 @@ class MCPStatusCog(BaseCommand):
         name="mcp-status",
         description="Show MCP server status and health information",
     )
-    @commands.has_permissions(administrator=True)
+    @commands.has_permissions(manage_guild=True)
     async def mcp_status(self, ctx: commands.Context):
         """Display comprehensive MCP system status."""
 
@@ -141,7 +141,7 @@ class MCPStatusCog(BaseCommand):
         name="mcp-health",
         description="Perform detailed MCP health check",
     )
-    @commands.has_permissions(administrator=True)
+    @commands.has_permissions(manage_guild=True)
     async def mcp_health(self, ctx: commands.Context):
         """Perform and display detailed health check results."""
 
@@ -242,7 +242,7 @@ class MCPStatusCog(BaseCommand):
         name="mcp-servers",
         description="List all MCP servers and their details",
     )
-    @commands.has_permissions(administrator=True)
+    @commands.has_permissions(manage_guild=True)
     async def mcp_servers(self, ctx: commands.Context):
         """Display detailed information about all MCP servers."""
 
@@ -331,7 +331,7 @@ class MCPStatusCog(BaseCommand):
         if isinstance(error, commands.MissingPermissions):
             embed = discord.Embed(
                 title="❌ Permission Denied",
-                description="You need administrator permissions to use MCP commands.",
+                description="You need the 'Manage Server' permission to use MCP commands.",
                 color=0xFF6B6B,
             )
             await ctx.send(embed=embed)
