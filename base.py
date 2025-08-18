@@ -34,8 +34,28 @@ class GeminyaBot(commands.Bot):
             # Initialize all services
             await self.services.initialize_all()
 
-            # Load command cogs
+            # Determine if we are in Geminya mode
+            mode = getattr(self.config, 'mode', None)
+            # Cogs to skip in Geminya mode
+            skip_cogs = set()
+
+            if mode == "NIGLER":
+                skip_cogs = {
+                    "cogs.commands.anidle",
+                    "cogs.commands.guess_anime",
+                    "cogs.commands.anitrace",
+                    "cogs.commands.nekogif",
+                    "cogs.commands.dad_joke",
+                    "cogs.commands.yo_mama",
+                    "cogs.commands.useless_fact",
+                    "cogs.commands.saucenao",
+                }
+
+            # Load command cogs, skipping disabled ones
             for cog in COMMANDS:
+                if cog in skip_cogs:
+                    self.logger.info(f"Skipping disabled command cog: {cog}")
+                    continue
                 cog_name = cog.split(".")[-1]
                 try:
                     await self.load_extension(f"{cog}")
