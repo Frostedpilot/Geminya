@@ -119,7 +119,7 @@ class Config:
             #     "blacklist": [],  # No tools blacklisted for duckduckgo
             # },
             "anilist": {
-                "command": "npx.cmd",
+                "command": "npx",
                 "args": ["-y", "anilist-mcp"],
                 "env": None,
                 "blacklist": [
@@ -142,11 +142,11 @@ class Config:
                 ],
             },
             "sequential-thinking": {
-                "command": "npx.cmd",
+                "command": "npx",
                 "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
             },
             "tavily-remote-mcp": {
-                "command": "npx.cmd",
+                "command": "npx",
                 "args": [
                     "-y",
                     "mcp-remote",
@@ -157,7 +157,7 @@ class Config:
             "google-search": {
                 "command": "node",
                 "args": [
-                    "C:\\python\\personal\\Geminya\\mcp_servers\\mcp-google-custom-search-server\\build\\index.js"
+                    "mcp_servers/mcp-google-custom-search-server/build/index.js"
                 ],
                 "env": {
                     "GOOGLE_API_KEY": "",  # Will be set in __post_init__
