@@ -34,22 +34,21 @@ class GeminyaBot(commands.Bot):
             # Initialize all services
             await self.services.initialize_all()
 
-            # Determine if we are in Geminya mode
+            # Determine if we are in which mode
             mode = getattr(self.config, 'mode', None)
-            # Cogs to skip in Geminya mode
             skip_cogs = set()
 
-            if mode == "NIGLER":
-                skip_cogs = {
-                    "cogs.commands.anidle",
-                    "cogs.commands.guess_anime",
-                    "cogs.commands.anitrace",
-                    "cogs.commands.nekogif",
-                    "cogs.commands.dad_joke",
-                    "cogs.commands.yo_mama",
-                    "cogs.commands.useless_fact",
-                    "cogs.commands.saucenao",
-                }
+            # if mode == "NIGLER":
+            #     skip_cogs = {
+            #         "cogs.commands.anidle",
+            #         "cogs.commands.guess_anime",
+            #         "cogs.commands.anitrace",
+            #         "cogs.commands.nekogif",
+            #         "cogs.commands.dad_joke",
+            #         "cogs.commands.yo_mama",
+            #         "cogs.commands.useless_fact",
+            #         "cogs.commands.saucenao",
+            #     }
 
             # Load command cogs, skipping disabled ones
             for cog in COMMANDS:
