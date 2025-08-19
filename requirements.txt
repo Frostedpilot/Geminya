@@ -1,43 +1,8 @@
-"""
-Geminya Discord Bot Requirements
-This file lists all the dependencies needed to run the Geminya Discord bot.
-"""
-
-# Core dependencies for bot functionality
-discord.py>=2.3.0,<3.0.0        # Discord bot framework and API wrapper
-openai>=1.0.0,<2.0.0             # OpenAI-compatible API client for OpenRouter
-aiohttp>=3.8.0,<4.0.0            # Async HTTP client for external APIs
-PyYAML>=6.0,<7.0                 # YAML configuration file parsing
-
-# Enhanced logging and error handling
-coloredlogs>=15.0                # Colored console output for better debugging
-
-# Optional development dependencies
-# Uncomment these lines if you plan to develop or contribute to the bot
-
-# Code quality and formatting
-# black>=23.0.0                   # Code formatter
-# flake8>=6.0.0                   # Code linter
-# mypy>=1.0.0                     # Static type checker
-# isort>=5.12.0                   # Import sorter
-
-# Testing framework
-# pytest>=7.0.0                   # Testing framework
-# pytest-asyncio>=0.20.0          # Async test support
-# pytest-cov>=4.0.0               # Coverage reporting
-
-# Performance monitoring (optional)
-# psutil>=5.9.0                   # System resource monitoring
-# memory-profiler>=0.60           # Memory usage profiling
-
-# Enhanced logging (optional)
-# coloredlogs>=15.0               # Colored console logs
-# structlog>=23.0                 # Structured logging
-
-# Configuration validation (optional)
-# pydantic>=2.0.0                 # Data validation
-# python-dotenv>=1.0.0            # Environment file support
-
-# Database support (for future features)
-# asyncpg>=0.28.0                 # PostgreSQL async driver
-# redis>=4.5.0                    # Redis caching support
+discord.py==2.6.0
+saucenao-api==2.4.0
+mcp==1.13.0
+openai==1.100.1
+PyYAML==6.0.2
+requests==2.32.5
+urllib3==2.5.0
+aiohttp==3.12.15
