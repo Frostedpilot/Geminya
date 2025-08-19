@@ -166,3 +166,11 @@ class MyEvent(BaseEventHandler):
 - Deepseek models are good for roleplay, Gemini are super fast and good for normal assistant work.
 - All models except for the Claude, Gemini and GPT family are pretty suck at tool calling, especially parallel tool calling.
 - Claude is god at tool calling, but it burns your wallet faster than you notice, RIP my wallet.
+
+## TODO
+
+- [ ] guess anime character command
+- [ ] anydle command
+- [ ] waifu gacha command
+- [ ] image input support
+- [ ] lorebook but for tool use
