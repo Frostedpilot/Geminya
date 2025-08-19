@@ -149,7 +149,9 @@ class CharacterData:
         if anime_data.get('title_japanese') and anime_data['title_japanese'] not in titles:
             titles.append(anime_data['title_japanese'])
         
-        return [title for title in titles if title and self._is_latin_title(title)]
+        # Return all titles, but prioritize Latin titles for better user experience
+        # Keep both Latin and non-Latin titles to be more inclusive
+        return [title for title in titles if title and title.strip()]
     
     def _is_latin_title(self, title: str) -> bool:
         """Check if title contains only Latin characters, numbers, and common punctuation."""
@@ -967,10 +969,20 @@ class GuessCharacterCog(BaseCommand):
     def _check_anime_match(self, guess: str, target_character: CharacterData) -> bool:
         """Check if the anime guess matches any of the target anime's titles."""
         guess_normalized = self._normalize_text(guess)
+        all_titles = target_character.get_all_anime_titles()
         
-        for title in target_character.get_all_anime_titles():
+        # Log available titles for debugging (only first few to avoid spam)
+        if len(all_titles) > 5:
+            sample_titles = all_titles[:5] + [f"... and {len(all_titles) - 5} more"]
+        else:
+            sample_titles = all_titles
+        
+        self.logger.info(f"Checking anime guess '{guess}' against {len(all_titles)} titles: {sample_titles}")
+        
+        for title in all_titles:
             title_normalized = self._normalize_text(title)
             if guess_normalized == title_normalized:
+                self.logger.info(f"Anime match found: '{guess}' matches '{title}'")
                 return True
         
         return False

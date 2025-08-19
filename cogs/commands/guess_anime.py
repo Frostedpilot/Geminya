@@ -300,6 +300,12 @@ class GuessAnimeCog(BaseCommand):
         elif difficulty == "expert" and difficulty in score_ranges:
             # Expert: All anime including low-rated (no score filter for maximum variety)
             return {}  # No score filter - includes all ratings
+        elif difficulty == "crazy" and difficulty in score_ranges:
+            # Crazy: Very low-rated anime (challenging)
+            return {"score": 2}  # Very low minimum score
+        elif difficulty == "insanity" and difficulty in score_ranges:
+            # Insanity: Extremely challenging anime selection
+            return {"score": 1}  # Lowest possible score filter
         else:
             # Default to normal range if config not found
             return {"score": 6}
@@ -501,7 +507,7 @@ class GuessAnimeCog(BaseCommand):
     @app_commands.command(name="guessanime", description="Start a visual anime guessing game!")
     @app_commands.describe(
         action="Choose an action: start, guess, giveup",
-        difficulty="Game difficulty (only for start): easy, normal, hard, expert",
+        difficulty="Game difficulty (only for start): easy, normal, hard, expert, crazy, insanity",
         anime_name="Your anime guess (only for guess action)"
     )
     @app_commands.choices(
@@ -514,7 +520,9 @@ class GuessAnimeCog(BaseCommand):
             app_commands.Choice(name="easy", value="easy"),
             app_commands.Choice(name="normal", value="normal"),
             app_commands.Choice(name="hard", value="hard"),
-            app_commands.Choice(name="expert", value="expert")
+            app_commands.Choice(name="expert", value="expert"),
+            app_commands.Choice(name="crazy", value="crazy"),
+            app_commands.Choice(name="insanity", value="insanity")
         ]
     )
     @app_commands.autocomplete(anime_name=anime_name_autocomplete)
