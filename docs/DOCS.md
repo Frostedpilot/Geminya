@@ -50,6 +50,12 @@
 - Legacy compatibility layer
 - General utility functions
 
+#### Game Commands (`cogs/commands/`)
+
+- **[ANIDLE.md](ANIDLE.md)** - Anime Wordle game with score/popularity-based difficulty
+- **[GUESS_ANIME.md](GUESS_ANIME.md)** - Screenshot-based anime guessing game
+- **[GUESS_CHARACTER.md](GUESS_CHARACTER.md)** - Character portrait identification game
+
 ### File Organization
 
 ```

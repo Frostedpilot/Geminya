@@ -718,7 +718,9 @@ class AnidleCog(BaseCommand):
             "easy": "🟢",
             "normal": "🟡", 
             "hard": "🟠",
-            "expert": "🔴"
+            "expert": "🔴",
+            "crazy": "🟣",
+            "insanity": "⚫"
         }
         difficulty_emoji = difficulty_emojis.get(game.difficulty, "🟡")
         
@@ -793,7 +795,9 @@ class AnidleCog(BaseCommand):
             "easy": "🟢 Easy",
             "normal": "🟡 Normal", 
             "hard": "🟠 Hard",
-            "expert": "🔴 Expert"
+            "expert": "🔴 Expert",
+            "crazy": "🟣 Crazy",
+            "insanity": "⚫ Insanity"
         }
         difficulty_text = difficulty_descriptions.get(game.difficulty, "🟡 Normal")
         
@@ -852,7 +856,9 @@ class AnidleCog(BaseCommand):
         app_commands.Choice(name="Easy - Popular & Well-known Anime", value="easy"),
         app_commands.Choice(name="Normal - Mixed Selection", value="normal"),
         app_commands.Choice(name="Hard - Obscure & Lesser-known", value="hard"),
-        app_commands.Choice(name="Expert - Ultra Obscure & Hidden Gems", value="expert")
+        app_commands.Choice(name="Expert - Ultra Obscure & Hidden Gems", value="expert"),
+        app_commands.Choice(name="Crazy - Extremely Obscure & Challenging", value="crazy"),
+        app_commands.Choice(name="Insanity - The Most Impossible Challenge", value="insanity")
     ])
     @app_commands.autocomplete(guess=anime_autocomplete)
     async def anidle(
@@ -919,7 +925,9 @@ class AnidleCog(BaseCommand):
                 "easy": "🟢 **Easy** - Popular & Well-known Anime",
                 "normal": "🟡 **Normal** - Mixed Selection", 
                 "hard": "🟠 **Hard** - Obscure & Lesser-known",
-                "expert": "🔴 **Expert** - Ultra Obscure & Hidden Gems"
+                "expert": "🔴 **Expert** - Ultra Obscure & Hidden Gems",
+                "crazy": "🟣 **Crazy** - Extremely Obscure & Challenging",
+                "insanity": "⚫ **Insanity** - The Most Impossible Challenge"
             }
             
             embed = discord.Embed(
@@ -953,7 +961,9 @@ class AnidleCog(BaseCommand):
                 "easy": "Focuses on mainstream, popular anime that most people have heard of.",
                 "normal": "Balanced mix of popular and lesser-known anime.",
                 "hard": "Emphasizes obscure, underrated, or niche anime series.",
-                "expert": "Ultra challenging with the most obscure and unknown anime."
+                "expert": "Ultra challenging with the most obscure and unknown anime.",
+                "crazy": "Extremely challenging with very obscure and forgotten anime.",
+                "insanity": "The ultimate challenge - only the most impossible and unknown anime."
             }
             
             embed.add_field(
@@ -1171,7 +1181,9 @@ class AnidleCog(BaseCommand):
             "easy": "🟢 Easy - Popular & Well-known",
             "normal": "🟡 Normal - Mixed Selection", 
             "hard": "🟠 Hard - Obscure & Lesser-known",
-            "expert": "🔴 Expert - Ultra Obscure & Hidden Gems"
+            "expert": "🔴 Expert - Ultra Obscure & Hidden Gems",
+            "crazy": "🟣 Crazy - Extremely Obscure & Challenging",
+            "insanity": "⚫ Insanity - The Most Impossible Challenge"
         }
         
         embed = discord.Embed(

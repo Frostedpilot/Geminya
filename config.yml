@@ -38,23 +38,28 @@ anidle:
       normal:
         "8.0-10": 15 # Great anime
         "6.0-7.9": 15 # Good anime
-        "5.0-5.9": 2 # Below average
-        "4.0-4.9": 1 # Poor anime
-        "0-3.9": 1 # Bad anime
+        "5.0-5.9": 5 # Below average
 
       hard:
         "8.0-10": 1 # Great anime (lowest weight)
         "6.0-7.9": 10 # Good anime (high weight)
-        "5.0-5.9": 5 # Below average (low weight)
-        "4.0-4.9": 1 # Poor anime (very low weight)
-        "0-3.9": 1 # Bad anime (minimal weight)
+        "5.0-5.9": 15 # Below average (low weight)
 
       expert:
+        "7.0-8.9": 5
         "6.0-6.9": 5 # Obscure average anime
-        "5.0-5.9": 10 # Unknown below average (highest chance)
-        "4.0-4.9": 10 # Obscure poor anime (very high chance)
+        "5.0-5.9": 5 # Unknown below average (highest chance)
+        "4.0-4.9": 5 # Obscure poor anime (very high chance)
+
+      crazy:
+        "6.0-6.9": 5 # Obscure average anime
+        "5.0-5.9": 5 # Unknown below average (highest chance)
+        "4.0-4.9": 5 # Obscure poor anime (very high chance)
         "0-3.9": 1 # Ultra obscure/bad anime (high chance)
 
+      insanity:
+        "4.0-4.9": 5 # Obscure poor anime (very high chance)
+        "0-3.9": 5 # Ultra obscure/bad anime (high chance)
     # Popularity ranges: 1-1000 (1 = most popular, 1000 = less popular)
     # For reference: 500 is 500k member
     # 1050 is 250k member
@@ -70,21 +75,25 @@ anidle:
         "1-500": 10 # Top 100 popular anime
         "501-1050": 15 # Moderately popular anime (highest chance)
         "1051-2300": 15 # Less popular anime
-        "2301-3400": 5 # Obscure anime
-        "3400-25000": 1 # Extremely obscure anime
 
       hard:
         "501-1500": 5 # Less popular anime (highest chance)
         "1501-2300": 10 # Obscure anime
         "2301-3400": 3 # Very obscure anime
-        "3401-25000": 1 # Ultra obscure anime
 
       expert:
         "1051-2300": 5 # Obscure anime
         "2301-3400": 15 # Very obscure anime (highest chance)
-        "3401-15000": 10 # Ultra obscure anime
-        "15001-25000": 1 # Extremely obscure anime
+        "3401-5000": 10 # Ultra obscure anime
 
+      crazy:
+        "3401-5000": 10 # Ultra obscure anime
+        "5000-7000": 5 # Extremely obscure anime
+        "7000-10000": 1
+
+      insanity:
+        "5000-15000": 10 # Ultra obscure anime
+        "15001-25000": 1 # Extremely obscure anime
   # Selection method configuration by difficulty
   # Determines whether to use 'score' or 'popularity' ranges for each difficulty
   # This setting controls which set of ranges from selection_ranges to use
@@ -93,6 +102,8 @@ anidle:
     normal: "popularity" # Use score-based ranges for normal difficulty
     hard: "popularity" # Use popularity-based ranges for hard difficulty
     expert: "popularity" # Use popularity-based ranges for expert difficulty
+    crazy: "popularity"
+    insanity: "popularity"
 
   # Maximum number of pages to search through (each page = 25 anime for Jikan)
   # Higher values = more anime variety but slower startup
@@ -105,3 +116,46 @@ anidle:
   # favorites = Most favorited anime first
   # rank = Highest ranked anime first
   sort_method: "popularity"
+
+# Character Guessing Game Configuration
+guess_character:
+  # Selection ranges for character-based difficulty (by character popularity)
+  # Character popularity: 1-1000 (1 = most popular character, 1000 = less popular)
+  # Character popularity data from MyAnimeList favorites/likes
+  character_popularity:
+    easy:
+      "1-100": 15     # Top 100 most popular characters (highest chance)
+      "101-500": 5    # Top 500 popular characters
+
+    normal:
+      "1-300": 10     # Top 300 popular characters
+      "301-1000": 15  # Moderately popular characters (highest chance)
+      "1001-2000": 5  # Less popular characters
+
+    hard:
+      "501-2000": 10  # Less popular characters (highest chance)
+      "2001-5000": 15 # Obscure characters (highest chance)
+      "5001-8000": 5  # Very obscure characters
+
+    expert:
+      "2001-5000": 5  # Obscure characters
+      "5001-10000": 15 # Very obscure characters (highest chance)
+      "10001-15000": 10 # Ultra obscure characters
+
+    crazy:
+      "8001-15000": 10 # Ultra obscure characters
+      "15001-25000": 5 # Extremely obscure characters
+      "25001-50000": 1 # Unknown characters
+
+    insanity:
+      "25001-50000": 10 # Unknown characters
+      "50001-100000": 5 # Extremely unknown characters
+  
+  # Character role requirements for each difficulty
+  character_roles:
+    easy: ["Main", "Supporting"]
+    normal: ["Main", "Supporting"] 
+    hard: ["Main", "Supporting"]
+    expert: ["Main", "Supporting"]
+    crazy: ["Main", "Supporting"]
+    insanity: ["Main", "Supporting"]
