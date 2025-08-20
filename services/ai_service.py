@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import logging
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 from discord import Message
 
 if TYPE_CHECKING:
@@ -132,8 +132,10 @@ class AIService:
         lore_books = self.state_manager.get_lore_books()
         lore_book = lore_books.get(persona_name) if lore_books else None
 
+        tool_book = self.state_manager.get_tool_book()
+
         # Build initial prompt
-        prompt = self._build_tool_prompt(message, history)
+        prompt = self._build_tool_prompt(message, history, tool_book)
 
         # Start iterative tool calling process
         tool_response = await self.mcp_client.process_query(
@@ -199,7 +201,6 @@ class AIService:
                             self.logger.debug(
                                 f"Added lore example from category: {category_name}"
                             )
-                            break
 
         # Collect all participants
         authors = {author_name}
@@ -228,7 +229,9 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
 
         return final_prompt.strip()
 
-    def _build_tool_prompt(self, message: Message, history):
+    def _build_tool_prompt(
+        self, message: Message, history, tool_book: Optional[Dict[str, Any]]
+    ):
         """Build the tool prompt for AI generation."""
         author = message.author
         author_name = author.name
@@ -243,6 +246,23 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
                 line = f"From: {entry['name']}{nick_part}\n{entry['content']}\n\n"
                 history_prompt += line
         history_prompt = history_prompt.strip()
+
+        # Build tool book section
+        tool_prompt = ""
+        for category_name, category_data in (tool_book or {}).items():
+            if isinstance(category_data, dict) and "keywords" in category_data:
+                keywords = category_data.get("keywords", [])
+                if any(keyword in message.content.lower() for keyword in keywords):
+                    self.logger.debug(
+                        f"Matched tool keyword in message: {category_name}: {message.content.lower()}"
+                    )
+                    example = category_data.get("instruction", "")
+                    if example:
+                        tool_prompt += f"\n\n{example}"
+                        self.logger.debug(
+                            f"Added tool example from category: {category_name}"
+                        )
+
         # Collect all participants
         authors = {author_name}
         if history:
@@ -258,12 +278,14 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
         # Build final prompt
         final_prompt = f"""
 Write {persona_name}'s next reply in a fictional chat between participants and {author_name}.
-[Start a new group chat. Group members: {persona_name}, {', '.join(authors)}]
-{history_prompt}
 [Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly.]
 [You have access to tools, so leverage them as much as possible. You can use more than one tool at a time, and you can iteratively call them up to {self.config.max_tool_iterations} times with consecutive messages before giving answer, so plan accordingly. For tasks you deem as hard, start with the sequential-thinking tool.]
-[Always try to use the tools to search the web when you need information. When you do so, use both the google and tavily tools together to cross-check information.]
+Here are some tips that maybe relevant to the request:
+{tool_prompt}
 [Based on the results from tool calls, make your answer as detailed as possible, including information not exactly relevant to {{user}}'s message.]
+---
+[Start a new group chat. Group members: {persona_name}, {', '.join(authors)}]
+{history_prompt}
 """.replace(
             "{{user}}", author_name
         )

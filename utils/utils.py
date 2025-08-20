@@ -78,13 +78,18 @@ def extract_image_links(response: str) -> List[str]:
     Returns:
         List[str]: A list of extracted image links.
     """
-    image_links_pttn = r"https?://\S+\.(?:jpg|jpeg|png|gif|webp|bmp)"
+    image_links_pttn = r"https?://\S+\.(?:jpg|jpeg|png|gif|webp|bmp)(?:\?\S*)?"
     lst = re.findall(image_links_pttn, response, re.IGNORECASE)
 
     out = []
 
     for match in lst:
-        out.append(match.strip())
+        res = match.strip()
+        if res[-1] == ")":
+            res = res[
+                :-1
+            ]  # Remove trailing parenthesis if present. This is due to the regex pattern limitation.
+        out.append(res)
 
     return out
 

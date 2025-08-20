@@ -31,6 +31,10 @@ class StateManager:
 
         self.lore_books: Optional[Dict[str, Any]] = {}  # persona -> lore book data
 
+        self.tool_book: Optional[Dict[str, Any]] = (
+            {}
+        )  # tool book data: category -> data
+
         self.persona: Dict[str, str] = {}  # server_id -> persona name
 
         # Cache for performance
@@ -45,6 +49,9 @@ class StateManager:
 
         # Load lore books
         self._load_lore_books()
+
+        # Load tool book
+        self._load_tool_book()
 
         # Load persona list
         self._load_persona_list()
@@ -228,6 +235,15 @@ class StateManager:
         """
         return self.lore_books
 
+    def get_tool_book(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the current tool book data.
+
+        Returns:
+            Optional[Dict[str, Any]]: Tool book data or None if not loaded
+        """
+        return self.tool_book
+
     def clear_channel_history(self, channel_id: int) -> None:
         """Clear conversation history for a specific channel.
 
@@ -343,3 +359,21 @@ class StateManager:
         except Exception as e:
             self.logger.error(f"Failed to load lore books: {e}")
             self.lore_books = {}
+
+    def _load_tool_book(self) -> None:
+        try:
+            from utils.config_load import load_language_file
+
+            lang_data = load_language_file()
+            tool_book_data = lang_data.get("tool_book", {})
+
+            self.tool_book = tool_book_data
+
+            categories = tool_book_data.keys()
+            self.logger.info(
+                f"Loaded tool book with {len(tool_book_data)} entries, keys: {list(categories)}"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Failed to load tool book: {e}")
+            self.tool_book = {}
