@@ -112,12 +112,12 @@ class Config:
     # MCP server folders
     mcp_server_instruction: Dict = field(
         default_factory=lambda: {
-            # "duckduckgo": {
-            #     "command": "python",
-            #     "args": ["mcp_servers/duckduckgo.py"],
-            #     "env": None,
-            #     "blacklist": [],  # No tools blacklisted for duckduckgo
-            # },
+            "duckduckgo": {
+                "command": "python",
+                "args": ["mcp_servers/duckduckgo.py"],
+                "env": None,
+                "blacklist": [],  # No tools blacklisted for duckduckgo
+            },
             "anilist": {
                 "command": "npx.cmd",
                 "args": ["-y", "anilist-mcp"],
