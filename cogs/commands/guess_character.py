@@ -555,255 +555,137 @@ class GuessCharacterCog(BaseCommand):
             self.logger.error(f"Unexpected error in character autocomplete: {e}")
             return []
     
-    def _get_character_selection_config(self, difficulty: str) -> List[Dict[str, Any]]:
-        """Get anime difficulty and character role combinations for the chosen difficulty."""
-        config_map = {
-            'easy': [
-                {'anime_difficulty': 'easy', 'character_roles': ['Main']},
-                {'anime_difficulty': 'normal', 'character_roles': ['Main']}
-            ],
-            'normal': [
-                {'anime_difficulty': 'easy', 'character_roles': ['Supporting']},
-                {'anime_difficulty': 'normal', 'character_roles': ['Supporting']}
-            ],
-            'hard': [
-                {'anime_difficulty': 'hard', 'character_roles': ['Main']},
-                {'anime_difficulty': 'expert', 'character_roles': ['Main']}
-            ],
-            'expert': [
-                {'anime_difficulty': 'hard', 'character_roles': ['Supporting']},
-                {'anime_difficulty': 'expert', 'character_roles': ['Supporting']}
-            ],
-            'crazy': [
-                {'anime_difficulty': 'crazy', 'character_roles': ['Main']}
-            ],
-            'insanity': [
-                {'anime_difficulty': 'crazy', 'character_roles': ['Supporting']}
-            ]
-        }
-        
-        return config_map.get(difficulty, config_map['normal'])  # Default to normal if not found
-    
-    def _get_selection_config(self, difficulty: str) -> Tuple[str, Dict[str, int]]:
-        """Get selection method and ranges based on difficulty level from config."""
-        try:
-            # Get config settings - now access anidle directly as a dict
-            anime_config = self.services.config.anidle
-            
-            # Get selection method for this difficulty
-            selection_methods = anime_config.get('selection_method', {})
-            selection_method = selection_methods.get(difficulty, 'score')  # Default to score
-            
-            # Get selection ranges for this method and difficulty
-            selection_ranges = anime_config.get('selection_ranges', {})
-            method_ranges = selection_ranges.get(selection_method, {})
-            difficulty_ranges = method_ranges.get(difficulty, {})
-            
-            if difficulty_ranges:
-                self.logger.info(f"Using {selection_method} selection for {difficulty} difficulty: {len(difficulty_ranges)} ranges")
-                return selection_method, difficulty_ranges
-            
-            # Fallback to hard-coded defaults if config not found
-            self.logger.warning(f"Selection config not found for {difficulty}, using fallback defaults")
-            fallback_weights = {
-                '8.0-10': 15, '6.0-7.9': 15, '5.0-5.9': 2, '4.0-4.9': 1, '0-3.9': 1
-            }
-            return 'score', fallback_weights
-            
-        except (AttributeError, KeyError, TypeError) as e:
-            self.logger.error(f"Error reading selection config: {e}")
-            # Hard fallback to default score-based selection
-            fallback_weights = {
-                '8.0-10': 15, '6.0-7.9': 15, '5.0-5.9': 2, '4.0-4.9': 1, '0-3.9': 1
-            }
-            self.logger.info(f"Using hard fallback score weights: {len(fallback_weights)} ranges")
-            return 'score', fallback_weights
 
-    async def _select_random_anime_by_difficulty(self, difficulty: str) -> Optional[Dict[str, Any]]:
-        """Select a random anime based on difficulty using anidle's popularity ranges."""
-        try:
-            # Get config settings - now access anidle directly as a dict
-            anime_config = self.services.config.anidle
-            
-            # Get selection method and ranges for this difficulty
-            selection_method, selection_ranges = self._get_selection_config(difficulty)
-            sort_method = anime_config.get('sort_method', 'popularity')
-            
-            # Create weighted list of ranges
-            weighted_ranges = []
-            for range_str, weight in selection_ranges.items():
-                min_val, max_val = map(float, range_str.split('-'))
-                weighted_ranges.extend([(min_val, max_val)] * weight)
-            
-            # Randomly select a range based on weights
-            selected_range = random.choice(weighted_ranges)
-            min_val, max_val = selected_range
-            
-            # Build API parameters based on selection method
-            if selection_method == 'score':
-                self.logger.info(f"Using score selection: {min_val}-{max_val}")
-                # For score-based selection, we need to use sort by score
-                api_params = {
-                    'min_score': min_val,
-                    'max_score': max_val,
-                    'order_by': 'score'
-                }
-            elif selection_method == 'popularity':
-                self.logger.info(f"Using popularity selection: rank {int(min_val)}-{int(max_val)}")
-                # For popularity-based selection, we need to calculate page range
-                # Jikan shows 25 anime per page, so rank 1-25 = page 1, rank 26-50 = page 2, etc.
-                start_page = max(1, int(min_val) // 25)
-                end_page = max(start_page, int(max_val) // 25)
-                
-                # Select a random page within the calculated range
-                random_page = random.randint(start_page, end_page)
-                api_params = {
-                    'page': random_page,
-                    'order_by': 'popularity'
-                }
-            else:
-                # Fallback to popularity-based selection
-                self.logger.warning(f"Unknown selection method '{selection_method}', falling back to popularity")
-                api_params = {
-                    'page': random.randint(1, 10),
-                    'order_by': 'popularity'
-                }
-            
-            # Query anime using Jikan API
-            data = await self._query_jikan('/anime', api_params)
-            if data and data.get('data'):
-                anime_list = data['data']
-                if anime_list:
-                    # Filter results based on selection method if needed
-                    if selection_method == 'popularity':
-                        filtered_anime = []
-                        for anime in anime_list:
-                            popularity = anime.get('popularity')
-                            if popularity and min_val <= popularity <= max_val:
-                                filtered_anime.append(anime)
-                        
-                        if filtered_anime:
-                            anime_list = filtered_anime
-                    
-                    # Randomly select one anime from the filtered list
-                    selected_anime = random.choice(anime_list)
-                    
-                    # Log selection details
-                    anime_title = selected_anime.get('title', 'Unknown')
-                    anime_popularity = selected_anime.get('popularity', 'N/A')
-                    
-                    self.logger.info(f"Selected anime for character game: {anime_title} (Popularity: {anime_popularity})")
-                    return selected_anime
-            
-            # Fallback if no results found
-            self.logger.warning("No anime found with specified criteria, trying fallback")
-            fallback_params = {
-                'page': random.randint(1, 10),
-                'limit': 25,
-                'order_by': 'popularity'
-            }
-            
-            data = await self._query_jikan('/anime', fallback_params)
-            if data and data.get('data') and data['data']:
-                selected_anime = random.choice(data['data'])
-                anime_title = selected_anime.get('title', 'Unknown')
-                self.logger.info(f"Fallback selected anime for character game: {anime_title}")
-                return selected_anime
-            
-            self.logger.error("Could not retrieve any anime from API")
-            return None
-            
-        except Exception as e:
-            self.logger.error(f"Error in anime selection for character game: {e}")
-            return None
     
-    async def _get_random_character_from_anime(self, anime_id: int, anime_data: Dict[str, Any], required_roles: Optional[List[str]] = None) -> Optional[CharacterData]:
-        """Get a random character from the specified anime and fetch all their anime appearances."""
+
+    
+    def _get_character_selection_method(self, difficulty: str) -> str:
+        """Get character selection method (always character_based now)."""
+        return 'character_based'
+    
+    def _get_character_popularity_ranges(self, difficulty: str) -> Dict[str, int]:
+        """Get character popularity ranges for this difficulty."""
         try:
-            # Get characters for this anime
-            data = await self._query_jikan(f'/anime/{anime_id}/characters')
-            
-            if not data or not data.get('data'):
-                self.logger.warning(f"No characters found for anime {anime_id}")
-                return None
-            
-            characters = data['data']
-            
-            # Filter by required roles if specified
-            if required_roles:
-                filtered_characters = [char for char in characters if char.get('role') in required_roles]
-                if filtered_characters:
-                    characters = filtered_characters
-                else:
-                    # If no characters match required roles, log and fall back to all main/supporting
-                    self.logger.warning(f"No characters with roles {required_roles} found, falling back to all main/supporting")
-                    characters = [char for char in characters if char.get('role') in ['Main', 'Supporting']]
-            else:
-                # Default behavior: filter for main and supporting characters only
-                characters = [char for char in characters if char.get('role') in ['Main', 'Supporting']]
-            
-            if not characters:
-                # If no suitable characters, use all characters as last resort
-                characters = data['data']
-            
-            if not characters:
-                self.logger.warning(f"No suitable characters found for anime {anime_id}")
-                return None
-            
-            # Select random character
-            selected_character = random.choice(characters)
-            character_data = selected_character.get('character', {})
-            character_id = character_data.get('mal_id')
-            
-            if not character_id:
-                self.logger.warning("Selected character has no ID")
-                return None
-            
-            # Fetch full character details to get nicknames and other information
-            full_character_data = await self._query_jikan(f'/characters/{character_id}')
-            
-            if full_character_data and full_character_data.get('data'):
-                # Use the full character data which includes nicknames
-                character_data = full_character_data['data']
-            else:
-                self.logger.warning(f"Could not fetch full character details for {character_id}, using basic data")
-                # Keep the basic character_data from the anime endpoint
-            
-            # Now fetch all anime appearances for this character
-            character_full_data = await self._query_jikan(f'/characters/{character_id}/anime')
-            
-            if not character_full_data or not character_full_data.get('data'):
-                self.logger.warning(f"Could not fetch anime appearances for character {character_id}")
-                # Fall back to just the original anime
-                anime_appearances = [{'anime': anime_data, 'role': selected_character.get('role', '')}]
-                self.logger.info(f"Using fallback anime data: {anime_data.get('title', 'No title')}")
-            else:
-                anime_appearances = character_full_data['data']
-                
-                self.logger.info(f"Found {len(anime_appearances)} anime appearances for character")
-                
-                # Log first anime appearance for debugging
-                if anime_appearances:
-                    first_anime = anime_appearances[0].get('anime', {})
-                    self.logger.info(f"First anime appearance: {first_anime.get('title', 'No title')}")
-            
-            # Ensure we have at least one anime appearance
-            if not anime_appearances:
-                self.logger.warning("No anime appearances found after filtering, using original anime as fallback")
-                anime_appearances = [{'anime': anime_data, 'role': selected_character.get('role', '')}]
-            
-            # Log selection
-            char_name = character_data.get('name', 'Unknown')
-            char_role = selected_character.get('role', 'Unknown')
-            anime_count = len(anime_appearances)
-            required_roles_str = f" (required: {required_roles})" if required_roles else ""
-            self.logger.info(f"Selected character: {char_name} (Role: {char_role}, appears in {anime_count} anime{required_roles_str})")
-            
-            return CharacterData(character_data, anime_appearances)
-            
-        except Exception as e:
-            self.logger.error(f"Error getting character from anime {anime_id}: {e}")
+            character_config = self.services.config.guess_character
+            popularity_ranges = character_config.get('character_popularity', {})
+            return popularity_ranges.get(difficulty, {})
+        except (AttributeError, KeyError, TypeError):
+            return {}
+    
+    def _get_character_roles_for_difficulty(self, difficulty: str) -> List[str]:
+        """Get required character roles for this difficulty."""
+        try:
+            character_config = self.services.config.guess_character
+            character_roles = character_config.get('character_roles', {})
+            return character_roles.get(difficulty, ['Main', 'Supporting'])
+        except (AttributeError, KeyError, TypeError):
+            return ['Main', 'Supporting']
+
+    async def _fetch_character_by_popularity(self, difficulty: str) -> Optional[CharacterData]:
+        """Fetch a random character directly by popularity ranking."""
+        popularity_ranges = self._get_character_popularity_ranges(difficulty)
+        required_roles = self._get_character_roles_for_difficulty(difficulty)
+        
+        if not popularity_ranges:
+            self.logger.warning(f"No character popularity ranges found for difficulty '{difficulty}'")
             return None
+        
+        # Create weighted list of popularity ranges
+        weighted_ranges = []
+        for range_str, weight in popularity_ranges.items():
+            min_val, max_val = map(int, range_str.split('-'))
+            weighted_ranges.extend([(min_val, max_val)] * weight)
+        
+        # Try multiple attempts to find a suitable character
+        max_attempts = 20
+        for attempt in range(max_attempts):
+            try:
+                # Randomly select a popularity range based on weights
+                selected_range = random.choice(weighted_ranges)
+                min_popularity, max_popularity = selected_range
+                
+                # Generate a random page number within the popularity range
+                # Jikan shows 25 characters per page, so we calculate the page based on popularity
+                characters_per_page = 25
+                min_page = max(1, min_popularity // characters_per_page)
+                max_page = max_popularity // characters_per_page + 1
+                
+                # Random page within the calculated range
+                random_page = random.randint(min_page, min(max_page, 40))  # Limit to 40 pages max for API efficiency
+                
+                self.logger.info(f"Attempt {attempt + 1}: Fetching characters from page {random_page} (popularity range: {min_popularity}-{max_popularity})")
+                
+                # Fetch characters from Jikan API ordered by favorites (popularity)
+                params = {
+                    'page': random_page,
+                    'limit': characters_per_page,
+                    'order_by': 'favorites',
+                    'sort': 'desc'
+                }
+                
+                data = await self._query_jikan('/characters', params)
+                if not data or not data.get('data'):
+                    continue
+                
+                # Filter characters that have images and are within our target popularity range
+                suitable_characters = []
+                for char_data in data['data']:
+                    # Check if character has image
+                    if not char_data.get('images', {}).get('jpg', {}).get('image_url'):
+                        continue
+                    
+                    # For now, we'll accept any character from this page since we're already in the right popularity range
+                    # In the future, we could implement more precise popularity filtering
+                    suitable_characters.append(char_data)
+                
+                if not suitable_characters:
+                    continue
+                
+                # Randomly select one character from the suitable ones
+                selected_character = random.choice(suitable_characters)
+                character_id = selected_character.get('mal_id')
+                
+                if not character_id:
+                    continue
+                
+                # Fetch full character details
+                character_details = await self._query_jikan(f'/characters/{character_id}/full')
+                if not character_details or not character_details.get('data'):
+                    continue
+                
+                # Fetch character's anime appearances
+                anime_appearances = await self._query_jikan(f'/characters/{character_id}/anime')
+                if not anime_appearances or not anime_appearances.get('data'):
+                    continue
+                
+                # Filter anime appearances by required roles
+                filtered_appearances = []
+                for appearance in anime_appearances['data']:
+                    role = appearance.get('role', '')
+                    if role in required_roles:
+                        filtered_appearances.append(appearance)
+                
+                if not filtered_appearances:
+                    self.logger.debug(f"Character {character_id} doesn't have required roles {required_roles}")
+                    continue
+                
+                # Create CharacterData object
+                character_data = CharacterData(character_details['data'], filtered_appearances)
+                
+                if character_data.character_image:
+                    self.logger.info(f"Successfully found character: {character_data.character_name} (ID: {character_id}) with {len(filtered_appearances)} anime appearances")
+                    return character_data
+                
+            except Exception as e:
+                self.logger.warning(f"Error in attempt {attempt + 1} for character selection: {e}")
+                continue
+        
+        self.logger.warning(f"Failed to find suitable character after {max_attempts} attempts for difficulty '{difficulty}'")
+        return None
+
+
+    
+
     
     async def _start_game(self, interaction: discord.Interaction, channel_id: int, difficulty: str) -> bool:
         """Start a new character guessing game with specified difficulty."""
@@ -821,64 +703,13 @@ class GuessCharacterCog(BaseCommand):
                 )
                 return False
         try:
-            # Get character selection configuration for this difficulty
-            selection_configs = self._get_character_selection_config(difficulty)
+            self.logger.info(f"Using character-based selection for difficulty '{difficulty}'")
             
-            # Try each configuration until we find a character
-            character_data = None
-            selected_config = None
-            
-            # Shuffle the configurations to add variety
-            random.shuffle(selection_configs)
-            
-            # Limit attempts to prevent infinite loops
-            max_attempts = 10
-            attempt_count = 0
-            
-            for config in selection_configs:
-                if attempt_count >= max_attempts:
-                    self.logger.warning(f"Max attempts ({max_attempts}) reached for difficulty '{difficulty}'")
-                    break
-                
-                anime_difficulty = config['anime_difficulty']
-                required_roles = config['character_roles']
-                attempt_count += 1
-                
-                self.logger.info(f"Attempt {attempt_count}: {difficulty} difficulty with anime difficulty '{anime_difficulty}' and roles {required_roles}")
-                
-                try:
-                    # Select random anime based on the anime difficulty with timeout
-                    anime_data = await asyncio.wait_for(
-                        self._select_random_anime_by_difficulty(anime_difficulty),
-                        timeout=10.0
-                    )
-                    if not anime_data:
-                        self.logger.warning(f"Could not find anime for difficulty '{anime_difficulty}', trying next config")
-                        continue
-                    
-                    anime_id = anime_data.get('mal_id')
-                    if not anime_id:
-                        self.logger.warning(f"Anime data missing ID, trying next config")
-                        continue
-                    
-                    # Get random character from the anime with required roles and timeout
-                    character_data = await asyncio.wait_for(
-                        self._get_random_character_from_anime(anime_id, anime_data, required_roles),
-                        timeout=15.0
-                    )
-                    if character_data and character_data.character_image:
-                        selected_config = config
-                        self.logger.info(f"Successfully found character with config: anime_difficulty='{anime_difficulty}', roles={required_roles}")
-                        break
-                    else:
-                        self.logger.warning(f"Could not find suitable character for anime {anime_id} with roles {required_roles}, trying next config")
-                        
-                except asyncio.TimeoutError:
-                    self.logger.error(f"Timeout during character selection for difficulty '{anime_difficulty}', trying next config")
-                    continue
-                except Exception as e:
-                    self.logger.error(f"Error during character selection: {e}, trying next config")
-                    continue
+            # Use character-based selection
+            character_data = await asyncio.wait_for(
+                self._fetch_character_by_popularity(difficulty),
+                timeout=30.0
+            )
             
             if not character_data:
                 await interaction.followup.send("❌ Sorry, I couldn't find a suitable character for this difficulty. Please try again!")
@@ -951,14 +782,14 @@ class GuessCharacterCog(BaseCommand):
         
         # Check if guesses are correct
         character_correct = self._check_character_match(character, game.target)
-        anime_correct = self._check_anime_match(anime, game.target)
+        anime_correct, matched_anime_title = self._check_anime_match(anime, game.target)
         
         # Complete the game
         game.is_complete = True
         game.is_won = character_correct and anime_correct
         
         # Create and send result embed
-        result_embed = self._create_result_embed(game, character_correct, anime_correct)
+        result_embed = self._create_result_embed(game, character_correct, anime_correct, matched_anime_title)
         await interaction.followup.send(embed=result_embed)
         
         # Remove the game
@@ -973,10 +804,18 @@ class GuessCharacterCog(BaseCommand):
         game = self.games[channel_id]
         
         # Show the answer
+        anime_count = len(game.target.anime_appearances)
+        display_anime = game.target.get_primary_anime_title()
+        
+        description = f"**Character:** {game.target.character_name}\n"
+        description += f"**Anime:** {display_anime}\n"
+        
+        if anime_count > 1:
+            description += f"*(This character appears in {anime_count} anime)*"
+        
         embed = discord.Embed(
             title="🏳️ Game Ended",
-            description=f"**Character:** {game.target.character_name}\n"
-                       f"**Anime:** {game.target.get_all_anime_names_for_display()}\n",
+            description=description,
             color=0x95A5A6
         )
         
@@ -1008,8 +847,12 @@ class GuessCharacterCog(BaseCommand):
         
         return False
     
-    def _check_anime_match(self, guess: str, target_character: CharacterData) -> bool:
-        """Check if the anime guess matches any of the target anime's titles."""
+    def _check_anime_match(self, guess: str, target_character: CharacterData) -> Tuple[bool, Optional[str]]:
+        """Check if the anime guess matches any of the target anime's titles.
+        
+        Returns:
+            Tuple of (is_match, matched_title) where matched_title is the specific title that matched
+        """
         guess_normalized = self._normalize_text(guess)
         all_titles = target_character.get_all_anime_titles()
         
@@ -1025,11 +868,11 @@ class GuessCharacterCog(BaseCommand):
             title_normalized = self._normalize_text(title)
             if guess_normalized == title_normalized:
                 self.logger.info(f"Anime match found: '{guess}' matches '{title}'")
-                return True
+                return True, title
         
-        return False
+        return False, None
     
-    def _create_result_embed(self, game: GuessCharacter, character_correct: bool, anime_correct: bool) -> discord.Embed:
+    def _create_result_embed(self, game: GuessCharacter, character_correct: bool, anime_correct: bool, matched_anime_title: Optional[str] = None) -> discord.Embed:
         """Create the result embed showing the outcome."""
         character_data = game.target
         
@@ -1058,13 +901,20 @@ class GuessCharacterCog(BaseCommand):
         description += f"**Correct Answer:**\n"
         description += f"• Character: {character_data.character_name}\n"
         
-        # Show all anime appearances
+        # Show one anime title - prefer the matched title if anime was correct, otherwise show primary anime
         anime_count = len(character_data.anime_appearances)
+        if matched_anime_title and anime_correct:
+            # Show the specific title that was matched
+            display_anime = matched_anime_title
+        else:
+            # Show primary anime title
+            display_anime = character_data.get_primary_anime_title()
+        
         if anime_count > 1:
-            description += f"• Anime: {character_data.get_all_anime_names_for_display()}\n"
+            description += f"• Anime: {display_anime}\n"
             description += f"  *(This character appears in {anime_count} anime - any would be correct!)*\n\n"
         else:
-            description += f"• Anime: {character_data.get_all_anime_names_for_display()}\n\n"
+            description += f"• Anime: {display_anime}\n\n"
         
         # Add game info
         game_time = time.time() - game.start_time

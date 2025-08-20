@@ -52,11 +52,19 @@ Main command with different actions for the character guessing game.
 2. **Portrait Hint**: The only hint is the character's portrait image from MyAnimeList
 3. **Dual Requirements**: You must correctly identify both:
    - The character's name (including accepted nicknames)
-   - The anime title (including accepted alternative titles)
+   - The anime title (including all alternative titles and synonyms from ALL anime the character appears in)
 4. **Scoring**:
    - **Win**: Both character and anime correct
    - **Partial**: Only character OR anime correct  
    - **Loss**: Neither correct
+
+## Title Matching System
+
+The game now supports comprehensive title matching:
+- **Multiple Anime Support**: Characters appearing in multiple anime can be guessed with any of their anime titles
+- **All Title Variations**: Accepts main titles, English titles, Japanese titles, and all synonyms for every anime the character appears in
+- **Smart Display**: Shows the specific title you guessed correctly (if anime was correct), or the primary anime title
+- **Cross-Anime Recognition**: A character from "Attack on Titan" can be correctly identified with synonyms like "Shingeki no Kyojin" or "進撃の巨人"
 
 ## Difficulty System
 
