@@ -189,12 +189,18 @@ class AIService:
 
         # Build lore book section
         lore_prompt = ""
+
+        short_history = history[-3:] if history else []
+        short_history = "\n".join(
+            f"From: {entry['name']}\n{entry['content']}" for entry in short_history
+        )
+
         if lore_book:
             for category_name, category_data in lore_book.items():
                 if isinstance(category_data, dict) and "keywords" in category_data:
                     keywords = category_data.get("keywords", [])
 
-                    if any(keyword in message.content.lower() for keyword in keywords):
+                    if any(keyword in short_history for keyword in keywords):
                         example = category_data.get("example", "")
                         if example:
                             lore_prompt += f"\n\n{example}"
