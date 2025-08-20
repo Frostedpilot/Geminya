@@ -137,9 +137,20 @@ guess_character:
 
     crazy:
       "10001-15001": 5 # Extremely obscure characters
-
+      
     insanity:
       "15001-200000": 10 # Unknown characters
+  
+  # Troll mode configuration - always picks the same character!
+  # Set the character_id to any MyAnimeList character ID for maximum trolling
+  # Examples: 
+  # - 40881 = Anya Forger (Spy x Family) - cute and popular
+  # - 11757 = Saitama (One Punch Man) - bald hero
+  # - 417 = Lelouch Lamperouge (Code Geass) - dramatic
+  # - 71 = Goku (Dragon Ball Z) - classic
+  troll_mode:
+    enabled: true
+    character_id: 23602 
   
   # Character role requirements for each difficulty
   character_roles:

@@ -587,6 +587,61 @@ class GuessCharacterCog(BaseCommand):
         except (AttributeError, KeyError, TypeError):
             return ['Main', 'Supporting']
 
+    def _is_troll_mode_enabled(self) -> bool:
+        """Check if troll mode is enabled."""
+        try:
+            character_config = self.services.config.guess_character
+            troll_config = character_config.get('troll_mode', {})
+            return troll_config.get('enabled', False)
+        except (AttributeError, KeyError, TypeError):
+            return False
+    
+    def _get_troll_character_id(self) -> Optional[int]:
+        """Get the character ID for troll mode."""
+        try:
+            character_config = self.services.config.guess_character
+            troll_config = character_config.get('troll_mode', {})
+            return troll_config.get('character_id')
+        except (AttributeError, KeyError, TypeError):
+            return None
+
+    async def _fetch_troll_character(self) -> Optional[CharacterData]:
+        """Fetch the specific troll character by ID."""
+        character_id = self._get_troll_character_id()
+        if not character_id:
+            self.logger.error("Troll mode enabled but no character_id specified!")
+            return None
+        
+        try:
+            self.logger.info(f"🎭 TROLL MODE: Fetching character ID {character_id}")
+            
+            # Fetch character data from Jikan API
+            character_data = await self._query_jikan(f'/characters/{character_id}')
+            if not character_data or not character_data.get('data'):
+                self.logger.error(f"Failed to fetch troll character {character_id}")
+                return None
+            
+            char_info = character_data['data']
+            
+            # Check if character has image
+            if not char_info.get('images', {}).get('jpg', {}).get('image_url'):
+                self.logger.error(f"Troll character {character_id} has no image!")
+                return None
+            
+            # Fetch character's anime appearances
+            anime_data = await self._query_jikan(f'/characters/{character_id}/anime')
+            anime_appearances = anime_data.get('data', []) if anime_data else []
+            
+            # Create CharacterData object
+            troll_character = CharacterData(char_info, anime_appearances)
+            
+            self.logger.info(f"🎭 TROLL CHARACTER LOADED: {troll_character.character_name}")
+            return troll_character
+            
+        except Exception as e:
+            self.logger.error(f"Error fetching troll character {character_id}: {e}")
+            return None
+
     async def _fetch_character_by_popularity(self, difficulty: str) -> Optional[CharacterData]:
         """Fetch a random character directly by popularity ranking."""
         popularity_ranges = self._get_character_popularity_ranges(difficulty)
@@ -720,13 +775,22 @@ class GuessCharacterCog(BaseCommand):
                 )
                 return False
         try:
-            self.logger.info(f"Using character-based selection for difficulty '{difficulty}'")
-            
-            # Use character-based selection
-            character_data = await asyncio.wait_for(
-                self._fetch_character_by_popularity(difficulty),
-                timeout=30.0
-            )
+            # Check if troll mode is enabled
+            if self._is_troll_mode_enabled():
+                self.logger.info(f"🎭 TROLL MODE ACTIVATED! Ignoring difficulty '{difficulty}' and using troll character")
+                
+                character_data = await asyncio.wait_for(
+                    self._fetch_troll_character(),
+                    timeout=30.0
+                )
+            else:
+                self.logger.info(f"Using character-based selection for difficulty '{difficulty}'")
+                
+                # Use character-based selection
+                character_data = await asyncio.wait_for(
+                    self._fetch_character_by_popularity(difficulty),
+                    timeout=30.0
+                )
             
             if not character_data:
                 await interaction.followup.send("❌ Sorry, I couldn't find a suitable character for this difficulty. Please try again!")
@@ -741,9 +805,13 @@ class GuessCharacterCog(BaseCommand):
             self.games[channel_id] = game
             
             # Create game embed
+            difficulty_text = difficulty.title()
+            if self._is_troll_mode_enabled():
+                difficulty_text += " 🎭"  # Add troll emoji hint
+            
             embed = discord.Embed(
                 title="🎭 Guess the Character!",
-                description=f"**Difficulty:** {difficulty.title()}\n\n"
+                description=f"**Difficulty:** {difficulty_text}\n\n"
                            f"**Rules:**\n"
                            f"• You have **1 guess** only!\n"
                            f"• Guess both the **character name** and **anime title**\n"
