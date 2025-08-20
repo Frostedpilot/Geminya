@@ -317,30 +317,72 @@ class GuessCharacterCog(BaseCommand):
                 return []
             
             choices = []
+            added_values = set()  # Track added values to avoid duplicates
             if data.get('data'):
                 for anime in data['data']:
-                    # Extract anime title simply (no need for full AnimeData)
+                    # Extract all available titles including synonyms
                     anime_title = anime.get('title', 'Unknown')
                     anime_year = anime.get('year', 0)
                     
-                    # Create display name with year for clarity
-                    display_name = f"{anime_title}"
-                    if anime_year:
-                        display_name += f" ({anime_year})"
+                    # Collect all title variations
+                    all_titles = []
                     
-                    # Truncate display name if too long (Discord choice name limit is 100 chars)
-                    if len(display_name) > 100:
-                        display_name = display_name[:97] + "..."
+                    # Main title
+                    if anime_title and anime_title != 'Unknown':
+                        all_titles.append(anime_title)
                     
-                    # Truncate value if too long (Discord choice value limit is also 100 chars)
-                    choice_value = anime_title
-                    if len(choice_value) > 100:
-                        choice_value = choice_value[:100]
+                    # English title
+                    if anime.get('title_english') and anime['title_english'] not in all_titles:
+                        all_titles.append(anime['title_english'])
                     
-                    choices.append({
-                        'name': display_name,
-                        'value': choice_value
-                    })
+                    # Japanese title
+                    if anime.get('title_japanese') and anime['title_japanese'] not in all_titles:
+                        all_titles.append(anime['title_japanese'])
+                    
+                    # Title synonyms
+                    if anime.get('title_synonyms'):
+                        for synonym in anime['title_synonyms']:
+                            if synonym and synonym.strip() and synonym not in all_titles:
+                                all_titles.append(synonym.strip())
+                    
+                    # Titles array (newer Jikan API format)
+                    if anime.get('titles'):
+                        for title_obj in anime['titles']:
+                            title = title_obj.get('title', '').strip()
+                            if title and title not in all_titles:
+                                all_titles.append(title)
+                    
+                    # Add choices for each title variation
+                    for title in all_titles:
+                        if not title or title == 'Unknown':
+                            continue
+                        
+                        # Avoid duplicate values
+                        if title.lower() in added_values:
+                            continue
+                            
+                        # Create display name with year for clarity
+                        display_name = f"{title}"
+                        if anime_year:
+                            display_name += f" ({anime_year})"
+                        
+                        # Truncate display name if too long (Discord choice name limit is 100 chars)
+                        if len(display_name) > 100:
+                            display_name = display_name[:97] + "..."
+                        
+                        # Truncate value if too long (Discord choice value limit is also 100 chars)
+                        choice_value = title
+                        if len(choice_value) > 100:
+                            choice_value = choice_value[:100]
+                        
+                        choices.append({
+                            'name': display_name,
+                            'value': choice_value
+                        })
+                        added_values.add(title.lower())  # Track this value as added
+                        
+                        if len(choices) >= 25:  # Discord limit
+                            break
                     
                     if len(choices) >= 25:  # Discord limit
                         break

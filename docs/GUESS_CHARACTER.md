@@ -33,6 +33,19 @@ Main command with different actions for the character guessing game.
 - `/guess_character action:Make a Guess character:Spike Spiegel anime:Cowboy Bebop`
 - `/guess_character action:Give Up`
 
+## Features
+
+### Autocomplete Support
+- **Character Names**: Real-time search suggestions for character names as you type
+- **Anime Titles**: Comprehensive autocomplete for anime names including:
+  - Main titles (Japanese romanized)
+  - English titles
+  - Japanese titles
+  - All synonyms and alternative titles
+  - Year information for disambiguation
+- **Smart Caching**: Results are cached for improved performance
+- **Duplicate Prevention**: Avoids showing duplicate title variations
+
 ## Game Rules
 
 1. **Single Guess**: You only get one attempt to guess both the character and anime
