@@ -124,32 +124,22 @@ guess_character:
   # Character popularity data from MyAnimeList favorites/likes
   character_popularity:
     easy:
-      "1-100": 15     # Top 100 most popular characters (highest chance)
-      "101-500": 5    # Top 500 popular characters
+      "1-1000": 15     # Top 1000 most popular characters (highest chance)
 
     normal:
-      "1-300": 10     # Top 300 popular characters
-      "301-1000": 15  # Moderately popular characters (highest chance)
-      "1001-2000": 5  # Less popular characters
+      "1001-2500": 10  # Less popular characters
 
     hard:
-      "501-2000": 10  # Less popular characters (highest chance)
-      "2001-5000": 15 # Obscure characters (highest chance)
-      "5001-8000": 5  # Very obscure characters
+      "2501-5000": 5 # Obscure characters (highest chance)
 
     expert:
-      "2001-5000": 5  # Obscure characters
-      "5001-10000": 15 # Very obscure characters (highest chance)
-      "10001-15000": 10 # Ultra obscure characters
+      "5001-10000": 5 # Very obscure characters (highest chance)
 
     crazy:
-      "8001-15000": 10 # Ultra obscure characters
-      "15001-25000": 5 # Extremely obscure characters
-      "25001-50000": 1 # Unknown characters
+      "10001-15001": 5 # Extremely obscure characters
 
     insanity:
-      "25001-50000": 10 # Unknown characters
-      "50001-100000": 5 # Extremely unknown characters
+      "15001-200000": 10 # Unknown characters
   
   # Character role requirements for each difficulty
   character_roles:

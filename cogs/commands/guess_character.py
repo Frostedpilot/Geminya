@@ -124,33 +124,39 @@ class CharacterData:
         return 'Unknown'
     
     def _extract_anime_titles(self, anime_data: Dict) -> List[str]:
-        """Extract all anime titles and synonyms."""
+        """Extract all anime titles and synonyms from available data."""
         titles = []
         
-        # Add main title
-        main_title = self._extract_primary_anime_title(anime_data)
-        if main_title and main_title != 'Unknown':
+        # Add main title (this is usually the primary title)
+        main_title = anime_data.get('title', '').strip()
+        if main_title:
             titles.append(main_title)
         
-        # Add title_synonyms if available
-        if 'title_synonyms' in anime_data and anime_data['title_synonyms']:
-            titles.extend(anime_data['title_synonyms'])
-        
-        # Add titles from titles array
+        # Check for titles array (newer Jikan API format) - this contains multiple title types
         title_objects = anime_data.get('titles', [])
         for title_obj in title_objects:
             title = title_obj.get('title', '').strip()
             if title and title not in titles:
                 titles.append(title)
         
-        # Add title_english and title_japanese if available
-        if anime_data.get('title_english') and anime_data['title_english'] not in titles:
-            titles.append(anime_data['title_english'])
-        if anime_data.get('title_japanese') and anime_data['title_japanese'] not in titles:
-            titles.append(anime_data['title_japanese'])
+        # Check for legacy title fields (older API format)
+        legacy_titles = [
+            anime_data.get('title_english', ''),
+            anime_data.get('title_japanese', ''),
+            anime_data.get('title_romanji', ''),  # Sometimes present
+        ]
         
-        # Return all titles, but prioritize Latin titles for better user experience
-        # Keep both Latin and non-Latin titles to be more inclusive
+        for legacy_title in legacy_titles:
+            if legacy_title and legacy_title.strip() and legacy_title not in titles:
+                titles.append(legacy_title.strip())
+        
+        # Add title_synonyms if available (these are alternative names/abbreviations)
+        synonyms = anime_data.get('title_synonyms', [])
+        if isinstance(synonyms, list):
+            for synonym in synonyms:
+                if synonym and synonym.strip() and synonym not in titles:
+                    titles.append(synonym.strip())
+        
         return [title for title in titles if title and title.strip()]
     
     def _is_latin_title(self, title: str) -> bool:
@@ -604,21 +610,30 @@ class GuessCharacterCog(BaseCommand):
                 selected_range = random.choice(weighted_ranges)
                 min_popularity, max_popularity = selected_range
                 
-                # Generate a random page number within the popularity range
-                # Jikan shows 25 characters per page, so we calculate the page based on popularity
-                characters_per_page = 25
-                min_page = max(1, min_popularity // characters_per_page)
-                max_page = max_popularity // characters_per_page + 1
+                # Calculate correct page numbers based on character rankings
+                # Each page contains 25 characters, so:
+                # Page = (Rank - 1) ÷ 25 + 1
+                # For a range, we need min_page to max_page
+                # Examples:
+                # - Rank 1-25 → Page 1
+                # - Rank 1-1000 → Pages 1-40  
+                # - Rank 1001-2500 → Pages 41-100
+                # - Rank 10001-15000 → Pages 401-600
+                min_page = max(1, (min_popularity - 1) // 25 + 1)
+                max_page = (max_popularity - 1) // 25 + 1
+                
+                # Ensure we don't go beyond reasonable API limits (Jikan has thousands of pages)
+                max_page = min(max_page, 1000)  # Limit to first 25,000 characters
                 
                 # Random page within the calculated range
-                random_page = random.randint(min_page, min(max_page, 40))  # Limit to 40 pages max for API efficiency
+                random_page = random.randint(min_page, max_page)
                 
-                self.logger.info(f"Attempt {attempt + 1}: Fetching characters from page {random_page} (popularity range: {min_popularity}-{max_popularity})")
+                self.logger.info(f"Attempt {attempt + 1}: Fetching characters from page {random_page} (popularity range: {min_popularity}-{max_popularity}, page range: {min_page}-{max_page})")
                 
                 # Fetch characters from Jikan API ordered by favorites (popularity)
                 params = {
                     'page': random_page,
-                    'limit': characters_per_page,
+                    'limit': 25,  # Jikan default page size
                     'order_by': 'favorites',
                     'sort': 'desc'
                 }
@@ -627,15 +642,15 @@ class GuessCharacterCog(BaseCommand):
                 if not data or not data.get('data'):
                     continue
                 
-                # Filter characters that have images and are within our target popularity range
+                # Filter characters that have images
                 suitable_characters = []
                 for char_data in data['data']:
                     # Check if character has image
                     if not char_data.get('images', {}).get('jpg', {}).get('image_url'):
                         continue
                     
-                    # For now, we'll accept any character from this page since we're already in the right popularity range
-                    # In the future, we could implement more precise popularity filtering
+                    # Accept this character as suitable - since we're fetching from pages ordered by popularity,
+                    # characters on different pages will naturally fall into different popularity ranges
                     suitable_characters.append(char_data)
                 
                 if not suitable_characters:
@@ -658,11 +673,13 @@ class GuessCharacterCog(BaseCommand):
                 if not anime_appearances or not anime_appearances.get('data'):
                     continue
                 
-                # Filter anime appearances by required roles
+                # Filter anime appearances by required roles (basic data only)
                 filtered_appearances = []
+                
                 for appearance in anime_appearances['data']:
                     role = appearance.get('role', '')
                     if role in required_roles:
+                        # Keep only basic anime data - no need for full details anymore
                         filtered_appearances.append(appearance)
                 
                 if not filtered_appearances:
@@ -781,15 +798,15 @@ class GuessCharacterCog(BaseCommand):
         game.anime_guess = anime.strip()
         
         # Check if guesses are correct
-        character_correct = self._check_character_match(character, game.target)
-        anime_correct, matched_anime_title = self._check_anime_match(anime, game.target)
+        character_correct, matched_character_name = self._check_character_match(character, game.target)
+        anime_correct, matched_anime_title = await self._check_anime_match_async(anime, game.target)
         
         # Complete the game
         game.is_complete = True
         game.is_won = character_correct and anime_correct
         
         # Create and send result embed
-        result_embed = self._create_result_embed(game, character_correct, anime_correct, matched_anime_title)
+        result_embed = self._create_result_embed(game, character_correct, anime_correct, matched_anime_title, matched_character_name)
         await interaction.followup.send(embed=result_embed)
         
         # Remove the game
@@ -829,50 +846,134 @@ class GuessCharacterCog(BaseCommand):
     
     def _normalize_text(self, text: str) -> str:
         """Normalize text for comparison by removing extra spaces, punctuation, and converting to lowercase."""
-        import re
         # Remove common punctuation and normalize spaces
         text = re.sub(r'[^\w\s]', '', text.lower())
         text = re.sub(r'\s+', ' ', text).strip()
         return text
     
-    def _check_character_match(self, guess: str, target_character: CharacterData) -> bool:
-        """Check if the character guess matches any of the target character's names."""
-        guess_normalized = self._normalize_text(guess)
+    def _normalize_anime_title(self, title: str) -> str:
+        """Normalize anime title for comparison, with special handling for years and brackets."""
+        # Convert to lowercase first
+        title = title.lower().strip()
+        
+        # Remove year patterns like (2023), (2020-2021), etc.
+        title = re.sub(r'\s*\(\d{4}(?:-\d{4})?\)\s*', '', title)
+        
+        # Remove other common patterns
+        title = re.sub(r'\s*\(tv\)\s*', '', title)
+        title = re.sub(r'\s*\(ova\)\s*', '', title)
+        title = re.sub(r'\s*\(movie\)\s*', '', title)
+        title = re.sub(r'\s*\(special\)\s*', '', title)
+        
+        # Remove trailing periods and other punctuation that might cause issues
+        title = re.sub(r'\.+$', '', title)  # Remove trailing periods
+        
+        # Remove remaining punctuation except for essential ones
+        title = re.sub(r'[^\w\s\-\'\.]', '', title)
+        
+        # Remove any remaining trailing periods after punctuation removal
+        title = re.sub(r'\.+$', '', title)
+        
+        # Normalize multiple spaces to single space
+        title = re.sub(r'\s+', ' ', title).strip()
+        
+        return title
+    
+    def _normalize_character_name(self, name: str) -> str:
+        """Normalize character name for comparison - simple case-insensitive matching."""
+        # Convert to lowercase and strip whitespace
+        name = name.lower().strip()
+        
+        # Remove punctuation and normalize spaces
+        name = re.sub(r'[^\w\s]', '', name)
+        name = re.sub(r'\s+', ' ', name).strip()
+        
+        return name
+    
+    def _check_character_match(self, guess: str, target_character: CharacterData) -> Tuple[bool, Optional[str]]:
+        """Check if the character guess matches any of the target character's names.
+        
+        Returns:
+            Tuple of (is_match, matched_name) where matched_name is the specific name that matched
+        """
+        guess_normalized = self._normalize_character_name(guess)
         all_names = target_character.get_all_character_names()
         
-        for name in all_names:
-            name_normalized = self._normalize_text(name)
-            if guess_normalized == name_normalized:
-                return True
+        self.logger.info(f"Checking character guess '{guess}' (normalized: '{guess_normalized}') against {len(all_names)} names: {all_names[:3] if len(all_names) > 3 else all_names}")
         
-        return False
+        for name in all_names:
+            name_normalized = self._normalize_character_name(name)
+            if guess_normalized == name_normalized:
+                self.logger.info(f"Character match found: '{guess}' (normalized: '{guess_normalized}') matches '{name}' (normalized: '{name_normalized}')")
+                return True, name
+        
+        return False, None
     
     def _check_anime_match(self, guess: str, target_character: CharacterData) -> Tuple[bool, Optional[str]]:
-        """Check if the anime guess matches any of the target anime's titles.
+        """Check if the anime guess matches any of the target anime using search API.
         
         Returns:
             Tuple of (is_match, matched_title) where matched_title is the specific title that matched
         """
-        guess_normalized = self._normalize_text(guess)
-        all_titles = target_character.get_all_anime_titles()
-        
-        # Log available titles for debugging (only first few to avoid spam)
-        if len(all_titles) > 5:
-            sample_titles = all_titles[:5] + [f"... and {len(all_titles) - 5} more"]
-        else:
-            sample_titles = all_titles
-        
-        self.logger.info(f"Checking anime guess '{guess}' against {len(all_titles)} titles: {sample_titles}")
-        
-        for title in all_titles:
-            title_normalized = self._normalize_text(title)
-            if guess_normalized == title_normalized:
-                self.logger.info(f"Anime match found: '{guess}' matches '{title}'")
-                return True, title
-        
-        return False, None
+        return asyncio.run(self._check_anime_match_async(guess, target_character))
     
-    def _create_result_embed(self, game: GuessCharacter, character_correct: bool, anime_correct: bool, matched_anime_title: Optional[str] = None) -> discord.Embed:
+    async def _check_anime_match_async(self, guess: str, target_character: CharacterData) -> Tuple[bool, Optional[str]]:
+        """Async method to check anime match using Jikan search API."""
+        try:
+            # Get list of anime IDs that the character appears in
+            character_anime_ids = set()
+            character_anime_titles = {}  # ID -> title mapping for reference
+            
+            for appearance in target_character.anime_appearances:
+                anime_data = appearance.get('anime', {})
+                anime_id = anime_data.get('mal_id')
+                anime_title = anime_data.get('title', 'Unknown')
+                
+                if anime_id:
+                    character_anime_ids.add(anime_id)
+                    character_anime_titles[anime_id] = anime_title
+            
+            if not character_anime_ids:
+                self.logger.warning("No anime IDs found for character")
+                return False, None
+            
+            self.logger.info(f"Checking anime guess '{guess}' against character's {len(character_anime_ids)} anime")
+            
+            # Search for the player's guess using Jikan API
+            search_params = {
+                'q': guess.strip(),
+                'limit': 10  # Check first 10 results
+            }
+            
+            search_results = await self._query_jikan('/anime', search_params)
+            
+            if not search_results or not search_results.get('data'):
+                self.logger.info(f"No search results found for '{guess}'")
+                return False, None
+            
+            # Check if the FIRST result matches any of the character's anime
+            first_result = search_results['data'][0]
+            first_result_id = first_result.get('mal_id')
+            first_result_title = first_result.get('title', 'Unknown')
+            
+            self.logger.info(f"First search result: {first_result_title} (ID: {first_result_id})")
+            
+            if first_result_id in character_anime_ids:
+                matched_title = character_anime_titles[first_result_id]
+                self.logger.info(f"✅ MATCH! First search result matches character's anime: {matched_title}")
+                return True, matched_title
+            else:
+                self.logger.info(f"❌ First search result does not match any of character's anime")
+                # Log character's anime for debugging
+                anime_list = [f"{title} (ID: {aid})" for aid, title in list(character_anime_titles.items())[:3]]
+                self.logger.info(f"Character appears in: {anime_list}")
+                return False, None
+                
+        except Exception as e:
+            self.logger.error(f"Error during anime search matching: {e}")
+            return False, None
+    
+    def _create_result_embed(self, game: GuessCharacter, character_correct: bool, anime_correct: bool, matched_anime_title: Optional[str] = None, matched_character_name: Optional[str] = None) -> discord.Embed:
         """Create the result embed showing the outcome."""
         character_data = game.target
         
