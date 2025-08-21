@@ -149,8 +149,8 @@ guess_character:
   # - 417 = Lelouch Lamperouge (Code Geass) - dramatic
   # - 71 = Goku (Dragon Ball Z) - classic
   troll_mode:
-    enabled: true
-    character_id: 23602 
+    enabled: false
+    character_id: 40882
   
   # Character role requirements for each difficulty
   character_roles:
