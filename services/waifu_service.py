@@ -14,11 +14,11 @@ class WaifuService:
 
     # Gacha rates (percentages)
     GACHA_RATES = {
-        5: 2.0,  # 5-star: 2.0%
-        4: 8.0,  # 4-star: 8.0%
+        5: 0.6,  # 5-star: 0.6%
+        4: 2.0,  # 4-star: 2.0%
         3: 25.0,  # 3-star: 25.0%
         2: 35.0,  # 2-star: 35.0%
-        1: 30.0,  # 1-star: 30.0%
+        1: 37.4,  # 1-star: 37.4%
     }
 
     # Pity system
@@ -544,9 +544,10 @@ class WaifuService:
 
         # Generate random number and determine rarity
         roll = random.random() * 100
+        
+        # Build proper cumulative ranges from lowest to highest rarity
         cumulative = 0
-
-        for rarity in sorted(rates.keys(), reverse=True):
+        for rarity in sorted(rates.keys()):  # Process 1, 2, 3, 4, 5
             cumulative += rates[rarity]
             if roll <= cumulative:
                 return rarity

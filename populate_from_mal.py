@@ -189,8 +189,12 @@ class MALWaifuPopulator:
         # Character must have substantial description
         return len(about) > 30 and len(meaningful_words) > 5
 
-    def determine_character_rarity(self, character: Dict[str, Any]) -> int:
+    def determine_character_rarity(self, character: Dict[str, Any], is_most_popular: bool = False) -> int:
         """Determine character rarity based on popularity following guess_character config logic."""
+        # Special rule: Most popular character in each anime/manga gets 5-star
+        if is_most_popular:
+            return 5
+            
         favorites = character.get("favorites", 0)
 
         # Map popularity to difficulty ranges from config.yml
@@ -394,7 +398,8 @@ class MALWaifuPopulator:
 
     def generate_base_stats(self, character: Dict[str, Any]) -> Dict[str, int]:
         """Generate base stats for character based on rarity and traits."""
-        rarity = self.determine_character_rarity(character)
+        is_most_popular = character.get("is_most_popular_in_series", False)
+        rarity = self.determine_character_rarity(character, is_most_popular)
 
         # Base stats scale with rarity
         base_multiplier = rarity * 20
@@ -563,6 +568,12 @@ class MALWaifuPopulator:
                                         f"No character details retrieved for {character_id}"
                                     )
 
+                        # Find the most popular character and mark them
+                        if characters:
+                            most_popular = max(characters, key=lambda x: x.get("favorites", 0))
+                            most_popular["is_most_popular_in_series"] = True
+                            logger.info(f"Most popular character in anime {anime_id}: {most_popular.get('name')} with {most_popular.get('favorites', 0)} favorites")
+
                         return characters
                     else:
                         logger.warning(
@@ -607,6 +618,12 @@ class MALWaifuPopulator:
                                         character_details
                                     ):
                                         characters.append(character_details)
+
+                        # Find the most popular character and mark them
+                        if characters:
+                            most_popular = max(characters, key=lambda x: x.get("favorites", 0))
+                            most_popular["is_most_popular_in_series"] = True
+                            logger.info(f"Most popular character in manga {manga_id}: {most_popular.get('name')} with {most_popular.get('favorites', 0)} favorites")
 
                         return characters
                     else:
@@ -686,8 +703,14 @@ class MALWaifuPopulator:
 
             for char in all_characters:
                 try:
+                    # Check if this character is the most popular in their series
+                    is_most_popular = char.get("is_most_popular_in_series", False)
+                    
                     # Determine rarity based on character popularity from config logic
-                    rarity = self.determine_character_rarity(char)
+                    rarity = self.determine_character_rarity(char, is_most_popular)
+                    
+                    if is_most_popular:
+                        logger.info(f"⭐⭐⭐⭐⭐ {char.get('name')} from {char.get('series')} upgraded to 5-star (most popular in series)")
 
                     # Use the filtered about text as personality profile
                     personality_profile = char.get("about", "")
