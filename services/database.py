@@ -272,13 +272,19 @@ class DatabaseService:
 
             user_id = user[0]
 
-            # Add waifu to collection
+            # Add waifu to collection with a unique timestamp to handle rapid summons
+            import time
+
+            unique_timestamp = (
+                f"{datetime.now().isoformat()}.{int(time.time_ns() % 1000000)}"
+            )
+
             await db.execute(
                 """
-                INSERT INTO user_waifus (user_id, waifu_id)
-                VALUES (?, ?)
+                INSERT INTO user_waifus (user_id, waifu_id, obtained_at)
+                VALUES (?, ?, ?)
             """,
-                (user_id, waifu_id),
+                (user_id, waifu_id, unique_timestamp),
             )
             await db.commit()
             return True
@@ -376,4 +382,83 @@ class DatabaseService:
             )
 
             await db.commit()
+            return True
+
+    async def delete_user_account(self, discord_id: str) -> bool:
+        """Delete user account and all associated data."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Get user ID
+            async with db.execute(
+                "SELECT id FROM users WHERE discord_id = ?", (discord_id,)
+            ) as cursor:
+                user = await cursor.fetchone()
+                if not user:
+                    return False
+
+            user_id = user[0]
+
+            # Delete all user-related data in correct order (due to foreign keys)
+            # Delete conversations first
+            await db.execute("DELETE FROM conversations WHERE user_id = ?", (user_id,))
+
+            # Delete user mission progress
+            await db.execute(
+                "DELETE FROM user_mission_progress WHERE user_id = ?", (user_id,)
+            )
+
+            # Delete user waifus (collection)
+            await db.execute("DELETE FROM user_waifus WHERE user_id = ?", (user_id,))
+
+            # Delete user account
+            await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+            await db.commit()
+            self.logger.info(
+                f"Deleted user account and all data for discord_id: {discord_id}"
+            )
+            return True
+
+    async def reset_user_account(self, discord_id: str) -> bool:
+        """Reset user account to default state (keep account, clear progress)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Get user ID
+            async with db.execute(
+                "SELECT id FROM users WHERE discord_id = ?", (discord_id,)
+            ) as cursor:
+                user = await cursor.fetchone()
+                if not user:
+                    return False
+
+            user_id = user[0]
+
+            # Clear all user progress but keep the account
+            # Delete conversations
+            await db.execute("DELETE FROM conversations WHERE user_id = ?", (user_id,))
+
+            # Delete user mission progress
+            await db.execute(
+                "DELETE FROM user_mission_progress WHERE user_id = ?", (user_id,)
+            )
+
+            # Delete user waifus (collection)
+            await db.execute("DELETE FROM user_waifus WHERE user_id = ?", (user_id,))
+
+            # Reset user stats to defaults
+            await db.execute(
+                """
+                UPDATE users 
+                SET academy_name = ?,
+                    collector_rank = 1,
+                    sakura_crystals = 100,
+                    pity_counter = 0,
+                    last_daily_reset = 0
+                WHERE id = ?
+                """,
+                (f"Academy {discord_id[:6]}", user_id),
+            )
+
+            await db.commit()
+            self.logger.info(
+                f"Reset user account to defaults for discord_id: {discord_id}"
+            )
             return True

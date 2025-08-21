@@ -234,7 +234,7 @@ class WaifuAcademyCog(BaseCommand):
             now = datetime.now()
 
             # For now, just give rewards (in a real implementation, check last_daily_reset)
-            daily_crystals = 50
+            daily_crystals = 5000
             await self.services.waifu_service.db.update_user_crystals(
                 str(ctx.author.id), daily_crystals
             )
@@ -264,6 +264,157 @@ class WaifuAcademyCog(BaseCommand):
             embed = discord.Embed(
                 title="❌ Daily Error",
                 description="Unable to claim daily rewards. Please try again later!",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
+        name="nwnl_reset_account",
+        description="🗑️ Reset your academy account (WARNING: Deletes ALL progress!)",
+    )
+    async def nwnl_reset_account(self, ctx: commands.Context, confirmation: str = ""):
+        """Reset user's academy account to default state."""
+        await ctx.defer()
+
+        try:
+            # Require confirmation to prevent accidental resets
+            if confirmation.lower() != "confirm":
+                embed = discord.Embed(
+                    title="⚠️ Account Reset Confirmation",
+                    description=(
+                        "**WARNING: This will permanently delete ALL your academy progress!**\n\n"
+                        "This includes:\n"
+                        "• 🗂️ All waifus in your collection\n"
+                        "• 💬 All conversations and memories\n"
+                        "• 🏆 All mission progress\n"
+                        "• 💎 Crystals will reset to 100\n"
+                        "• 📊 Pity counter will reset to 0\n"
+                        "• 🏛️ Academy rank will reset to 1\n\n"
+                        "**To confirm this action, use:**\n"
+                        "`/nwnl_reset_account confirmation:confirm`"
+                    ),
+                    color=0xFF6B6B,
+                )
+                embed.set_footer(text="This action cannot be undone!")
+                await ctx.send(embed=embed)
+                return
+
+            # Get current user stats before deletion
+            stats = await self.services.waifu_service.get_user_stats(str(ctx.author.id))
+
+            # Perform the reset
+            success = await self.services.waifu_service.db.reset_user_account(
+                str(ctx.author.id)
+            )
+
+            if success:
+                embed = discord.Embed(
+                    title="✅ Academy Reset Complete",
+                    description=(
+                        f"**{ctx.author.display_name}'s academy has been reset!**\n\n"
+                        "**Previous Progress:**\n"
+                        f"• Waifus: {stats['total_waifus']} (Unique: {stats['unique_waifus']})\n"
+                        f"• Collection Power: {stats['collection_power']}\n"
+                        f"• Academy Rank: {stats['user']['collector_rank']}\n"
+                        f"• Crystals: {stats['user']['sakura_crystals']}\n\n"
+                        "**New Academy:**\n"
+                        "• 💎 100 Sakura Crystals\n"
+                        "• 🏛️ Rank 1 Academy\n"
+                        "• 📊 Fresh pity counter\n"
+                        "• 🎯 Ready for new adventures!\n\n"
+                        "Use `/nwnl_summon` to start building your new collection!"
+                    ),
+                    color=0x2ECC71,
+                )
+                embed.set_footer(text="Welcome to your fresh start!")
+            else:
+                embed = discord.Embed(
+                    title="❌ Reset Failed",
+                    description="Unable to reset your academy. You may not have an existing account.",
+                    color=0xFF6B6B,
+                )
+
+            await ctx.send(embed=embed)
+
+        except Exception as e:
+            self.logger.error(f"Error resetting user account: {e}")
+            embed = discord.Embed(
+                title="❌ Reset Error",
+                description="Something went wrong during the reset process. Please try again later!",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
+        name="nwnl_delete_account",
+        description="🗑️💀 PERMANENTLY DELETE your academy account (IRREVERSIBLE!)",
+    )
+    async def nwnl_delete_account(self, ctx: commands.Context, confirmation: str = ""):
+        """Permanently delete user's academy account and all data."""
+        await ctx.defer()
+
+        try:
+            # Require strict confirmation to prevent accidental deletions
+            if confirmation.lower() != "delete forever":
+                embed = discord.Embed(
+                    title="💀 PERMANENT ACCOUNT DELETION",
+                    description=(
+                        "**🚨 DANGER: This will PERMANENTLY DELETE your entire academy account! 🚨**\n\n"
+                        "**This action will:**\n"
+                        "• 💀 **PERMANENTLY DELETE** your account\n"
+                        "• 🗂️ **ERASE ALL** waifus in your collection\n"
+                        "• 💬 **DELETE ALL** conversations and memories\n"
+                        "• 🏆 **REMOVE ALL** mission progress\n"
+                        "• 📊 **DESTROY ALL** statistics and data\n\n"
+                        "**⚠️ THIS CANNOT BE UNDONE! ⚠️**\n\n"
+                        "**To confirm PERMANENT DELETION, use:**\n"
+                        "`/nwnl_delete_account confirmation:delete forever`"
+                    ),
+                    color=0x8B0000,  # Dark red
+                )
+                embed.set_footer(text="⚠️ PERMANENT DELETION - CANNOT BE UNDONE! ⚠️")
+                await ctx.send(embed=embed)
+                return
+
+            # Get current user stats before deletion
+            stats = await self.services.waifu_service.get_user_stats(str(ctx.author.id))
+
+            # Perform the deletion
+            success = await self.services.waifu_service.db.delete_user_account(
+                str(ctx.author.id)
+            )
+
+            if success:
+                embed = discord.Embed(
+                    title="💀 Account Permanently Deleted",
+                    description=(
+                        f"**{ctx.author.display_name}'s academy has been permanently deleted.**\n\n"
+                        "**Final Statistics:**\n"
+                        f"• Total Waifus: {stats['total_waifus']} (Unique: {stats['unique_waifus']})\n"
+                        f"• Collection Power: {stats['collection_power']}\n"
+                        f"• Academy Rank: {stats['user']['collector_rank']}\n"
+                        f"• Final Crystals: {stats['user']['sakura_crystals']}\n\n"
+                        "**All data has been permanently erased.**\n\n"
+                        "Thank you for playing Waifu Academy. 👋\n"
+                        "Use `/nwnl_summon` if you ever want to start a new academy."
+                    ),
+                    color=0x2C2F33,  # Dark gray
+                )
+                embed.set_footer(text="Account permanently deleted - all data erased.")
+            else:
+                embed = discord.Embed(
+                    title="❌ Deletion Failed",
+                    description="Unable to delete your academy. You may not have an existing account.",
+                    color=0xFF6B6B,
+                )
+
+            await ctx.send(embed=embed)
+
+        except Exception as e:
+            self.logger.error(f"Error deleting user account: {e}")
+            embed = discord.Embed(
+                title="❌ Deletion Error",
+                description="Something went wrong during the deletion process. Please try again later!",
                 color=0xFF6B6B,
             )
             await ctx.send(embed=embed)

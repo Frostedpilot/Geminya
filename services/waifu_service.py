@@ -14,11 +14,11 @@ class WaifuService:
 
     # Gacha rates (percentages)
     GACHA_RATES = {
-        5: 0.6,  # 5-star: 0.6%
-        4: 8.5,  # 4-star: 8.5%
+        5: 2.0,  # 5-star: 2.0%
+        4: 8.0,  # 4-star: 8.0%
         3: 25.0,  # 3-star: 25.0%
         2: 35.0,  # 2-star: 35.0%
-        1: 30.9,  # 1-star: 30.9%
+        1: 30.0,  # 1-star: 30.0%
     }
 
     # Pity system
@@ -30,11 +30,12 @@ class WaifuService:
 
     # Cost per summon
     SUMMON_COST = 10
+    MULTI_SUMMON_COST = 90  # Cost for x10 summons (10% discount)
 
     def __init__(self, database: DatabaseService):
         self.db = database
         self.jikan_base_url = "https://api.jikan.moe/v4"
-        self.rate_limit_delay = 1.5  # Increased delay to be more polite to Jikan API
+        self.rate_limit_delay = 0.2  # Increased delay to be more polite to Jikan API
         self.logger = logging.getLogger(__name__)
         self._character_cache = {}
         self._last_request_time = 0
@@ -72,9 +73,7 @@ class WaifuService:
                     url,
                     params=params or {},
                     timeout=aiohttp.ClientTimeout(total=30),  # Increased timeout
-                    headers={
-                        "User-Agent": "Geminya-WaifuBot/1.0 (Polite bot for anime character data)"
-                    },
+                    headers={"User-Agent": "Geminya-WaifuBot/1.0"},
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -415,6 +414,109 @@ class WaifuService:
             "constellation_level": constellation_level,
             "crystals_remaining": user["sakura_crystals"] - self.SUMMON_COST,
             "rarity": rarity,
+        }
+
+    async def perform_multi_summon(
+        self, discord_id: str, count: int = 10
+    ) -> Dict[str, Any]:
+        """Perform multiple waifu summons with discount."""
+        user = await self.db.get_or_create_user(discord_id)
+
+        # Calculate cost (with discount for x10 pulls)
+        if count == 10:
+            total_cost = self.MULTI_SUMMON_COST  # 10% discount for x10 pulls
+        else:
+            total_cost = self.SUMMON_COST * count
+
+        # Check if user has enough crystals
+        if user["sakura_crystals"] < total_cost:
+            return {
+                "success": False,
+                "message": f"Not enough Sakura Crystals! You need {total_cost} but have {user['sakura_crystals']}.",
+            }
+
+        # Perform individual summons
+        results = []
+        rarity_counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+        new_waifus = []
+        constellation_upgrades = []
+
+        for i in range(count):
+            # Get fresh user data for each summon (for pity system)
+            current_user = await self.db.get_or_create_user(discord_id)
+
+            # Determine rarity with pity system
+            rarity = await self._determine_summon_rarity(current_user)
+
+            # Get available waifus of that rarity
+            available_waifus = await self.db.get_waifus_by_rarity(rarity, 50)
+
+            if not available_waifus:
+                # Skip this summon if no waifus available
+                continue
+
+            # Select random waifu
+            selected_waifu = random.choice(available_waifus)
+
+            # Add to user's collection
+            await self.db.add_waifu_to_user(discord_id, selected_waifu["id"])
+
+            # Update crystals and pity counter
+            cost = self.SUMMON_COST
+            if count == 10 and i == 9:  # Last summon in x10 pull gets the discount
+                cost = 0  # Already accounted for in total_cost calculation
+
+            await self.db.update_user_crystals(discord_id, -cost)
+
+            if rarity >= 4:
+                await self.db.update_pity_counter(discord_id, reset=True)
+            else:
+                await self.db.update_pity_counter(discord_id)
+
+            # Check if this is a new waifu or constellation
+            user_collection = await self.db.get_user_collection(discord_id)
+            waifu_count = sum(
+                1 for w in user_collection if w["waifu_id"] == selected_waifu["id"]
+            )
+
+            is_new = waifu_count == 1
+            constellation_level = waifu_count - 1
+
+            # Track results
+            rarity_counts[rarity] += 1
+
+            if is_new:
+                new_waifus.append(selected_waifu)
+            else:
+                constellation_upgrades.append(
+                    {
+                        "waifu": selected_waifu,
+                        "constellation_level": constellation_level,
+                    }
+                )
+
+            results.append(
+                {
+                    "waifu": selected_waifu,
+                    "rarity": rarity,
+                    "is_new": is_new,
+                    "constellation_level": constellation_level,
+                }
+            )
+
+        # Get final user state
+        final_user = await self.db.get_or_create_user(discord_id)
+
+        return {
+            "success": True,
+            "results": results,
+            "count": len(results),
+            "total_cost": total_cost,
+            "crystals_remaining": final_user["sakura_crystals"],
+            "rarity_counts": rarity_counts,
+            "new_waifus": new_waifus,
+            "constellation_upgrades": constellation_upgrades,
+            "discount_applied": count == 10,
         }
 
     async def _determine_summon_rarity(self, user: Dict[str, Any]) -> int:

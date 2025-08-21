@@ -118,6 +118,187 @@ class WaifuSummonCog(BaseCommand):
             await ctx.send(embed=embed)
 
     @commands.hybrid_command(
+        name="nwnl_multi_summon",
+        description="🎰🎊 Perform x10 summons with discount! (90 crystals instead of 100)",
+    )
+    async def nwnl_multi_summon(self, ctx: commands.Context, count: int = 10):
+        """Perform multiple waifu summons."""
+        await ctx.defer()
+
+        # Validate count
+        if count < 1 or count > 10:
+            embed = discord.Embed(
+                title="❌ Invalid Count",
+                description="You can summon between 1 and 10 waifus at once!",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
+            return
+
+        try:
+            # Perform the multi-summon
+            result = await self.services.waifu_service.perform_multi_summon(
+                str(ctx.author.id), count
+            )
+
+            if not result["success"]:
+                embed = discord.Embed(
+                    title="❌ Multi-Summon Failed",
+                    description=result["message"],
+                    color=0xFF6B6B,
+                )
+                await ctx.send(embed=embed)
+                return
+
+            # Rarity colors and emojis
+            rarity_config = {
+                5: {"color": 0xFFD700, "emoji": "⭐⭐⭐⭐⭐", "name": "Legendary"},
+                4: {"color": 0x9932CC, "emoji": "⭐⭐⭐⭐", "name": "Epic"},
+                3: {"color": 0x4169E1, "emoji": "⭐⭐⭐", "name": "Rare"},
+                2: {"color": 0x32CD32, "emoji": "⭐⭐", "name": "Common"},
+                1: {"color": 0x808080, "emoji": "⭐", "name": "Basic"},
+            }
+
+            # Separate high-rarity (3⭐+) and low-rarity (1⭐-2⭐) pulls
+            embeds = []
+            special_content_parts = []
+            low_rarity_pulls = []
+            high_rarity_count = 0
+
+            for i, summon_result in enumerate(result["results"]):
+                waifu = summon_result["waifu"]
+                rarity = summon_result["rarity"]
+                config = rarity_config[rarity]
+
+                if rarity >= 3:  # 3⭐+ gets full embed
+                    high_rarity_count += 1
+                    # Create individual summon embed
+                    embed = discord.Embed(
+                        title=f"🎊 Summon #{i+1} - {config['name']} Pull! 🎊",
+                        color=config["color"],
+                    )
+
+                    # Add NEW or CONSTELLATION indicator
+                    if summon_result["is_new"]:
+                        embed.add_field(
+                            name="🆕 NEW WAIFU!",
+                            value=f"**{waifu['name']}** has joined your academy!",
+                            inline=False,
+                        )
+                    else:
+                        constellation = summon_result["constellation_level"]
+                        embed.add_field(
+                            name=f"🌟 Constellation +{constellation}!",
+                            value=f"**{waifu['name']}** grows stronger!",
+                            inline=False,
+                        )
+
+                    # Character details
+                    embed.add_field(
+                        name="Character", value=f"**{waifu['name']}**", inline=True
+                    )
+                    embed.add_field(name="Series", value=waifu["series"], inline=True)
+                    embed.add_field(
+                        name="Element",
+                        value=f"{waifu.get('element', 'Unknown')} 🔮",
+                        inline=True,
+                    )
+                    embed.add_field(
+                        name="Rarity",
+                        value=f"{config['emoji']} {config['name']}",
+                        inline=True,
+                    )
+
+                    # Add image if available (for 3-star and above)
+                    if waifu.get("image_url"):
+                        embed.set_image(url=waifu["image_url"])
+
+                    embeds.append(embed)
+
+                    # Collect special messages for high rarity pulls
+                    if rarity == 5:
+                        special_content_parts.append(
+                            f"🌟💫✨ **LEGENDARY PULL!** ✨💫🌟\n"
+                            f"🎆🎇 **{waifu['name']}** 🎇🎆\n"
+                            f"💎 The stars have aligned! A legendary waifu graces your academy! 💎"
+                        )
+                    elif rarity == 4:
+                        special_content_parts.append(
+                            f"✨🎆 **EPIC PULL!** 🎆✨\n"
+                            f"🌟 **{waifu['name']}** 🌟\n"
+                            f"🎉 An epic waifu has answered your call! 🎉"
+                        )
+                else:  # 1⭐-2⭐ goes to summary
+                    status = (
+                        "🆕 NEW"
+                        if summon_result["is_new"]
+                        else f"🌟 C{summon_result['constellation_level']}"
+                    )
+                    low_rarity_pulls.append(
+                        f"**#{i+1}** {config['emoji']} **{waifu['name']}** ({waifu['series']}) - {status}"
+                    )
+
+            # Create summary embed for low-rarity pulls if any
+            if low_rarity_pulls:
+                summary_embed = discord.Embed(
+                    title="📋 Other Summons Summary",
+                    description="\n".join(low_rarity_pulls),
+                    color=0x95A5A6,
+                )
+                embeds.append(summary_embed)
+
+            # Add footer to the last embed
+            if embeds:
+                embeds[-1].set_footer(
+                    text=f"Multi-summon complete! Cost: {result['total_cost']} crystals • "
+                    f"Remaining: {result['crystals_remaining']} crystals • "
+                    f"{'10% Discount Applied!' if result['discount_applied'] else ''}"
+                )
+
+            # Create special content message for high rarity pulls
+            special_content = ""
+            if special_content_parts:
+                special_content = "\n\n".join(special_content_parts)
+
+                # Add overall celebration for multiple high rarity pulls
+                five_star_count = sum(1 for r in result["results"] if r["rarity"] == 5)
+                four_star_count = sum(1 for r in result["results"] if r["rarity"] == 4)
+
+                if five_star_count >= 2:
+                    special_content = (
+                        "🌟💫⭐ **MIRACLE MULTI-SUMMON!** ⭐💫🌟\n"
+                        f"🎆🎇✨ **{five_star_count} LEGENDARY WAIFUS!** ✨🎇🎆\n"
+                        "💎👑 The academy is blessed with divine fortune! 👑💎\n\n"
+                        + special_content
+                    )
+                elif five_star_count == 1 and four_star_count >= 1:
+                    special_content = (
+                        "🌟🎆  **INCREDIBLE MULTI-SUMMON!** 🎆🌟\n"
+                        "✨ Perfect combination of Legendary and Epic! ✨\n\n"
+                        + special_content
+                    )
+
+            # Send the embeds (Discord supports up to 10 embeds per message)
+            await ctx.send(content=special_content, embeds=embeds)
+
+            # Log the multi-summon results
+            rarity_counts = result["rarity_counts"]
+            self.logger.info(
+                f"User {ctx.author} performed x{result['count']} multi-summon: "
+                f"5★:{rarity_counts.get(5,0)}, 4★:{rarity_counts.get(4,0)}, "
+                f"3★:{rarity_counts.get(3,0)}, 2★:{rarity_counts.get(2,0)}, 1★:{rarity_counts.get(1,0)}"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error in multi-summon: {e}")
+            embed = discord.Embed(
+                title="❌ Multi-Summon Error",
+                description="Something went wrong during multi-summoning. Please try again later!",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
         name="nwnl_collection", description="📚 View your waifu academy collection"
     )
     async def nwnl_collection(self, ctx: commands.Context, user: discord.Member = None):

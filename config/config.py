@@ -48,6 +48,10 @@ class Config:
     google_console_api_key: str
     google_search_engine_id: str
 
+    # MyAnimeList API credentials
+    mal_client_id: str
+    mal_client_secret: str
+
     # Bot behavior settings
     language: str = "en"
     max_history_length: int = 7
@@ -95,7 +99,7 @@ class Config:
 
     # Anidle game configuration
     anidle: Dict[str, Any] = field(default_factory=dict)
-    
+
     # Character guessing game configuration
     guess_character: Dict[str, Any] = field(default_factory=dict)
 
@@ -336,6 +340,10 @@ class Config:
         google_console_api_key = secrets.get("GOOGLE_CONSOLE_API_KEY", "")
         google_search_engine_id = secrets.get("GOOGLE_SEARCH_ENGINE_ID", "")
 
+        # MAL API credentials
+        mal_client_id = secrets.get("MAL_CLIENT_ID", "")
+        mal_client_secret = secrets.get("MAL_CLIENT_SECRET", "")
+
         if not discord_tokens:
             raise ConfigError("DISCORD_BOT_TOKEN not found in secrets file")
         if not openrouter_key:
@@ -369,6 +377,8 @@ class Config:
             tavily_api_key=tavily_key,
             google_console_api_key=google_console_api_key,
             google_search_engine_id=google_search_engine_id,
+            mal_client_id=mal_client_id,
+            mal_client_secret=mal_client_secret,
             language=config_data.get("language", "en"),
             max_history_length=config_data.get("max_history_length", 7),
             debug=config_data.get("debug", False),
