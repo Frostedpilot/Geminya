@@ -52,6 +52,16 @@ class Config:
     mal_client_id: str
     mal_client_secret: str
 
+    # Database configuration
+    database_type: str = "sqlite"
+    sqlite_path: str = "data/waifu_academy.db"
+    mysql_host: str = ""
+    mysql_port: int = 3306
+    mysql_user: str = ""
+    mysql_password: str = ""
+    mysql_database: str = ""
+    mysql_charset: str = "utf8mb4"
+
     # Bot behavior settings
     language: str = "en"
     max_history_length: int = 7
@@ -282,6 +292,8 @@ class Config:
             tavily_api_key=tavily_key,
             google_console_api_key=google_console_api_key,
             google_search_engine_id=google_search_engine_id,
+            mal_client_id=os.getenv("MAL_CLIENT_ID", ""),
+            mal_client_secret=os.getenv("MAL_CLIENT_SECRET", ""),
             language=os.getenv("LANGUAGE", "en"),
             max_history_length=int(os.getenv("MAX_HISTORY_LENGTH", "7")),
             debug=os.getenv("DEBUG", "false").lower() == "true",
@@ -294,6 +306,14 @@ class Config:
             ),
             max_response_length=int(os.getenv("MAX_RESPONSE_LENGTH", "1999")),
             active_servers=active_servers,
+            database_type=os.getenv("DATABASE_TYPE", "sqlite"),
+            sqlite_path=os.getenv("SQLITE_PATH", "data/waifu_academy.db"),
+            mysql_host=os.getenv("MYSQL_HOST", ""),
+            mysql_port=int(os.getenv("MYSQL_PORT", "3306")),
+            mysql_user=os.getenv("MYSQL_USER", ""),
+            mysql_password=os.getenv("MYSQL_PASSWORD", ""),
+            mysql_database=os.getenv("MYSQL_DATABASE", ""),
+            mysql_charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
         )
 
     @classmethod
@@ -344,6 +364,13 @@ class Config:
         mal_client_id = secrets.get("MAL_CLIENT_ID", "")
         mal_client_secret = secrets.get("MAL_CLIENT_SECRET", "")
 
+        # Database credentials from secrets
+        mysql_host = secrets.get("MYSQL_HOST", "")
+        mysql_port = secrets.get("MYSQL_PORT", 3306)
+        mysql_user = secrets.get("MYSQL_USER", "")
+        mysql_password = secrets.get("MYSQL_PASSWORD", "")
+        mysql_database = secrets.get("MYSQL_DATABASE", "")
+
         if not discord_tokens:
             raise ConfigError("DISCORD_BOT_TOKEN not found in secrets file")
         if not openrouter_key:
@@ -369,6 +396,12 @@ class Config:
             active_servers = [s.strip() for s in active_servers.split(",") if s.strip()]
         active_servers = tuple(str(s) for s in active_servers)
 
+        # Database configuration from config file and secrets
+        database_config = config_data.get("database", {})
+        database_type = database_config.get("type", "sqlite")
+        sqlite_config = database_config.get("sqlite", {})
+        sqlite_path = sqlite_config.get("path", "data/waifu_academy.db")
+
         return cls(
             discord_token=discord_token_dev,
             discord_tokens=discord_tokens,
@@ -393,6 +426,14 @@ class Config:
             active_servers=active_servers,
             anidle=config_data.get("anidle", {}),
             guess_character=config_data.get("guess_character", {}),
+            database_type=database_type,
+            sqlite_path=sqlite_path,
+            mysql_host=mysql_host,
+            mysql_port=mysql_port,
+            mysql_user=mysql_user,
+            mysql_password=mysql_password,
+            mysql_database=mysql_database,
+            mysql_charset=database_config.get("mysql", {}).get("charset", "utf8mb4"),
         )
 
     @classmethod
@@ -445,6 +486,26 @@ class Config:
             raise ConfigError("Max response length must be at least 100")
         if not self.language.strip():
             raise ConfigError("Language cannot be empty")
+
+    def get_database_type(self) -> str:
+        """Get the database type configuration."""
+        return self.database_type
+
+    def get_sqlite_path(self) -> str:
+        """Get SQLite database path."""
+        return self.sqlite_path
+
+    def get_mysql_config(self) -> Dict[str, Any]:
+        """Get MySQL configuration dictionary."""
+        return {
+            "host": self.mysql_host,
+            "port": self.mysql_port,
+            "user": self.mysql_user,
+            "password": self.mysql_password,
+            "database": self.mysql_database,
+            "charset": self.mysql_charset,
+            "autocommit": True,
+        }
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary (excluding sensitive data).

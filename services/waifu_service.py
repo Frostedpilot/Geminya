@@ -45,6 +45,11 @@ class WaifuService:
         await self.db.initialize()
         self.logger.info("Waifu service initialized")
 
+    async def close(self):
+        """Close the waifu service and its database connection."""
+        await self.db.close()
+        self.logger.info("Waifu service closed")
+
     async def _query_jikan(
         self, endpoint: str, params: Optional[Dict[str, Any]] = None
     ) -> Optional[Dict[str, Any]]:
@@ -569,7 +574,3 @@ class WaifuService:
             "rarity_distribution": rarity_counts,
             "collection_power": sum(w["rarity"] * w["bond_level"] for w in collection),
         }
-
-    async def close(self):
-        """Close any connections (placeholder for future cleanup)."""
-        self.logger.info("Waifu service closed")

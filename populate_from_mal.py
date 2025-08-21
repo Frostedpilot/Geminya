@@ -107,7 +107,7 @@ class MALWaifuPopulator:
         )
         await self.mal_service.__aenter__()
 
-        self.db_service = DatabaseService()
+        self.db_service = DatabaseService(self.config)
         await self.db_service.initialize()
 
         self.waifu_service = WaifuService(self.db_service)
@@ -120,8 +120,7 @@ class MALWaifuPopulator:
         if self.waifu_service:
             await self.waifu_service.close()
         if self.db_service:
-            # DatabaseService doesn't have a close method, no need to close
-            pass
+            await self.db_service.close()
         if self.mal_service:
             await self.mal_service.__aexit__(exc_type, exc_val, exc_tb)
 

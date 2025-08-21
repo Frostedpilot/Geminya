@@ -1,4 +1,4 @@
-"""Database service for Waifu Academy system with MySQL and SQLite support."""
+"""Database service for Waifu Academy system."""
 
 import aiosqlite
 import aiomysql
@@ -6,17 +6,15 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Union, TYPE_CHECKING
+from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
-
-if TYPE_CHECKING:
-    from config.config import Config
+from config.config import Config
 
 
 class DatabaseService:
     """Service for managing the Waifu Academy database."""
 
-    def __init__(self, config: "Config"):
+    def __init__(self, config: Config):
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.db_type = config.get_database_type()
@@ -45,25 +43,8 @@ class DatabaseService:
                 maxsize=10
             )
             
-            # Check MySQL version and JSON support
             async with self.connection_pool.acquire() as conn:
                 async with conn.cursor() as cursor:
-                    # Test JSON support
-                    try:
-                        await cursor.execute(
-                            """
-                            CREATE TEMPORARY TABLE test_json (
-                                id INT AUTO_INCREMENT PRIMARY KEY,
-                                data JSON
-                            )
-                            """
-                        )
-                        self.mysql_supports_json = True
-                        self.logger.info("MySQL JSON columns supported")
-                    except Exception:
-                        self.mysql_supports_json = False
-                        self.logger.info("MySQL JSON columns not supported, using TEXT instead")
-                    
                     await self._create_tables_mysql(cursor)
                     await conn.commit()
         else:
@@ -71,7 +52,7 @@ class DatabaseService:
                 await self._create_tables_sqlite(db)
                 await db.commit()
                 
-        self.logger.info("Database (%s) initialized successfully", self.db_type)
+        self.logger.info(f"Database ({self.db_type}) initialized successfully")
 
     async def close(self):
         """Close database connections."""
@@ -82,6 +63,24 @@ class DatabaseService:
 
     async def _create_tables_sqlite(self, db: aiosqlite.Connection):
         """Create all required tables for SQLite."""
+
+        # Users table
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                discord_id TEXT UNIQUE NOT NULL,
+                academy_name TEXT,
+                collector_rank INTEGER DEFAULT 1,
+                sakura_crystals INTEGER DEFAULT 100,
+                pity_counter INTEGER DEFAULT 0,
+                last_daily_reset INTEGER DEFAULT 0,
+                created_at INTEGER DEFAULT (strftime('%s', 'now'))
+            )
+        """
+        )
+        """Create all required tables for the Waifu Academy system."""
+
         # Users table
         await db.execute(
             """
@@ -117,6 +116,257 @@ class DatabaseService:
                 special_dialogue TEXT, -- JSON string
                 created_at INTEGER DEFAULT (strftime('%s', 'now'))
             )
+        """
+        )
+
+        # User waifus table (collection)
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_waifus (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                waifu_id INTEGER NOT NULL,
+                bond_level INTEGER DEFAULT 1,
+                constellation_level INTEGER DEFAULT 0,
+                current_mood TEXT DEFAULT 'neutral',
+                last_interaction TIMESTAMP,
+                total_conversations INTEGER DEFAULT 0,
+                favorite_memory TEXT,
+                custom_nickname TEXT,
+                room_decorations TEXT, -- JSON string
+                obtained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                FOREIGN KEY (waifu_id) REFERENCES waifus (id),
+                UNIQUE(user_id, waifu_id, obtained_at) -- Allow duplicates for constellations
+            )
+        """
+        )
+
+        # Continue with rest of SQLite tables...
+        await self._create_remaining_tables_sqlite(db)
+
+    async def _create_tables_mysql(self, cursor):
+        """Create all required tables for MySQL."""
+
+        # Users table
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                discord_id VARCHAR(255) UNIQUE NOT NULL,
+                academy_name VARCHAR(255),
+                collector_rank INT DEFAULT 1,
+                sakura_crystals INT DEFAULT 100,
+                pity_counter INT DEFAULT 0,
+                last_daily_reset BIGINT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_discord_id (discord_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+        )
+
+        # Waifus table
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS waifus (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                series VARCHAR(255) NOT NULL,
+                genre VARCHAR(255) NOT NULL,
+                element VARCHAR(50),
+                rarity INT NOT NULL CHECK (rarity >= 1 AND rarity <= 5),
+                image_url TEXT,
+                mal_id INT,
+                personality_profile TEXT,
+                base_stats JSON,
+                birthday DATE,
+                favorite_gifts JSON,
+                special_dialogue JSON,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_rarity (rarity)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+        )
+
+        # User waifus table (collection)
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_waifus (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                waifu_id INT NOT NULL,
+                bond_level INT DEFAULT 1,
+                constellation_level INT DEFAULT 0,
+                current_mood VARCHAR(50) DEFAULT 'neutral',
+                last_interaction TIMESTAMP NULL,
+                total_conversations INT DEFAULT 0,
+                favorite_memory TEXT,
+                custom_nickname VARCHAR(255),
+                room_decorations JSON,
+                obtained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                FOREIGN KEY (waifu_id) REFERENCES waifus (id) ON DELETE CASCADE,
+                INDEX idx_user_id (user_id),
+                INDEX idx_user_waifu (user_id, waifu_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+        )
+
+        # Continue with rest of MySQL tables...
+        await self._create_remaining_tables_mysql(cursor)
+
+    async def _create_remaining_tables_sqlite(self, db: aiosqlite.Connection):
+        """Create remaining tables for SQLite."""
+        # Conversations table
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                waifu_id INTEGER NOT NULL,
+                user_message TEXT NOT NULL,
+                waifu_response TEXT NOT NULL,
+                mood_change INTEGER DEFAULT 0,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                FOREIGN KEY (waifu_id) REFERENCES waifus (id)
+            )
+        """
+        )
+
+        # Daily missions table
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_missions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                type TEXT NOT NULL,
+                target_count INTEGER NOT NULL,
+                reward_type TEXT NOT NULL,
+                reward_amount INTEGER NOT NULL,
+                difficulty TEXT DEFAULT 'easy',
+                is_active BOOLEAN DEFAULT TRUE
+            )
+        """
+        )
+
+        # User mission progress table
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_mission_progress (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                mission_id INTEGER NOT NULL,
+                current_progress INTEGER DEFAULT 0,
+                completed BOOLEAN DEFAULT FALSE,
+                claimed BOOLEAN DEFAULT FALSE,
+                date DATE DEFAULT (date('now')),
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                FOREIGN KEY (mission_id) REFERENCES daily_missions (id),
+                UNIQUE(user_id, mission_id, date)
+            )
+        """
+        )
+
+        # Events table
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                description TEXT,
+                start_date TIMESTAMP NOT NULL,
+                end_date TIMESTAMP NOT NULL,
+                event_type TEXT NOT NULL,
+                bonus_conditions TEXT, -- JSON string
+                is_active BOOLEAN DEFAULT TRUE
+            )
+        """
+        )
+
+        # Create indexes for better performance
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_user_waifus_user_id ON user_waifus(user_id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_conversations_user_waifu ON conversations(user_id, waifu_id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_waifus_rarity ON waifus(rarity)"
+        )
+
+    async def _create_remaining_tables_mysql(self, cursor):
+        """Create remaining tables for MySQL."""
+        # Conversations table
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS conversations (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                waifu_id INT NOT NULL,
+                user_message TEXT NOT NULL,
+                waifu_response TEXT NOT NULL,
+                mood_change INT DEFAULT 0,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                FOREIGN KEY (waifu_id) REFERENCES waifus (id) ON DELETE CASCADE,
+                INDEX idx_user_waifu (user_id, waifu_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+        )
+
+        # Daily missions table
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS daily_missions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                type VARCHAR(100) NOT NULL,
+                target_count INT NOT NULL,
+                reward_type VARCHAR(100) NOT NULL,
+                reward_amount INT NOT NULL,
+                difficulty VARCHAR(50) DEFAULT 'easy',
+                is_active BOOLEAN DEFAULT TRUE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+        )
+
+        # User mission progress table
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_mission_progress (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                mission_id INT NOT NULL,
+                current_progress INT DEFAULT 0,
+                completed BOOLEAN DEFAULT FALSE,
+                claimed BOOLEAN DEFAULT FALSE,
+                date DATE DEFAULT (CURDATE()),
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                FOREIGN KEY (mission_id) REFERENCES daily_missions (id) ON DELETE CASCADE,
+                UNIQUE KEY unique_user_mission_date (user_id, mission_id, date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+        )
+
+        # Events table
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS events (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                start_date TIMESTAMP NOT NULL,
+                end_date TIMESTAMP NOT NULL,
+                event_type VARCHAR(100) NOT NULL,
+                bonus_conditions JSON,
+                is_active BOOLEAN DEFAULT TRUE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """
         )
 
@@ -225,154 +475,8 @@ class DatabaseService:
             "CREATE INDEX IF NOT EXISTS idx_waifus_rarity ON waifus(rarity)"
         )
 
-    async def _create_tables_mysql(self, cursor):
-        """Create all required tables for MySQL."""
-        # Determine data type for JSON fields
-        json_type = "JSON" if getattr(self, 'mysql_supports_json', False) else "TEXT"
-        
-        # Users table
-        await cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                discord_id VARCHAR(191) UNIQUE NOT NULL,
-                academy_name VARCHAR(255),
-                collector_rank INT DEFAULT 1,
-                sakura_crystals INT DEFAULT 100,
-                pity_counter INT DEFAULT 0,
-                last_daily_reset BIGINT DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_discord_id (discord_id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """
-        )
-
-        # Waifus table
-        await cursor.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS waifus (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(191) NOT NULL,
-                series VARCHAR(255) NOT NULL,
-                genre VARCHAR(255) NOT NULL,
-                element VARCHAR(50),
-                rarity INT NOT NULL CHECK (rarity >= 1 AND rarity <= 5),
-                image_url TEXT,
-                mal_id INT,
-                personality_profile TEXT,
-                base_stats {json_type},
-                birthday DATE,
-                favorite_gifts {json_type},
-                special_dialogue {json_type},
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_rarity (rarity),
-                INDEX idx_name (name)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """
-        )
-
-        # User waifus table (collection)
-        await cursor.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS user_waifus (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                waifu_id INT NOT NULL,
-                bond_level INT DEFAULT 1,
-                constellation_level INT DEFAULT 0,
-                current_mood VARCHAR(50) DEFAULT 'neutral',
-                last_interaction TIMESTAMP NULL,
-                total_conversations INT DEFAULT 0,
-                favorite_memory TEXT,
-                custom_nickname VARCHAR(255),
-                room_decorations {json_type},
-                obtained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                FOREIGN KEY (waifu_id) REFERENCES waifus (id) ON DELETE CASCADE,
-                INDEX idx_user_id (user_id),
-                INDEX idx_user_waifu (user_id, waifu_id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """
-        )
-
-        # Conversations table
-        await cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS conversations (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                waifu_id INT NOT NULL,
-                user_message TEXT NOT NULL,
-                waifu_response TEXT NOT NULL,
-                mood_change INT DEFAULT 0,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                FOREIGN KEY (waifu_id) REFERENCES waifus (id) ON DELETE CASCADE,
-                INDEX idx_user_waifu (user_id, waifu_id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """
-        )
-
-        # Daily missions table
-        await cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS daily_missions (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                type VARCHAR(100) NOT NULL,
-                target_count INT NOT NULL,
-                reward_type VARCHAR(100) NOT NULL,
-                reward_amount INT NOT NULL,
-                difficulty VARCHAR(50) DEFAULT 'easy',
-                is_active BOOLEAN DEFAULT TRUE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """
-        )
-
-        # User mission progress table
-        await cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS user_mission_progress (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                user_id INT NOT NULL,
-                mission_id INT NOT NULL,
-                current_progress INT DEFAULT 0,
-                completed BOOLEAN DEFAULT FALSE,
-                claimed BOOLEAN DEFAULT FALSE,
-                date DATE DEFAULT '1970-01-01',
-                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-                FOREIGN KEY (mission_id) REFERENCES daily_missions (id) ON DELETE CASCADE,
-                UNIQUE KEY unique_user_mission_date (user_id, mission_id, date)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """
-        )
-
-        # Events table
-        await cursor.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS events (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                description TEXT,
-                start_date TIMESTAMP NOT NULL,
-                end_date TIMESTAMP NOT NULL,
-                event_type VARCHAR(100) NOT NULL,
-                bonus_conditions {json_type},
-                is_active BOOLEAN DEFAULT TRUE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """
-        )
-
     async def get_or_create_user(self, discord_id: str) -> Dict[str, Any]:
         """Get user from database or create if doesn't exist."""
-        if self.db_type == "mysql":
-            return await self._get_or_create_user_mysql(discord_id)
-        else:
-            return await self._get_or_create_user_sqlite(discord_id)
-
-    async def _get_or_create_user_sqlite(self, discord_id: str) -> Dict[str, Any]:
-        """SQLite implementation of get_or_create_user."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
 
@@ -389,7 +493,7 @@ class DatabaseService:
             await db.execute(
                 """INSERT INTO users (discord_id, academy_name, last_daily_reset) 
                    VALUES (?, ?, ?)""",
-                (discord_id, f"Academy {discord_id[:6]}", datetime.now().timestamp()),
+                (discord_id, f"Academy {discord_id[:6]}", datetime.now()),
             )
             await db.commit()
 
@@ -398,45 +502,10 @@ class DatabaseService:
                 "SELECT * FROM users WHERE discord_id = ?", (discord_id,)
             ) as cursor:
                 user = await cursor.fetchone()
-                return dict(user) if user else {}
-
-    async def _get_or_create_user_mysql(self, discord_id: str) -> Dict[str, Any]:
-        """MySQL implementation of get_or_create_user."""
-        async with self.connection_pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                # Try to get existing user
-                await cursor.execute(
-                    "SELECT * FROM users WHERE discord_id = %s", (discord_id,)
-                )
-                user = await cursor.fetchone()
-
-                if user:
-                    return user
-
-                # Create new user
-                await cursor.execute(
-                    """INSERT INTO users (discord_id, academy_name, last_daily_reset) 
-                       VALUES (%s, %s, %s)""",
-                    (discord_id, f"Academy {discord_id[:6]}", int(datetime.now().timestamp())),
-                )
-                await conn.commit()
-
-                # Return the newly created user
-                await cursor.execute(
-                    "SELECT * FROM users WHERE discord_id = %s", (discord_id,)
-                )
-                user = await cursor.fetchone()
-                return user if user else {}
+                return dict(user)
 
     async def add_waifu(self, waifu_data: Dict[str, Any]) -> int:
         """Add a new waifu to the database."""
-        if self.db_type == "mysql":
-            return await self._add_waifu_mysql(waifu_data)
-        else:
-            return await self._add_waifu_sqlite(waifu_data)
-
-    async def _add_waifu_sqlite(self, waifu_data: Dict[str, Any]) -> int:
-        """SQLite implementation of add_waifu."""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 """
@@ -461,50 +530,12 @@ class DatabaseService:
                 ),
             )
             await db.commit()
-            return cursor.lastrowid or 0
-
-    async def _add_waifu_mysql(self, waifu_data: Dict[str, Any]) -> int:
-        """MySQL implementation of add_waifu."""
-        async with self.connection_pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    """
-                    INSERT INTO waifus (
-                        name, series, genre, element, rarity, image_url, mal_id,
-                        personality_profile, base_stats, birthday, favorite_gifts, special_dialogue
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                    (
-                        waifu_data["name"],
-                        waifu_data["series"],
-                        waifu_data.get("genre", "Unknown"),
-                        waifu_data.get("element"),
-                        waifu_data["rarity"],
-                        waifu_data.get("image_url"),
-                        waifu_data.get("mal_id"),
-                        waifu_data.get("personality_profile"),
-                        json.dumps(waifu_data.get("base_stats", {})),
-                        waifu_data.get("birthday"),
-                        json.dumps(waifu_data.get("favorite_gifts", [])),
-                        json.dumps(waifu_data.get("special_dialogue", {})),
-                    ),
-                )
-                await conn.commit()
-                return cursor.lastrowid or 0
+            return cursor.lastrowid
 
     async def get_waifus_by_rarity(
         self, rarity: int, limit: int = 100
     ) -> List[Dict[str, Any]]:
         """Get waifus by rarity level."""
-        if self.db_type == "mysql":
-            return await self._get_waifus_by_rarity_mysql(rarity, limit)
-        else:
-            return await self._get_waifus_by_rarity_sqlite(rarity, limit)
-
-    async def _get_waifus_by_rarity_sqlite(
-        self, rarity: int, limit: int = 100
-    ) -> List[Dict[str, Any]]:
-        """SQLite implementation of get_waifus_by_rarity."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
@@ -514,28 +545,8 @@ class DatabaseService:
                 waifus = await cursor.fetchall()
                 return [dict(w) for w in waifus]
 
-    async def _get_waifus_by_rarity_mysql(
-        self, rarity: int, limit: int = 100
-    ) -> List[Dict[str, Any]]:
-        """MySQL implementation of get_waifus_by_rarity."""
-        async with self.connection_pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                await cursor.execute(
-                    "SELECT * FROM waifus WHERE rarity = %s ORDER BY RAND() LIMIT %s",
-                    (rarity, limit),
-                )
-                waifus = await cursor.fetchall()
-                return list(waifus)
-
     async def get_user_collection(self, discord_id: str) -> List[Dict[str, Any]]:
         """Get user's waifu collection."""
-        if self.db_type == "mysql":
-            return await self._get_user_collection_mysql(discord_id)
-        else:
-            return await self._get_user_collection_sqlite(discord_id)
-
-    async def _get_user_collection_sqlite(self, discord_id: str) -> List[Dict[str, Any]]:
-        """SQLite implementation of get_user_collection."""
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
@@ -552,33 +563,8 @@ class DatabaseService:
                 collection = await cursor.fetchall()
                 return [dict(c) for c in collection]
 
-    async def _get_user_collection_mysql(self, discord_id: str) -> List[Dict[str, Any]]:
-        """MySQL implementation of get_user_collection."""
-        async with self.connection_pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                await cursor.execute(
-                    """
-                    SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.element
-                    FROM user_waifus uw
-                    JOIN waifus w ON uw.waifu_id = w.id
-                    JOIN users u ON uw.user_id = u.id
-                    WHERE u.discord_id = %s
-                    ORDER BY uw.obtained_at DESC
-                """,
-                    (discord_id,),
-                )
-                collection = await cursor.fetchall()
-                return list(collection)
-
     async def add_waifu_to_user(self, discord_id: str, waifu_id: int) -> bool:
         """Add a waifu to user's collection."""
-        if self.db_type == "mysql":
-            return await self._add_waifu_to_user_mysql(discord_id, waifu_id)
-        else:
-            return await self._add_waifu_to_user_sqlite(discord_id, waifu_id)
-
-    async def _add_waifu_to_user_sqlite(self, discord_id: str, waifu_id: int) -> bool:
-        """SQLite implementation of add_waifu_to_user."""
         async with aiosqlite.connect(self.db_path) as db:
             # Get user ID
             async with db.execute(
@@ -592,6 +578,7 @@ class DatabaseService:
 
             # Add waifu to collection with a unique timestamp to handle rapid summons
             import time
+
             unique_timestamp = (
                 f"{datetime.now().isoformat()}.{int(time.time_ns() % 1000000)}"
             )
@@ -606,40 +593,8 @@ class DatabaseService:
             await db.commit()
             return True
 
-    async def _add_waifu_to_user_mysql(self, discord_id: str, waifu_id: int) -> bool:
-        """MySQL implementation of add_waifu_to_user."""
-        async with self.connection_pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                # Get user ID
-                await cursor.execute(
-                    "SELECT id FROM users WHERE discord_id = %s", (discord_id,)
-                )
-                user = await cursor.fetchone()
-                if not user:
-                    return False
-
-                user_id = user[0]
-
-                # Add waifu to collection
-                await cursor.execute(
-                    """
-                    INSERT INTO user_waifus (user_id, waifu_id, obtained_at)
-                    VALUES (%s, %s, NOW())
-                """,
-                    (user_id, waifu_id),
-                )
-                await conn.commit()
-                return True
-
     async def update_user_crystals(self, discord_id: str, amount: int) -> bool:
         """Update user's Sakura Crystals."""
-        if self.db_type == "mysql":
-            return await self._update_user_crystals_mysql(discord_id, amount)
-        else:
-            return await self._update_user_crystals_sqlite(discord_id, amount)
-
-    async def _update_user_crystals_sqlite(self, discord_id: str, amount: int) -> bool:
-        """SQLite implementation of update_user_crystals."""
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
                 "UPDATE users SET sakura_crystals = sakura_crystals + ? WHERE discord_id = ?",
@@ -648,58 +603,8 @@ class DatabaseService:
             await db.commit()
             return cursor.rowcount > 0
 
-    async def _update_user_crystals_mysql(self, discord_id: str, amount: int) -> bool:
-        """MySQL implementation of update_user_crystals."""
-        async with self.connection_pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute(
-                    "UPDATE users SET sakura_crystals = sakura_crystals + %s WHERE discord_id = %s",
-                    (amount, discord_id),
-                )
-                await conn.commit()
-                return cursor.rowcount > 0
-
-    # Add other methods with similar patterns...
-    # For brevity, I'll implement the core methods needed for the waifu system
-    
-    async def search_waifus(self, name: str) -> List[Dict[str, Any]]:
-        """Search for waifus by name."""
-        if self.db_type == "mysql":
-            return await self._search_waifus_mysql(name)
-        else:
-            return await self._search_waifus_sqlite(name)
-
-    async def _search_waifus_sqlite(self, name: str) -> List[Dict[str, Any]]:
-        """SQLite implementation of search_waifus."""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM waifus WHERE name LIKE ? LIMIT 10",
-                (f"%{name}%",),
-            ) as cursor:
-                waifus = await cursor.fetchall()
-                return [dict(w) for w in waifus]
-
-    async def _search_waifus_mysql(self, name: str) -> List[Dict[str, Any]]:
-        """MySQL implementation of search_waifus."""
-        async with self.connection_pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                await cursor.execute(
-                    "SELECT * FROM waifus WHERE name LIKE %s LIMIT 10",
-                    (f"%{name}%",),
-                )
-                waifus = await cursor.fetchall()
-                return list(waifus)
-
     async def update_pity_counter(self, discord_id: str, reset: bool = False) -> bool:
         """Update user's pity counter."""
-        if self.db_type == "mysql":
-            return await self._update_pity_counter_mysql(discord_id, reset)
-        else:
-            return await self._update_pity_counter_sqlite(discord_id, reset)
-
-    async def _update_pity_counter_sqlite(self, discord_id: str, reset: bool = False) -> bool:
-        """SQLite implementation of update_pity_counter."""
         async with aiosqlite.connect(self.db_path) as db:
             if reset:
                 cursor = await db.execute(
@@ -714,19 +619,150 @@ class DatabaseService:
             await db.commit()
             return cursor.rowcount > 0
 
-    async def _update_pity_counter_mysql(self, discord_id: str, reset: bool = False) -> bool:
-        """MySQL implementation of update_pity_counter."""
-        async with self.connection_pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                if reset:
-                    await cursor.execute(
-                        "UPDATE users SET pity_counter = 0 WHERE discord_id = %s",
-                        (discord_id,),
-                    )
-                else:
-                    await cursor.execute(
-                        "UPDATE users SET pity_counter = pity_counter + 1 WHERE discord_id = %s",
-                        (discord_id,),
-                    )
-                await conn.commit()
-                return cursor.rowcount > 0
+    async def get_waifu_by_id(self, waifu_id: int) -> Optional[Dict[str, Any]]:
+        """Get waifu by ID."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM waifus WHERE id = ?", (waifu_id,)
+            ) as cursor:
+                waifu = await cursor.fetchone()
+                return dict(waifu) if waifu else None
+
+    async def search_waifus(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """Search waifus by name or series."""
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                """
+                SELECT * FROM waifus 
+                WHERE name LIKE ? OR series LIKE ?
+                ORDER BY rarity DESC, name
+                LIMIT ?
+            """,
+                (f"%{query}%", f"%{query}%", limit),
+            ) as cursor:
+                waifus = await cursor.fetchall()
+                return [dict(w) for w in waifus]
+
+    async def add_conversation(
+        self,
+        discord_id: str,
+        waifu_id: int,
+        user_message: str,
+        waifu_response: str,
+        mood_change: int = 0,
+    ) -> bool:
+        """Add a conversation record."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Get user ID
+            async with db.execute(
+                "SELECT id FROM users WHERE discord_id = ?", (discord_id,)
+            ) as cursor:
+                user = await cursor.fetchone()
+                if not user:
+                    return False
+
+            user_id = user[0]
+
+            # Add conversation
+            await db.execute(
+                """
+                INSERT INTO conversations (user_id, waifu_id, user_message, waifu_response, mood_change)
+                VALUES (?, ?, ?, ?, ?)
+            """,
+                (user_id, waifu_id, user_message, waifu_response, mood_change),
+            )
+
+            # Update user waifu interaction stats
+            await db.execute(
+                """
+                UPDATE user_waifus 
+                SET total_conversations = total_conversations + 1,
+                    last_interaction = CURRENT_TIMESTAMP
+                WHERE user_id = ? AND waifu_id = ?
+            """,
+                (user_id, waifu_id),
+            )
+
+            await db.commit()
+            return True
+
+    async def delete_user_account(self, discord_id: str) -> bool:
+        """Delete user account and all associated data."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Get user ID
+            async with db.execute(
+                "SELECT id FROM users WHERE discord_id = ?", (discord_id,)
+            ) as cursor:
+                user = await cursor.fetchone()
+                if not user:
+                    return False
+
+            user_id = user[0]
+
+            # Delete all user-related data in correct order (due to foreign keys)
+            # Delete conversations first
+            await db.execute("DELETE FROM conversations WHERE user_id = ?", (user_id,))
+
+            # Delete user mission progress
+            await db.execute(
+                "DELETE FROM user_mission_progress WHERE user_id = ?", (user_id,)
+            )
+
+            # Delete user waifus (collection)
+            await db.execute("DELETE FROM user_waifus WHERE user_id = ?", (user_id,))
+
+            # Delete user account
+            await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
+
+            await db.commit()
+            self.logger.info(
+                f"Deleted user account and all data for discord_id: {discord_id}"
+            )
+            return True
+
+    async def reset_user_account(self, discord_id: str) -> bool:
+        """Reset user account to default state (keep account, clear progress)."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Get user ID
+            async with db.execute(
+                "SELECT id FROM users WHERE discord_id = ?", (discord_id,)
+            ) as cursor:
+                user = await cursor.fetchone()
+                if not user:
+                    return False
+
+            user_id = user[0]
+
+            # Clear all user progress but keep the account
+            # Delete conversations
+            await db.execute("DELETE FROM conversations WHERE user_id = ?", (user_id,))
+
+            # Delete user mission progress
+            await db.execute(
+                "DELETE FROM user_mission_progress WHERE user_id = ?", (user_id,)
+            )
+
+            # Delete user waifus (collection)
+            await db.execute("DELETE FROM user_waifus WHERE user_id = ?", (user_id,))
+
+            # Reset user stats to defaults
+            await db.execute(
+                """
+                UPDATE users 
+                SET academy_name = ?,
+                    collector_rank = 1,
+                    sakura_crystals = 100,
+                    pity_counter = 0,
+                    last_daily_reset = 0
+                WHERE id = ?
+                """,
+                (f"Academy {discord_id[:6]}", user_id),
+            )
+
+            await db.commit()
+            self.logger.info(
+                f"Reset user account to defaults for discord_id: {discord_id}"
+            )
+            return True

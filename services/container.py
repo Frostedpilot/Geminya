@@ -60,7 +60,7 @@ class ServiceContainer:
         )
 
         # Initialize Waifu Academy services
-        self.database = DatabaseService()
+        self.database = DatabaseService(config)
         self.waifu_service = WaifuService(self.database)
 
         self.logger.info("Service container created")

@@ -6,17 +6,15 @@ import json
 import logging
 import os
 from datetime import datetime
-from typing import Optional, List, Dict, Any, Union, TYPE_CHECKING
+from typing import Optional, List, Dict, Any, Union
 from pathlib import Path
-
-if TYPE_CHECKING:
-    from config.config import Config
+from config.config import Config
 
 
 class DatabaseService:
     """Service for managing the Waifu Academy database."""
 
-    def __init__(self, config: "Config"):
+    def __init__(self, config: Config):
         self.config = config
         self.logger = logging.getLogger(__name__)
         self.db_type = config.get_database_type()
@@ -45,25 +43,8 @@ class DatabaseService:
                 maxsize=10
             )
             
-            # Check MySQL version and JSON support
             async with self.connection_pool.acquire() as conn:
                 async with conn.cursor() as cursor:
-                    # Test JSON support
-                    try:
-                        await cursor.execute(
-                            """
-                            CREATE TEMPORARY TABLE test_json (
-                                id INT AUTO_INCREMENT PRIMARY KEY,
-                                data JSON
-                            )
-                            """
-                        )
-                        self.mysql_supports_json = True
-                        self.logger.info("MySQL JSON columns supported")
-                    except Exception:
-                        self.mysql_supports_json = False
-                        self.logger.info("MySQL JSON columns not supported, using TEXT instead")
-                    
                     await self._create_tables_mysql(cursor)
                     await conn.commit()
         else:
@@ -227,15 +208,12 @@ class DatabaseService:
 
     async def _create_tables_mysql(self, cursor):
         """Create all required tables for MySQL."""
-        # Determine data type for JSON fields
-        json_type = "JSON" if getattr(self, 'mysql_supports_json', False) else "TEXT"
-        
         # Users table
         await cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                discord_id VARCHAR(191) UNIQUE NOT NULL,
+                discord_id VARCHAR(255) UNIQUE NOT NULL,
                 academy_name VARCHAR(255),
                 collector_rank INT DEFAULT 1,
                 sakura_crystals INT DEFAULT 100,
@@ -249,10 +227,10 @@ class DatabaseService:
 
         # Waifus table
         await cursor.execute(
-            f"""
+            """
             CREATE TABLE IF NOT EXISTS waifus (
                 id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(191) NOT NULL,
+                name VARCHAR(255) NOT NULL,
                 series VARCHAR(255) NOT NULL,
                 genre VARCHAR(255) NOT NULL,
                 element VARCHAR(50),
@@ -260,20 +238,19 @@ class DatabaseService:
                 image_url TEXT,
                 mal_id INT,
                 personality_profile TEXT,
-                base_stats {json_type},
+                base_stats JSON,
                 birthday DATE,
-                favorite_gifts {json_type},
-                special_dialogue {json_type},
+                favorite_gifts JSON,
+                special_dialogue JSON,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_rarity (rarity),
-                INDEX idx_name (name)
+                INDEX idx_rarity (rarity)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """
         )
 
         # User waifus table (collection)
         await cursor.execute(
-            f"""
+            """
             CREATE TABLE IF NOT EXISTS user_waifus (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id INT NOT NULL,
@@ -285,7 +262,7 @@ class DatabaseService:
                 total_conversations INT DEFAULT 0,
                 favorite_memory TEXT,
                 custom_nickname VARCHAR(255),
-                room_decorations {json_type},
+                room_decorations JSON,
                 obtained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
                 FOREIGN KEY (waifu_id) REFERENCES waifus (id) ON DELETE CASCADE,
@@ -340,7 +317,7 @@ class DatabaseService:
                 current_progress INT DEFAULT 0,
                 completed BOOLEAN DEFAULT FALSE,
                 claimed BOOLEAN DEFAULT FALSE,
-                date DATE DEFAULT '1970-01-01',
+                date DATE DEFAULT (CURDATE()),
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
                 FOREIGN KEY (mission_id) REFERENCES daily_missions (id) ON DELETE CASCADE,
                 UNIQUE KEY unique_user_mission_date (user_id, mission_id, date)
@@ -350,7 +327,7 @@ class DatabaseService:
 
         # Events table
         await cursor.execute(
-            f"""
+            """
             CREATE TABLE IF NOT EXISTS events (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
@@ -358,7 +335,7 @@ class DatabaseService:
                 start_date TIMESTAMP NOT NULL,
                 end_date TIMESTAMP NOT NULL,
                 event_type VARCHAR(100) NOT NULL,
-                bonus_conditions {json_type},
+                bonus_conditions JSON,
                 is_active BOOLEAN DEFAULT TRUE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """
@@ -661,72 +638,3 @@ class DatabaseService:
 
     # Add other methods with similar patterns...
     # For brevity, I'll implement the core methods needed for the waifu system
-    
-    async def search_waifus(self, name: str) -> List[Dict[str, Any]]:
-        """Search for waifus by name."""
-        if self.db_type == "mysql":
-            return await self._search_waifus_mysql(name)
-        else:
-            return await self._search_waifus_sqlite(name)
-
-    async def _search_waifus_sqlite(self, name: str) -> List[Dict[str, Any]]:
-        """SQLite implementation of search_waifus."""
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM waifus WHERE name LIKE ? LIMIT 10",
-                (f"%{name}%",),
-            ) as cursor:
-                waifus = await cursor.fetchall()
-                return [dict(w) for w in waifus]
-
-    async def _search_waifus_mysql(self, name: str) -> List[Dict[str, Any]]:
-        """MySQL implementation of search_waifus."""
-        async with self.connection_pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cursor:
-                await cursor.execute(
-                    "SELECT * FROM waifus WHERE name LIKE %s LIMIT 10",
-                    (f"%{name}%",),
-                )
-                waifus = await cursor.fetchall()
-                return list(waifus)
-
-    async def update_pity_counter(self, discord_id: str, reset: bool = False) -> bool:
-        """Update user's pity counter."""
-        if self.db_type == "mysql":
-            return await self._update_pity_counter_mysql(discord_id, reset)
-        else:
-            return await self._update_pity_counter_sqlite(discord_id, reset)
-
-    async def _update_pity_counter_sqlite(self, discord_id: str, reset: bool = False) -> bool:
-        """SQLite implementation of update_pity_counter."""
-        async with aiosqlite.connect(self.db_path) as db:
-            if reset:
-                cursor = await db.execute(
-                    "UPDATE users SET pity_counter = 0 WHERE discord_id = ?",
-                    (discord_id,),
-                )
-            else:
-                cursor = await db.execute(
-                    "UPDATE users SET pity_counter = pity_counter + 1 WHERE discord_id = ?",
-                    (discord_id,),
-                )
-            await db.commit()
-            return cursor.rowcount > 0
-
-    async def _update_pity_counter_mysql(self, discord_id: str, reset: bool = False) -> bool:
-        """MySQL implementation of update_pity_counter."""
-        async with self.connection_pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                if reset:
-                    await cursor.execute(
-                        "UPDATE users SET pity_counter = 0 WHERE discord_id = %s",
-                        (discord_id,),
-                    )
-                else:
-                    await cursor.execute(
-                        "UPDATE users SET pity_counter = pity_counter + 1 WHERE discord_id = %s",
-                        (discord_id,),
-                    )
-                await conn.commit()
-                return cursor.rowcount > 0
