@@ -1,4 +1,11 @@
-"""Enhanced Waifu Service with new star-based upgrade system."""
+"""Enhanced Waifu Service wit    # UPGRADE COSTS (shards required to upgrade)
+    UPGRADE_COSTS = {
+        2: 50,   # 1→2 star: 50 shards
+        3: 100,  # 2→3 star: 100 shards
+    }
+
+    # Maximum star level (NEW SYSTEM: 1-3★ direct gacha, no 4-5★)
+    MAX_STAR_LEVEL = 3-based upgrade system."""
 
 import random
 import logging
@@ -141,11 +148,11 @@ class WaifuService:
                 async with conn.cursor() as cursor:
                     # Insert or update shard count
                     await cursor.execute("""
-                        INSERT INTO user_character_shards (user_id, waifu_id, shard_count)
-                        VALUES (%s, %s, %s)
+                        INSERT INTO user_character_shards (user_id, waifu_id, shard_count, updated_at)
+                        VALUES (%s, %s, %s, NOW())
                         ON DUPLICATE KEY UPDATE 
                         shard_count = shard_count + %s,
-                        updated_at = CURRENT_TIMESTAMP
+                        updated_at = NOW()
                     """, (user["id"], waifu_id, amount, amount))
                     
                     # Get new total
@@ -241,7 +248,7 @@ class WaifuService:
                     await cursor.execute("""
                         UPDATE user_character_shards 
                         SET shard_count = shard_count - %s,
-                            updated_at = CURRENT_TIMESTAMP
+                            updated_at = NOW()
                         WHERE user_id = %s AND waifu_id = %s
                     """, (required_shards, user["id"], waifu_id))
                     

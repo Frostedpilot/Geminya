@@ -42,11 +42,11 @@ async def populate_shop():
     # Clear existing shop data first
     await clear_shop_tables(db)
     
-    # Define shop items
+    # Define shop items for NEW 3★ system
     shop_items = [
         {
-            "name": "5★ Guarantee Summon Ticket",
-            "description": "Immediately summons a guaranteed 5★ waifu! No waiting required.",
+            "name": "3★ Guarantee Summon Ticket",
+            "description": "Immediately summons a guaranteed 3★ waifu! Perfect for the new star system.",
             "item_type": "guarantee_ticket",
             "price": 100,
             "category": "summons",
@@ -54,6 +54,32 @@ async def populate_shop():
                 "currency_type": "quartzs",
                 "rarity": "legendary",
                 "effects": {"guarantee_rarity": 3, "uses": 1},
+                "requirements": {}
+            }
+        },
+        {
+            "name": "2★ Guarantee Summon Ticket", 
+            "description": "Guaranteed 2★ or higher waifu summon. Great for building your collection!",
+            "item_type": "guarantee_ticket",
+            "price": 50,
+            "category": "summons",
+            "item_data": {
+                "currency_type": "quartzs",
+                "rarity": "rare",
+                "effects": {"guarantee_rarity": 2, "uses": 1},
+                "requirements": {}
+            }
+        },
+        {
+            "name": "Star Shard Bundle",
+            "description": "A bundle of universal star shards to upgrade your waifus! Contains 50 shards.",
+            "item_type": "shards",
+            "price": 75,
+            "category": "upgrades",
+            "item_data": {
+                "currency_type": "quartzs",
+                "rarity": "epic",
+                "effects": {"shard_amount": 50, "uses": 1},
                 "requirements": {}
             }
         }

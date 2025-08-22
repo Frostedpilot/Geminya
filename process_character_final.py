@@ -135,12 +135,12 @@ class CharacterFinalProcessor:
         # Apply the new star assignment logic
         df_clean = self.apply_star_assignment_logic(df_clean)
         
-        # Validate rarity range for new star system
-        invalid_rarity = df_clean[(df_clean['rarity'] < 1) | (df_clean['rarity'] > 5)]
+        # Validate rarity range for new star system (1-3★ only)
+        invalid_rarity = df_clean[(df_clean['rarity'] < 1) | (df_clean['rarity'] > 3)]
         if len(invalid_rarity) > 0:
-            logger.warning(f"⚠️  Found {len(invalid_rarity)} characters with invalid rarity (outside 1-5 range)")
+            logger.warning(f"⚠️  Found {len(invalid_rarity)} characters with invalid rarity (outside 1-3 range)")
             logger.info("Removing characters with invalid rarity...")
-            df_clean = df_clean[(df_clean['rarity'] >= 1) & (df_clean['rarity'] <= 5)]
+            df_clean = df_clean[(df_clean['rarity'] >= 1) & (df_clean['rarity'] <= 3)]
         
         # Fill missing optional fields
         df_clean['series'] = df_clean['series'].fillna('Unknown Series')
@@ -179,21 +179,20 @@ class CharacterFinalProcessor:
         logger.info("🔍 Analyzing new star system impact...")
         
         total_chars = len(df)
-        gacha_chars = len(df[df['rarity'] <= 3])  # 1-3 stars available in gacha
-        upgrade_chars = len(df[df['rarity'] >= 4])  # 4-5 stars through upgrades only
+        gacha_chars = len(df[df['rarity'] <= 3])  # 1-3 stars available in gacha (all characters now)
         
         logger.info(f"📈 Star System Analysis:")
         logger.info(f"  Total Characters: {total_chars}")
-        logger.info(f"  Gacha Available (1-3★): {gacha_chars} ({gacha_chars/total_chars*100:.1f}%)")
-        logger.info(f"  Upgrade Only (4-5★): {upgrade_chars} ({upgrade_chars/total_chars*100:.1f}%)")
+        logger.info(f"  All characters available in gacha (1-3★): {gacha_chars} (100%)")
+        logger.info(f"  Characters can be upgraded to 4-5★ using shards after summoning")
         
-        # Show upgrade targets
-        if upgrade_chars > 0:
-            logger.info("🎯 Upgrade Target Distribution:")
-            for rarity in [4, 5]:
-                count = len(df[df['rarity'] == rarity])
-                if count > 0:
-                    logger.info(f"    {rarity}★: {count} characters (upgrade from {rarity-1}★)")
+        # Show rarity distribution
+        logger.info("🎯 Current Rarity Distribution:")
+        for rarity in [1, 2, 3]:
+            count = len(df[df['rarity'] == rarity])
+            if count > 0:
+                percentage = count / total_chars * 100
+                logger.info(f"    {rarity}★: {count} characters ({percentage:.1f}%)")
 
     def save_final_csv(self, df: pd.DataFrame) -> bool:
         """Save the final processed data to CSV."""

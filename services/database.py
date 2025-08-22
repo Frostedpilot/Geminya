@@ -81,7 +81,7 @@ class DatabaseService:
                 series VARCHAR(255) NOT NULL,
                 genre VARCHAR(100) NOT NULL,
                 element VARCHAR(50),
-                rarity INT NOT NULL CHECK (rarity >= 1 AND rarity <= 5),
+                rarity INT NOT NULL CHECK (rarity >= 1 AND rarity <= 3),
                 image_url TEXT,
                 mal_id INT,
                 base_stats TEXT,
@@ -95,7 +95,7 @@ class DatabaseService:
         """
         )
 
-        # User waifus table (collection)
+        # User waifus table (collection) - Updated for new star system
         await cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS user_waifus (
@@ -104,6 +104,9 @@ class DatabaseService:
                 waifu_id INT NOT NULL,
                 bond_level INT DEFAULT 1,
                 constellation_level INT DEFAULT 0,
+                current_star_level INT DEFAULT NULL,
+                star_shards INT DEFAULT 0,
+                character_shards INT DEFAULT 0,
                 current_mood VARCHAR(50) DEFAULT 'neutral',
                 last_interaction TIMESTAMP NULL,
                 total_conversations INT DEFAULT 0,
@@ -234,6 +237,24 @@ class DatabaseService:
                 metadata TEXT,
                 acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+        )
+
+        # User character shards table (for new star system)
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_character_shards (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                waifu_id INT NOT NULL,
+                shard_count INT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (waifu_id) REFERENCES waifus(id) ON DELETE CASCADE,
+                UNIQUE KEY unique_user_waifu (user_id, waifu_id),
+                INDEX idx_user_shards (user_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """
         )
@@ -385,8 +406,8 @@ class DatabaseService:
                     # Get waifu details for quartzs calculation (legacy system)
                     await cursor.execute("SELECT rarity FROM waifus WHERE id = %s", (waifu_id,))
                     waifu_row = await cursor.fetchone()
-                    if waifu_row and waifu_row["rarity"] >= 3:  # C7+ gives quartzs (legacy)
-                        quartzs_reward = (waifu_row["rarity"] - 2) * 5  # 3★=5, 4★=10, 5★=15
+                    if waifu_row and waifu_row["rarity"] >= 3:  # 3★+ gives quartzs (legacy)
+                        quartzs_reward = (waifu_row["rarity"] - 2) * 5  # 3★=5, 4★=10, 5★=15 (for upgraded chars)
                         await self.update_user_quartzs(discord_id, quartzs_reward)
 
                     # Return existing entry without constellation update
