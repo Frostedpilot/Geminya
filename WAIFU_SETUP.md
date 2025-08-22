@@ -121,8 +121,11 @@ GACHA_RATES = {
 SUMMON_COST = 10  # Crystals per summon
 
 # Pity thresholds
-PITY_4_STAR = 10
-PITY_5_STAR = 90
+PITY_5_STAR = 90  # Only 5* pity - guaranteed 5* every 90 pulls
+
+# Multi-summon guarantees
+- Multi-summon always performs exactly 10 rolls
+- 10th roll guarantees at least 4* rarity if none were pulled in the first 9
 ```
 
 ## Adding New Anime Series

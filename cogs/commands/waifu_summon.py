@@ -119,26 +119,16 @@ class WaifuSummonCog(BaseCommand):
 
     @commands.hybrid_command(
         name="nwnl_multi_summon",
-        description="🎰🎊 Perform multiple summons! (10 crystals per summon)",
+        description="🎰🎊 Perform 10 summons with guaranteed 4★ minimum! (100 crystals total)",
     )
-    async def nwnl_multi_summon(self, ctx: commands.Context, count: int = 10):
-        """Perform multiple waifu summons."""
+    async def nwnl_multi_summon(self, ctx: commands.Context):
+        """Perform 10 waifu summons with guaranteed 4★ minimum."""
         await ctx.defer()
 
-        # Validate count
-        if count < 1 or count > 10:
-            embed = discord.Embed(
-                title="❌ Invalid Count",
-                description="You can summon between 1 and 10 waifus at once!",
-                color=0xFF6B6B,
-            )
-            await ctx.send(embed=embed)
-            return
-
         try:
-            # Perform the multi-summon
+            # Perform the multi-summon (always 10 rolls)
             result = await self.services.waifu_service.perform_multi_summon(
-                str(ctx.author.id), count
+                str(ctx.author.id)
             )
 
             if not result["success"]:

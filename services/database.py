@@ -418,14 +418,18 @@ class DatabaseService:
                 return cursor.rowcount > 0
 
     # Search methods
-    async def search_waifus(self, name: str) -> List[Dict[str, Any]]:
+    async def search_waifus(self, name: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """Search for waifus by name."""
         async with self.connection_pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cursor:
-                await cursor.execute(
-                    "SELECT * FROM waifus WHERE name LIKE %s OR series LIKE %s",
-                    (f"%{name}%", f"%{name}%"),
-                )
+                query = "SELECT * FROM waifus WHERE name LIKE %s OR series LIKE %s"
+                params = (f"%{name}%", f"%{name}%")
+                
+                if limit:
+                    query += " LIMIT %s"
+                    params = params + (limit,)
+                
+                await cursor.execute(query, params)
                 return await cursor.fetchall()
 
     # Pity system
