@@ -489,8 +489,11 @@ class ShopCog(BaseCommand):
             item_type = item.get('item_type', '')
             
             if item_type == "guarantee_ticket":
-                # Perform immediate guaranteed roll
-                guarantee_rarity = effects.get('guarantee_rarity', 5)
+                # Perform immediate guaranteed roll (now limited to 1-3★ with new system)
+                guarantee_rarity = effects.get('guarantee_rarity', 3)  # Max 3★ now
+                
+                # Ensure we don't exceed the new maximum rarity for direct pulls
+                guarantee_rarity = min(guarantee_rarity, 3)  # Cap at 3★ for new star system
                 
                 # Use the existing waifu service from our container
                 waifu_service = self.services.waifu_service
@@ -499,20 +502,30 @@ class ShopCog(BaseCommand):
                 rolled_waifu = await self._perform_guaranteed_roll(user_id, guarantee_rarity, waifu_service)
                 
                 if rolled_waifu:
-                    # Build detailed success message
-                    constellation_text = ""
-                    if rolled_waifu.get('constellation', 1) > 1:
-                        constellation_text = f" (C{rolled_waifu['constellation']})"
+                    # Build detailed success message with new star system info
+                    current_star = rolled_waifu.get('current_star_level', rolled_waifu['rarity'])
+                    star_display = "⭐" * current_star
                     
+                    # Handle upgrade information
+                    upgrade_text = ""
+                    if rolled_waifu.get('was_upgraded', False):
+                        upgrade_text = f"\n🌟 **AUTO-UPGRADED to {current_star}★!** {rolled_waifu.get('upgrade_message', '')}"
+                    
+                    # Handle shard rewards for duplicates
+                    shard_text = ""
+                    if rolled_waifu.get('shard_reward', 0) > 0:
+                        shard_text = f"\n⚡ +{rolled_waifu['shard_reward']} Star Shards!"
+                    
+                    # Handle quartz conversion
                     quartzs_text = ""
                     if rolled_waifu.get('quartzs_gained', 0) > 0:
-                        quartzs_text = f"\n🔹 +{rolled_waifu['quartzs_gained']} Quartzs (C6+ duplicate)"
+                        quartzs_text = f"\n🔹 +{rolled_waifu['quartzs_gained']} Quartzs (Max star duplicate)"
                     
                     new_text = "**NEW!** " if rolled_waifu.get('is_new', True) else ""
                     
                     return {
                         'success': True,
-                        'description': f"🌟 **Guaranteed {guarantee_rarity}★ Roll Complete!**\n\n✨ {new_text}You summoned: **{rolled_waifu['name']}**{constellation_text} ({rolled_waifu['rarity']}★)\n*From: {rolled_waifu.get('source', 'Unknown')}*{quartzs_text}"
+                        'description': f"🌟 **Guaranteed {guarantee_rarity}★ Roll Complete!**\n\n✨ {new_text}You summoned: **{rolled_waifu['name']}** {star_display} ({current_star}★)\n*From: {rolled_waifu.get('source', 'Unknown')}*{upgrade_text}{shard_text}{quartzs_text}"
                     }
                 else:
                     return {
@@ -550,21 +563,30 @@ class ShopCog(BaseCommand):
                 }
             
             elif item_type == "selector":
-                # Mark user as having a selector available
-                rarity = effects.get('rarity', '5_star')
-                await self.db.set_user_selector(user_id, rarity)
+                # Mark user as having a selector available (updated for new star system)
+                rarity = effects.get('rarity', '3_star')  # Default to 3★ max now
+                # Convert old 5_star and 4_star to 3_star for compatibility
+                if rarity in ['5_star', '4_star']:
+                    rarity = '3_star'
+                
+                # For now, we'll skip this functionality since selectors need rework for star system
                 return {
                     'success': True,
-                    'description': f"🎯 You can now select a **{rarity.replace('_', '★')}** waifu! Use the waifu summon system to make your selection."
+                    'description': f"🎯 Selector tickets are being updated for the new star system! This feature will return soon with shard rewards instead."
                 }
             
             elif item_type == "enhancer":
-                # Mark user as having constellation enhancer
+                # Convert constellation enhancer to shard pack for new star system
                 boost = effects.get('constellation_boost', 1)
-                await self.db.add_constellation_enhancer(user_id, boost)
+                shard_amount = boost * 50  # Convert constellation boost to shard amount
+                
+                # For now, we'll give equivalent crystals since shard system needs integration
+                crystal_equivalent = shard_amount * 2  # Convert to crystals temporarily
+                await self.db.add_crystals(user_id, crystal_equivalent)
+                
                 return {
                     'success': True,
-                    'description': f"⭐ You can now enhance a waifu's constellation by **{boost} level**! The enhancement will be applied to your next constellation upgrade."
+                    'description': f"⚡ Enhancer converted to **{crystal_equivalent} Sakura Crystals** for the new star system! Use these for more summons to collect shards."
                 }
             
             elif item_type in ["decoration", "frame", "title"]:
@@ -609,7 +631,7 @@ class ShopCog(BaseCommand):
             }
 
     async def _perform_guaranteed_roll(self, user_id: str, rarity: int, waifu_service) -> Optional[Dict[str, Any]]:
-        """Perform a guaranteed roll for the specified rarity without cost."""
+        """Perform a guaranteed roll for the specified rarity without cost using new star system."""
         try:
             # Get available waifus of the guaranteed rarity
             available_waifus = await self.db.get_waifus_by_rarity(rarity, 50)
@@ -622,18 +644,26 @@ class ShopCog(BaseCommand):
             import random
             selected_waifu = random.choice(available_waifus)
             
-            # Add to user's collection (this handles constellation logic and quartzs conversion)
-            result = await self.db.add_waifu_to_user(user_id, selected_waifu["id"])
+            # Use the new waifu service to handle the summon (includes automatic star upgrades)
+            # This will handle shards, automatic upgrades, and proper duplicate logic
+            user_data = await self.db.get_or_create_user(user_id)
+            result = await waifu_service._handle_summon_result(
+                user_data, selected_waifu, is_guaranteed=True
+            )
             
-            # Return the waifu data
+            # Return the result data with new star system information
             return {
                 'id': selected_waifu['id'],
                 'name': selected_waifu['name'],
                 'rarity': selected_waifu['rarity'],
                 'source': selected_waifu.get('source', 'Unknown'),
-                'constellation': result.get('constellation', 1),
+                'current_star_level': result.get('current_star_level', selected_waifu['rarity']),
+                'character_shards': result.get('character_shards', 0),
                 'is_new': result.get('is_new', True),
-                'quartzs_gained': result.get('quartzs_gained', 0)
+                'was_upgraded': result.get('was_upgraded', False),
+                'upgrade_message': result.get('upgrade_message', ''),
+                'quartzs_gained': result.get('quartzs_gained', 0),
+                'shard_reward': result.get('shard_reward', 0)
             }
             
         except Exception as e:

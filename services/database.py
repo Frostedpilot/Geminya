@@ -378,22 +378,18 @@ class DatabaseService:
                 existing = await cursor.fetchone()
 
                 if existing:
-                    # Upgrade constellation level
-                    new_constellation = existing["constellation_level"] + 1
-                    await cursor.execute(
-                        "UPDATE user_waifus SET constellation_level = %s WHERE id = %s",
-                        (new_constellation, existing["id"]),
-                    )
-                    await conn.commit()
-
-                    # Get waifu details for quartzs calculation
+                    # For backwards compatibility with old constellation system
+                    # But we don't update constellation_level anymore with new star system
+                    # The star system handles duplicates via shards in WaifuService
+                    
+                    # Get waifu details for quartzs calculation (legacy system)
                     await cursor.execute("SELECT rarity FROM waifus WHERE id = %s", (waifu_id,))
                     waifu_row = await cursor.fetchone()
-                    if waifu_row and waifu_row["rarity"] >= 3:  # C7+ gives quartzs
+                    if waifu_row and waifu_row["rarity"] >= 3:  # C7+ gives quartzs (legacy)
                         quartzs_reward = (waifu_row["rarity"] - 2) * 5  # 3★=5, 4★=10, 5★=15
                         await self.update_user_quartzs(discord_id, quartzs_reward)
 
-                    # Return updated entry
+                    # Return existing entry without constellation update
                     await cursor.execute(
                         """
                         SELECT uw.*, w.name, w.series, w.rarity, w.image_url

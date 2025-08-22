@@ -53,7 +53,7 @@ async def populate_shop():
             "item_data": {
                 "currency_type": "quartzs",
                 "rarity": "legendary",
-                "effects": {"guarantee_rarity": 5, "uses": 1},
+                "effects": {"guarantee_rarity": 3, "uses": 1},
                 "requirements": {}
             }
         }

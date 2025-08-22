@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Script to upload character data from data/character_sql.csv to MySQL database."""
+"""Script to upload character data from data/character_final.csv to MySQL database."""
 
 import asyncio
 import csv
@@ -30,7 +30,7 @@ class MySQLUploader:
         self.config = config
         self.db_service = None
         self.waifu_service = None
-        self.input_file = os.path.join("data", "character_sql.csv")
+        self.input_file = os.path.join("data", "character_final.csv")
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -50,7 +50,7 @@ class MySQLUploader:
             await self.db_service.close()
 
     def load_characters(self) -> List[Dict[str, Any]]:
-        """Load characters from data/character_sql.csv."""
+        """Load characters from data/character_final.csv."""
         characters = []
         try:
             with open(self.input_file, 'r', encoding='utf-8', newline='') as f:
@@ -60,7 +60,7 @@ class MySQLUploader:
             logger.info(f"Loaded {len(characters)} characters from {self.input_file}")
         except FileNotFoundError:
             logger.error(f"Input file {self.input_file} not found!")
-            logger.error("Please run character_edit.py first to generate data/character_sql.csv")
+            logger.error("Please run process_character_final.py first to generate data/character_final.csv")
             return []
         except Exception as e:
             logger.error(f"Error loading characters: {e}")

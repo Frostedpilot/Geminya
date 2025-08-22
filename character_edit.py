@@ -138,18 +138,17 @@ class CharacterEditor:
         return processed
 
     def determine_rarity(self, character: Dict[str, Any]) -> int:
-        """Determine character rarity based on favorites count."""
+        """Determine character rarity based on favorites count - NEW STAR SYSTEM (1-3 stars only)."""
         favorites = int(character.get("favorites", 0))
-        if favorites >= 4000:
-            return 5
-        elif favorites >= 2000:
-            return 4
-        elif favorites >= 900:
-            return 3
-        elif favorites >= 250:
-            return 2
+        
+        # New star system: Only assign 1-3 stars for gacha
+        # 4-5 stars will be achieved through upgrade system
+        if favorites >= 2000:
+            return 3  # 3-star (rare) - highest direct gacha tier
+        elif favorites >= 500:
+            return 2  # 2-star (uncommon)
         else:
-            return 1
+            return 1  # 1-star (common)
 
     def save_processed_characters(self, characters: List[Dict[str, Any]]):
         """Save processed characters to character_sql.csv."""
