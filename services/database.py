@@ -191,55 +191,66 @@ class DatabaseService:
         """
         )
 
-        # Shop items table - TODO: Re-implement when needed
-        # await cursor.execute(
-        #     """
-        #     CREATE TABLE IF NOT EXISTS shop_items (
-        #         id INT AUTO_INCREMENT PRIMARY KEY,
-        #         name VARCHAR(255) NOT NULL,
-        #         description TEXT,
-        #         price INT NOT NULL,
-        #         category VARCHAR(50) NOT NULL,
-        #         item_type VARCHAR(50) NOT NULL,
-        #         item_data TEXT,
-        #         stock_limit INT DEFAULT -1,
-        #         is_active BOOLEAN DEFAULT TRUE,
-        #         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        #     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        # """
-        # )
+        # Shop items table
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS shop_items (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                description TEXT,
+                price INT NOT NULL,
+                category VARCHAR(50) NOT NULL,
+                item_type VARCHAR(50) NOT NULL,
+                item_data TEXT,
+                effects TEXT,
+                stock_limit INT DEFAULT -1,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_category (category),
+                INDEX idx_active (is_active)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+        )
 
-        # User purchases table - TODO: Re-implement when needed
-        # await cursor.execute(
-        #     """
-        #     CREATE TABLE IF NOT EXISTS user_purchases (
-        #         id INT AUTO_INCREMENT PRIMARY KEY,
-        #         user_id INT NOT NULL,
-        #         shop_item_id INT NOT NULL,
-        #         quantity INT DEFAULT 1,
-        #         total_cost INT NOT NULL,
-        #         purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        #         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
-        #         FOREIGN KEY (shop_item_id) REFERENCES shop_items (id) ON DELETE CASCADE
-        #     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        # """
-        # )
+        # User purchases table
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_purchases (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id VARCHAR(100) NOT NULL,
+                shop_item_id INT NOT NULL,
+                quantity INT DEFAULT 1,
+                total_cost INT NOT NULL,
+                currency_type VARCHAR(50) DEFAULT 'quartzs',
+                transaction_status VARCHAR(50) DEFAULT 'completed',
+                purchased_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_user_id (user_id),
+                INDEX idx_purchased_at (purchased_at),
+                FOREIGN KEY (shop_item_id) REFERENCES shop_items (id) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+        )
 
-        # User inventory table - TODO: Re-implement when needed
-        # await cursor.execute(
-        #     """
-        #     CREATE TABLE IF NOT EXISTS user_inventory (
-        #         id INT AUTO_INCREMENT PRIMARY KEY,
-        #         user_id INT NOT NULL,
-        #         item_name VARCHAR(255) NOT NULL,
-        #         item_type VARCHAR(50) NOT NULL,
-        #         quantity INT DEFAULT 1,
-        #         metadata TEXT,
-        #         acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        #         FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-        #     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        # """
-        # )
+        # User inventory table
+        await cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_inventory (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id VARCHAR(100) NOT NULL,
+                item_name VARCHAR(255) NOT NULL,
+                item_type VARCHAR(50) NOT NULL,
+                quantity INT DEFAULT 1,
+                metadata TEXT,
+                effects TEXT,
+                is_active BOOLEAN DEFAULT TRUE,
+                expires_at TIMESTAMP NULL,
+                acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_user_id (user_id),
+                INDEX idx_item_type (item_type),
+                INDEX idx_active (is_active)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+        )
 
         # User character shards table (for new star system)
         await cursor.execute(
@@ -574,41 +585,283 @@ class DatabaseService:
                     return False
 
     # Shop methods - TODO: Implement shop functionality
-    async def get_shop_items(self, category: str = None, active_only: bool = True) -> List[Dict[str, Any]]:
+    async def get_shop_items(self, category: Optional[str] = None, active_only: bool = True) -> List[Dict[str, Any]]:
         """Get shop items with optional filtering."""
-        # TODO: Implement shop item retrieval
-        return []
+        try:
+            async with self.connection_pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    query = "SELECT * FROM shop_items WHERE 1=1"
+                    params = []
+                    
+                    if active_only:
+                        query += " AND is_active = %s"
+                        params.append(True)
+                    
+                    if category:
+                        query += " AND category = %s"
+                        params.append(category)
+                    
+                    query += " ORDER BY category, name"
+                    
+                    await cursor.execute(query, params)
+                    items = await cursor.fetchall()
+                    
+                    # Convert items to proper format
+                    result = []
+                    for item in items:
+                        item_dict = dict(item)
+                        # Parse JSON fields
+                        if item_dict.get('item_data'):
+                            try:
+                                item_dict['item_data'] = json.loads(item_dict['item_data'])
+                            except:
+                                item_dict['item_data'] = {}
+                        if item_dict.get('effects'):
+                            try:
+                                item_dict['effects'] = json.loads(item_dict['effects'])
+                            except:
+                                item_dict['effects'] = {}
+                        result.append(item_dict)
+                    
+                    return result
+        except Exception as e:
+            self.logger.error(f"Error getting shop items: {e}")
+            return []
 
-    async def get_shop_item_by_id(self, item_id: int) -> Dict[str, Any]:
+    async def get_shop_item_by_id(self, item_id: int) -> Optional[Dict[str, Any]]:
         """Get a specific shop item by ID."""
-        # TODO: Implement shop item by ID retrieval
-        return {}
+        try:
+            async with self.connection_pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    await cursor.execute("SELECT * FROM shop_items WHERE id = %s", (item_id,))
+                    item = await cursor.fetchone()
+                    
+                    if item:
+                        item_dict = dict(item)
+                        # Parse JSON fields
+                        if item_dict.get('item_data'):
+                            try:
+                                item_dict['item_data'] = json.loads(item_dict['item_data'])
+                            except:
+                                item_dict['item_data'] = {}
+                        if item_dict.get('effects'):
+                            try:
+                                item_dict['effects'] = json.loads(item_dict['effects'])
+                            except:
+                                item_dict['effects'] = {}
+                        return item_dict
+                    return None
+        except Exception as e:
+            self.logger.error(f"Error getting shop item {item_id}: {e}")
+            return None
 
     async def add_shop_item(self, item_data: Dict[str, Any]) -> int:
         """Add a new item to the shop."""
-        # TODO: Implement shop item addition
-        return 0
+        try:
+            async with self.connection_pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    query = """
+                    INSERT INTO shop_items (name, description, price, category, item_type, item_data, effects, stock_limit, is_active)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """
+                    params = (
+                        item_data['name'],
+                        item_data.get('description', ''),
+                        item_data['price'],
+                        item_data['category'],
+                        item_data['item_type'],
+                        json.dumps(item_data.get('item_data', {})),
+                        json.dumps(item_data.get('effects', {})),
+                        item_data.get('stock_limit', -1),
+                        item_data.get('is_active', True)
+                    )
+                    
+                    await cursor.execute(query, params)
+                    await conn.commit()
+                    return cursor.lastrowid
+        except Exception as e:
+            self.logger.error(f"Error adding shop item: {e}")
+            return 0
 
     async def purchase_item(self, user_id: str, item_id: int, quantity: int = 1) -> bool:
         """Purchase an item from the shop."""
-        # TODO: Implement item purchasing
-        return False
+        try:
+            async with self.connection_pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # Start transaction
+                    await conn.begin()
+                    
+                    try:
+                        # Get item details
+                        await cursor.execute("SELECT * FROM shop_items WHERE id = %s AND is_active = TRUE", (item_id,))
+                        item = await cursor.fetchone()
+                        
+                        if not item:
+                            await conn.rollback()
+                            return False
+                        
+                        # Calculate total cost (shop uses quartzs)
+                        total_cost = item[3] * quantity  # price is at index 3
+                        
+                        # Check user's quartzs
+                        await cursor.execute("SELECT quartzs FROM users WHERE discord_id = %s", (user_id,))
+                        user_result = await cursor.fetchone()
+                        
+                        if not user_result or user_result[0] < total_cost:
+                            await conn.rollback()
+                            return False
+                        
+                        # Deduct quartzs
+                        new_balance = user_result[0] - total_cost
+                        await cursor.execute("UPDATE users SET quartzs = %s WHERE discord_id = %s", (new_balance, user_id))
+                        
+                        # Record purchase
+                        await cursor.execute("""
+                            INSERT INTO user_purchases (user_id, shop_item_id, quantity, total_cost, currency_type)
+                            VALUES (%s, %s, %s, %s, %s)
+                        """, (user_id, item_id, quantity, total_cost, 'quartzs'))
+                        
+                        # Add to inventory
+                        await cursor.execute("""
+                            INSERT INTO user_inventory (user_id, item_name, item_type, quantity, metadata, effects)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """, (user_id, item[1], item[5], quantity, item[6], item[7]))  # name, item_type, item_data, effects
+                        
+                        await conn.commit()
+                        return True
+                        
+                    except Exception as e:
+                        await conn.rollback()
+                        self.logger.error(f"Error in purchase transaction: {e}")
+                        return False
+                        
+        except Exception as e:
+            self.logger.error(f"Error purchasing item: {e}")
+            return False
 
     async def get_user_inventory(self, user_id: str) -> List[Dict[str, Any]]:
         """Get user's inventory."""
-        # TODO: Implement inventory retrieval
-        return []
+        try:
+            async with self.connection_pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    await cursor.execute("""
+                        SELECT * FROM user_inventory 
+                        WHERE user_id = %s 
+                        ORDER BY acquired_at DESC
+                    """, (user_id,))
+                    
+                    items = await cursor.fetchall()
+                    
+                    # Convert items to proper format
+                    result = []
+                    for item in items:
+                        item_dict = dict(item)
+                        # Parse JSON fields
+                        if item_dict.get('metadata'):
+                            try:
+                                item_dict['metadata'] = json.loads(item_dict['metadata'])
+                            except:
+                                item_dict['metadata'] = {}
+                        if item_dict.get('effects'):
+                            try:
+                                item_dict['effects'] = json.loads(item_dict['effects'])
+                            except:
+                                item_dict['effects'] = {}
+                        result.append(item_dict)
+                    
+                    return result
+                    
+        except Exception as e:
+            self.logger.error(f"Error getting user inventory: {e}")
+            return []
 
     async def get_user_purchase_history(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
         """Get user's purchase history."""
-        # TODO: Implement purchase history retrieval
-        return []
+        try:
+            async with self.connection_pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    await cursor.execute("""
+                        SELECT p.*, s.name, s.description 
+                        FROM user_purchases p
+                        JOIN shop_items s ON p.shop_item_id = s.id
+                        WHERE p.user_id = %s 
+                        ORDER BY p.purchased_at DESC 
+                        LIMIT %s
+                    """, (user_id, limit))
+                    
+                    purchases = await cursor.fetchall()
+                    return [dict(purchase) for purchase in purchases]
+                    
+        except Exception as e:
+            self.logger.error(f"Error getting purchase history: {e}")
+            return []
 
     async def use_inventory_item(self, user_id: str, item_id: int, quantity: int = 1) -> bool:
         """Use an item from user's inventory."""
-        # TODO: Implement item usage
-        return False
+        try:
+            async with self.connection_pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    # Start transaction
+                    await conn.begin()
+                    
+                    try:
+                        # Check if user has the item
+                        await cursor.execute("""
+                            SELECT * FROM user_inventory 
+                            WHERE user_id = %s AND id = %s AND quantity >= %s AND is_active = TRUE
+                        """, (user_id, item_id, quantity))
+                        
+                        item = await cursor.fetchone()
+                        if not item:
+                            await conn.rollback()
+                            return False
+                        
+                        # Reduce quantity or remove item
+                        new_quantity = item[5] - quantity  # quantity is at index 5
+                        
+                        if new_quantity <= 0:
+                            # Remove item completely
+                            await cursor.execute("DELETE FROM user_inventory WHERE id = %s", (item_id,))
+                        else:
+                            # Update quantity
+                            await cursor.execute("UPDATE user_inventory SET quantity = %s WHERE id = %s", (new_quantity, item_id))
+                        
+                        await conn.commit()
+                        return True
+                        
+                    except Exception as e:
+                        await conn.rollback()
+                        self.logger.error(f"Error in use item transaction: {e}")
+                        return False
+                        
+        except Exception as e:
+            self.logger.error(f"Error using inventory item: {e}")
+            return False
 
     async def add_crystals(self, user_id: str, amount: int) -> bool:
         """Add crystals to user account."""
         return await self.update_user_crystals(user_id, amount)
+
+    async def unlock_feature(self, user_id: str, feature: str) -> bool:
+        """Unlock a feature for a user."""
+        # TODO: Implement feature unlocking system
+        self.logger.info(f"Unlocking feature '{feature}' for user {user_id}")
+        return True
+
+    async def increase_collection_limit(self, user_id: str, increase: int) -> bool:
+        """Increase user's collection limit."""
+        # TODO: Implement collection limit system
+        self.logger.info(f"Increasing collection limit by {increase} for user {user_id}")
+        return True
+
+    async def apply_user_boost(self, user_id: str, boost_type: str, multiplier: float, duration_hours: int) -> bool:
+        """Apply a temporary boost to user."""
+        # TODO: Implement boost system
+        self.logger.info(f"Applying {boost_type} boost ({multiplier}x) for {duration_hours}h to user {user_id}")
+        return True
+
+    async def unlock_cosmetic(self, user_id: str, cosmetic_type: str, effects: dict) -> bool:
+        """Unlock a cosmetic item for user."""
+        # TODO: Implement cosmetic system
+        self.logger.info(f"Unlocking {cosmetic_type} cosmetic for user {user_id}: {effects}")
+        return True

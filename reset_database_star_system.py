@@ -51,9 +51,12 @@ async def run_database_reset():
         db = DatabaseService(config)
         await db.initialize()
         
-        # Purge all data
-        print("\n🗑️ Purging all database data...")
-        await purge_all_data(db)
+        # Drop and recreate all tables
+        print("\n🗑️ Dropping all database tables...")
+        await drop_all_tables(db)
+        
+        print("\n🔧 Recreating database schema...")
+        await recreate_schema(db)
         
         await db.close()
         
@@ -68,8 +71,52 @@ async def run_database_reset():
         return False
 
 
+async def drop_all_tables(db):
+    """Drop all tables from the database."""
+    async with db.connection_pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            # Disable foreign key checks temporarily
+            await cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+            
+            # Get all tables
+            await cursor.execute("SHOW TABLES")
+            tables = await cursor.fetchall()
+            
+            dropped_count = 0
+            for (table_name,) in tables:
+                try:
+                    await cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+                    logger.info(f"✅ Dropped table: {table_name}")
+                    dropped_count += 1
+                except Exception as e:
+                    logger.error(f"❌ Error dropping table {table_name}: {e}")
+            
+            # Re-enable foreign key checks
+            await cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
+            await conn.commit()
+    
+    print(f"✅ Dropped {dropped_count} tables")
+
+
+async def recreate_schema(db):
+    """Recreate the database schema by calling the table creation methods."""
+    try:
+        # Close the current connection
+        await db.close()
+        
+        # Reinitialize the database (this will create all tables)
+        await db.initialize()
+        
+        logger.info("✅ Database schema recreated successfully")
+        print("✅ All tables recreated with latest schema")
+        
+    except Exception as e:
+        logger.error(f"❌ Error recreating schema: {e}")
+        raise
+
+
 async def purge_all_data(db):
-    """Purge all data from the database."""
+    """Purge all data from the database (legacy function - not used)."""
     # Get all table names
     async with db.connection_pool.acquire() as conn:
         async with conn.cursor() as cursor:
