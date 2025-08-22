@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Script to upload character data from character_sql.csv to MySQL database."""
+"""Script to upload character data from data/character_sql.csv to MySQL database."""
 
 import asyncio
 import csv
@@ -30,7 +30,7 @@ class MySQLUploader:
         self.config = config
         self.db_service = None
         self.waifu_service = None
-        self.input_file = "character_sql.csv"
+        self.input_file = os.path.join("data", "character_sql.csv")
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -50,7 +50,7 @@ class MySQLUploader:
             await self.db_service.close()
 
     def load_characters(self) -> List[Dict[str, Any]]:
-        """Load characters from character_sql.csv."""
+        """Load characters from data/character_sql.csv."""
         characters = []
         try:
             with open(self.input_file, 'r', encoding='utf-8', newline='') as f:
@@ -60,7 +60,7 @@ class MySQLUploader:
             logger.info(f"Loaded {len(characters)} characters from {self.input_file}")
         except FileNotFoundError:
             logger.error(f"Input file {self.input_file} not found!")
-            logger.error("Please run character_edit.py first to generate character_sql.csv")
+            logger.error("Please run character_edit.py first to generate data/character_sql.csv")
             return []
         except Exception as e:
             logger.error(f"Error loading characters: {e}")
@@ -68,45 +68,24 @@ class MySQLUploader:
         
         return characters
 
-    def load_anime_data(self) -> Dict[str, Dict[str, Any]]:
-        """Load anime data from data/anime_mal.csv for series information."""
-        anime_data = {}
-        anime_csv_path = os.path.join("data", "anime_mal.csv")
-        try:
-            with open(anime_csv_path, 'r', encoding='utf-8', newline='') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    mal_id = row.get("mal_id")
-                    if mal_id:
-                        anime_data[mal_id] = row
-            logger.info(f"Loaded {len(anime_data)} anime records for series lookup")
-        except FileNotFoundError:
-            logger.warning(f"{anime_csv_path} not found - series titles will use MAL IDs")
-        except Exception as e:
-            logger.warning(f"Error loading anime data: {e}")
+    def process_character_for_database(self, character: Dict[str, Any]) -> Dict[str, Any]:
+        """Process character data for database insertion."""
         
-        return anime_data
-
-    def determine_character_rarity(self, character: Dict[str, Any], is_most_popular: bool = False) -> int:
-        """Determine character rarity based on favorites."""
-        favorites = int(character.get("favorites", 0))
+        # The character_edit.py now provides clean data, we just need to add some database-specific fields
+        char_data = {
+            "name": character.get("name", ""),
+            "series": character.get("series", "Unknown Series"),
+            "genre": character.get("genre", "Anime"),
+            "element": self.determine_element(character),
+            "rarity": int(character.get("rarity", 1)),  # Use rarity from character_edit.py
+            "image_url": character.get("image_url", ""),
+            "mal_id": character.get("mal_id", ""),
+            "base_stats": self.generate_base_stats(character),
+            "birthday": "",  # Placeholder - can be enhanced later
+            "favorite_gifts": [],  # Placeholder - can be enhanced later
+        }
         
-        # Upgrade most popular character to 5-star
-        if is_most_popular:
-            return 5
-
-        # Map popularity to difficulty ranges from config.yml
-        # easy=5 star, normal=4 star, hard=3 star, expert=2 star, crazy and insanity=1 star
-        if favorites >= 0 and favorites <= 250:
-            return 1  # easy - 5 star
-        elif favorites >= 251 and favorites <= 900:
-            return 2  # normal - 4 star
-        elif favorites >= 901 and favorites <= 2000:
-            return 3  # hard - 3 star
-        elif favorites >= 2001 and favorites <= 4000:
-            return 4  # expert - 2 star
-        else:
-            return 5  # crazy/insanity - 1 star
+        return char_data
 
     def determine_element(self, character: Dict[str, Any]) -> str:
         """Determine character element based on traits and series."""
@@ -191,47 +170,6 @@ class MySQLUploader:
         # Limit to 3-5 gifts
         return favorite_gifts[:5]
 
-    def prepare_character_for_db(self, character: Dict[str, Any], anime_data: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-        """Prepare character data for database insertion."""
-        series_mal_id = character.get("series_mal_id", "")
-        series_title = "Unknown Series"
-        
-        # Look up series title from anime data
-        if series_mal_id in anime_data:
-            series_title = anime_data[series_mal_id].get("title", f"MAL ID {series_mal_id}")
-        elif series_mal_id:
-            series_title = f"MAL ID {series_mal_id}"
-
-        # Generate character stats and attributes
-        element = self.determine_element(character)
-        rarity = self.determine_character_rarity(character)
-        base_stats = self.generate_base_stats(character)
-        favorite_gifts = self.generate_favorite_gifts(character)
-
-        # Create birthday from character data if available
-        birthday = character.get("birthday", "") or None
-
-        return {
-            "name": character.get("name", "Unknown"),
-            "series": series_title,
-            "genre": character.get("series_type", "anime").title(),
-            "element": element,
-            "rarity": rarity,
-            "image_url": character.get("image_url", ""),
-            "mal_id": int(character.get("mal_id", 0)),
-            "base_stats": base_stats,
-            "birthday": birthday,
-            "favorite_gifts": favorite_gifts,
-            "special_dialogue": {
-                "greeting": f"Hello! I'm {character.get('name', 'Unknown')} from {series_title}!",
-                "bond_1": "It's nice to meet you!",
-                "bond_3": "I'm getting to know you better.",
-                "bond_5": "We've become good friends!",
-                "bond_7": "I really trust you now.",
-                "bond_10": "You mean so much to me!",
-            },
-        }
-
     async def upload_characters(self):
         """Main function to upload characters to MySQL database."""
         try:
@@ -241,9 +179,6 @@ class MySQLUploader:
             characters = self.load_characters()
             if not characters:
                 return False
-
-            # Load anime data for series lookup
-            anime_data = self.load_anime_data()
 
             # Check database connection
             logger.info("🔗 Testing database connection...")
@@ -270,8 +205,8 @@ class MySQLUploader:
                             logger.info(f"  Character {char_name} already exists in database (MAL ID: {mal_id})")
                             continue
 
-                    # Prepare character data
-                    char_data = self.prepare_character_for_db(character, anime_data)
+                    # Prepare character data for database
+                    char_data = self.process_character_for_database(character)
 
                     # Add to database
                     await self.db_service.add_waifu(char_data)

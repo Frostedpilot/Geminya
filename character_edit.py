@@ -19,7 +19,82 @@ class CharacterEditor:
 
     def __init__(self):
         self.input_file = os.path.join("data", "characters_mal.csv")
-        self.output_file = "character_sql.csv"
+        self.anime_file = os.path.join("data", "anime_mal.csv")
+        self.gender_file = os.path.join("data", "characters.csv")
+        self.output_file = os.path.join("data", "character_sql.csv")
+        self.anime_lookup = self.load_anime_data()
+        self.gender_lookup = self.load_gender_data()
+
+    def load_anime_data(self) -> Dict[str, str]:
+        """Load anime data for series name lookup."""
+        anime_lookup = {}
+        try:
+            with open(self.anime_file, 'r', encoding='utf-8', newline='') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    mal_id = row.get("mal_id")
+                    title = row.get("title", "Unknown Series")
+                    if mal_id:
+                        anime_lookup[mal_id] = title
+            logger.info(f"Loaded {len(anime_lookup)} anime titles for series lookup")
+        except FileNotFoundError:
+            logger.warning(f"Anime file {self.anime_file} not found - series names will use MAL IDs")
+        except Exception as e:
+            logger.warning(f"Error loading anime data: {e}")
+        return anime_lookup
+
+    def load_gender_data(self) -> Dict[str, List[int]]:
+        """Load gender data from data/characters.csv for filtering male characters."""
+        gender_lookup = {}
+        try:
+            with open(self.gender_file, 'r', encoding='utf-8', newline='') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Use romji (romanized name) as the character name
+                    name = row.get("romji", "").strip()
+                    sex = row.get("sex", "")
+                    
+                    if name and sex:
+                        try:
+                            sex_value = int(sex)
+                            if name not in gender_lookup:
+                                gender_lookup[name] = []
+                            gender_lookup[name].append(sex_value)
+                        except ValueError:
+                            continue
+                            
+            logger.info(f"Loaded gender data for {len(gender_lookup)} character names")
+        except FileNotFoundError:
+            logger.warning(f"Gender file {self.gender_file} not found - no gender filtering will be applied")
+        except Exception as e:
+            logger.warning(f"Error loading gender data: {e}")
+        return gender_lookup
+
+    def is_female_character(self, character_name: str) -> bool:
+        """Check if a character is female based on gender data.
+        
+        Returns True if:
+        - Character name not found in gender data (default to include)
+        - At least one instance of the character is female (sex in [2,4,5,6])
+        
+        Returns False if:
+        - All instances of the character are male (sex in [0,1,3])
+        """
+        if not character_name or character_name not in self.gender_lookup:
+            return True  # Default to include if no gender data found
+            
+        sex_values = self.gender_lookup[character_name]
+        
+        # Check if all instances are male (0, 1, 3)
+        male_values = {0, 1, 3}
+        female_values = {2, 4, 5, 6}
+        
+        # If all instances are male, exclude the character
+        if all(sex in male_values for sex in sex_values):
+            return False
+            
+        # If any instance is female or has mixed genders, include the character
+        return True
 
     def load_characters(self) -> List[Dict[str, Any]]:
         """Load characters from data/characters_mal.csv."""
@@ -40,41 +115,30 @@ class CharacterEditor:
         return characters
 
     def process_character(self, character: Dict[str, Any]) -> Dict[str, Any]:
-        """Process a single character for database insertion.
+        """Process a single character for database insertion."""
         
-        This is a placeholder - implement your custom character processing here.
-        """
-        # Example processing - you can customize this:
+        # Get series name from anime lookup
+        series_mal_id = character.get("series_mal_id", "")
+        series_name = self.anime_lookup.get(series_mal_id, f"Unknown Series (MAL ID: {series_mal_id})")
+        
+        # Calculate rarity based on favorites
+        rarity = self.determine_rarity(character)
+        
+        # Only keep essential columns for the database
         processed = {
             "mal_id": character.get("mal_id", ""),
             "name": character.get("name", ""),
-            "name_kanji": character.get("name_kanji", ""),
-            "nicknames": character.get("nicknames", ""),
-            "about": character.get("about", ""),
+            "series": series_name,
+            "genre": "Anime" if character.get("series_type") == "anime" else "Manga",
+            "rarity": rarity,
             "image_url": character.get("image_url", ""),
             "favorites": character.get("favorites", "0"),
-            "series_type": character.get("series_type", ""),
-            "series_mal_id": character.get("series_mal_id", ""),
-            
-            # Add your custom fields here:
-            # "element": self.determine_element(character),
-            # "rarity": self.determine_rarity(character),
-            # "birthday": self.extract_birthday(character),
-            # "base_stats": self.generate_stats(character),
-            # "favorite_gifts": self.generate_gifts(character),
-            # "special_dialogue": self.generate_dialogue(character),
         }
         
         return processed
 
-    def determine_element(self, character: Dict[str, Any]) -> str:
-        """Determine character element - placeholder implementation."""
-        # TODO: Implement element determination logic
-        return "neutral"
-
     def determine_rarity(self, character: Dict[str, Any]) -> int:
-        """Determine character rarity - placeholder implementation."""
-        # TODO: Implement rarity determination logic based on favorites
+        """Determine character rarity based on favorites count."""
         favorites = int(character.get("favorites", 0))
         if favorites >= 4000:
             return 5
@@ -87,26 +151,6 @@ class CharacterEditor:
         else:
             return 1
 
-    def extract_birthday(self, character: Dict[str, Any]) -> str:
-        """Extract birthday from character description - placeholder implementation."""
-        # TODO: Implement birthday extraction logic
-        return ""
-
-    def generate_stats(self, character: Dict[str, Any]) -> str:
-        """Generate base stats for character - placeholder implementation."""
-        # TODO: Implement stats generation logic
-        return "{}"
-
-    def generate_gifts(self, character: Dict[str, Any]) -> str:
-        """Generate favorite gifts for character - placeholder implementation."""
-        # TODO: Implement gifts generation logic
-        return "[]"
-
-    def generate_dialogue(self, character: Dict[str, Any]) -> str:
-        """Generate special dialogue for character - placeholder implementation."""
-        # TODO: Implement dialogue generation logic
-        return "{}"
-
     def save_processed_characters(self, characters: List[Dict[str, Any]]):
         """Save processed characters to character_sql.csv."""
         if not characters:
@@ -114,10 +158,7 @@ class CharacterEditor:
             return
 
         fieldnames = [
-            "mal_id", "name", "name_kanji", "nicknames", "about", "image_url",
-            "favorites", "series_type", "series_mal_id"
-            # Add your custom fieldnames here when you implement them:
-            # "element", "rarity", "birthday", "base_stats", "favorite_gifts", "special_dialogue"
+            "mal_id", "name", "series", "genre", "rarity", "image_url", "favorites"
         ]
 
         try:
@@ -143,10 +184,24 @@ class CharacterEditor:
             if not characters:
                 return False
 
+            # Filter out male characters
+            filtered_characters = []
+            male_count = 0
+            
+            for character in characters:
+                character_name = character.get("name", "")
+                if self.is_female_character(character_name):
+                    filtered_characters.append(character)
+                else:
+                    male_count += 1
+                    logger.debug(f"Filtered out male character: {character_name}")
+            
+            logger.info(f"🚺 Gender filtering: {len(filtered_characters)} female/unknown characters kept, {male_count} male characters removed")
+
             # Process each character
             processed_characters = []
-            for i, character in enumerate(characters, 1):
-                logger.info(f"Processing character {i}/{len(characters)}: {character.get('name', 'Unknown')}")
+            for i, character in enumerate(filtered_characters, 1):
+                logger.info(f"Processing character {i}/{len(filtered_characters)}: {character.get('name', 'Unknown')}")
                 
                 processed = self.process_character(character)
                 processed_characters.append(processed)
@@ -177,24 +232,21 @@ def main():
 if __name__ == "__main__":
     success = main()
     print("\n" + "="*60)
-    print("📝 CHARACTER EDITOR PLACEHOLDER")
+    print("� CHARACTER EDITOR")
     print("="*60)
-    print("This is a placeholder script for character editing.")
-    print("To customize it for your needs:")
+    print("Processed characters from data/characters_mal.csv")
+    print("Output: data/character_sql.csv with essential columns:")
+    print("  - mal_id, name, series, genre, rarity, image_url, favorites")
     print("")
-    print("1. Implement the TODO methods:")
-    print("   - determine_element()")
-    print("   - determine_rarity()")
-    print("   - extract_birthday()")
-    print("   - generate_stats()")
-    print("   - generate_gifts()")
-    print("   - generate_dialogue()")
-    print("")
-    print("2. Update the fieldnames in save_processed_characters()")
-    print("3. Update the process_character() method to include your fields")
-    print("")
-    print("For now, this script just copies data from data/characters_mal.csv")
-    print("to character_sql.csv with minimal processing.")
+    print("Features:")
+    print("  ✅ Drops useless columns (nicknames, about, etc.)")
+    print("  ✅ Adds series name lookup from data/anime_mal.csv")
+    print("  ✅ Calculates rarity based on favorites count")
+    print("  ✅ Converts series_type to genre (Anime/Manga)")
+    print("  ✅ Filters out male characters using data/characters.csv")
+    print("     - Male: sex values 0/1/3")
+    print("     - Female: sex values 2/4/5/6") 
+    print("     - Removes characters only if ALL instances are male")
     print("="*60)
     
     sys.exit(0 if success else 1)
