@@ -84,7 +84,6 @@ class DatabaseService:
                 rarity INT NOT NULL CHECK (rarity >= 1 AND rarity <= 5),
                 image_url TEXT,
                 mal_id INT,
-                personality_profile TEXT,
                 base_stats TEXT,
                 birthday DATE,
                 favorite_gifts TEXT,
@@ -277,8 +276,8 @@ class DatabaseService:
                     """
                     INSERT INTO waifus (
                         name, series, genre, element, rarity, image_url, mal_id,
-                        personality_profile, base_stats, birthday, favorite_gifts, special_dialogue
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        base_stats, birthday, favorite_gifts, special_dialogue
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                     (
                         waifu_data["name"],
@@ -288,7 +287,6 @@ class DatabaseService:
                         waifu_data["rarity"],
                         waifu_data.get("image_url"),
                         waifu_data.get("mal_id"),
-                        waifu_data.get("personality_profile"),
                         json.dumps(waifu_data.get("base_stats", {})),
                         waifu_data.get("birthday"),
                         json.dumps(waifu_data.get("favorite_gifts", [])),

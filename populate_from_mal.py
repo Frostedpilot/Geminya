@@ -712,11 +712,6 @@ class MALWaifuPopulator:
                     if is_most_popular:
                         logger.info(f"⭐⭐⭐⭐⭐ {char.get('name')} from {char.get('series')} upgraded to 5-star (most popular in series)")
 
-                    # Use the filtered about text as personality profile
-                    personality_profile = char.get("about", "")
-                    if len(personality_profile) > 1000:  # Truncate if too long
-                        personality_profile = personality_profile[:1000] + "..."
-
                     # Extract birthday from character description
                     birthday = self.extract_birthday(char.get("about", ""))
 
@@ -738,9 +733,6 @@ class MALWaifuPopulator:
                             "rarity": rarity,
                             "image_url": char["image_url"],
                             "mal_id": char["mal_id"],
-                            "personality_profile": (
-                                personality_profile if personality_profile else None
-                            ),
                             "base_stats": base_stats,  # Pass dict directly
                             "birthday": birthday,
                             "favorite_gifts": favorite_gifts,  # Pass list directly
