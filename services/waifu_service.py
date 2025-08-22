@@ -30,7 +30,6 @@ class WaifuService:
 
     # Cost per summon
     SUMMON_COST = 10
-    MULTI_SUMMON_COST = 90  # Cost for x10 summons (10% discount)
 
     def __init__(self, database: DatabaseService):
         self.db = database
@@ -424,14 +423,11 @@ class WaifuService:
     async def perform_multi_summon(
         self, discord_id: str, count: int = 10
     ) -> Dict[str, Any]:
-        """Perform multiple waifu summons with discount."""
+        """Perform multiple waifu summons."""
         user = await self.db.get_or_create_user(discord_id)
 
-        # Calculate cost (with discount for x10 pulls)
-        if count == 10:
-            total_cost = self.MULTI_SUMMON_COST  # 10% discount for x10 pulls
-        else:
-            total_cost = self.SUMMON_COST * count
+        # Calculate cost (no discount)
+        total_cost = self.SUMMON_COST * count
 
         # Check if user has enough crystals
         if user["sakura_crystals"] < total_cost:
@@ -439,6 +435,9 @@ class WaifuService:
                 "success": False,
                 "message": f"Not enough Sakura Crystals! You need {total_cost} but have {user['sakura_crystals']}.",
             }
+
+        # Deduct the total cost upfront
+        await self.db.update_user_crystals(discord_id, -total_cost)
 
         # Perform individual summons
         results = []
@@ -466,13 +465,7 @@ class WaifuService:
             # Add to user's collection
             await self.db.add_waifu_to_user(discord_id, selected_waifu["id"])
 
-            # Update crystals and pity counter
-            cost = self.SUMMON_COST
-            if count == 10 and i == 9:  # Last summon in x10 pull gets the discount
-                cost = 0  # Already accounted for in total_cost calculation
-
-            await self.db.update_user_crystals(discord_id, -cost)
-
+            # Update pity counter (no crystal deduction here since it's done upfront)
             if rarity >= 4:
                 await self.db.update_pity_counter(discord_id, reset=True)
             else:
@@ -521,7 +514,6 @@ class WaifuService:
             "rarity_counts": rarity_counts,
             "new_waifus": new_waifus,
             "constellation_upgrades": constellation_upgrades,
-            "discount_applied": count == 10,
         }
 
     async def _determine_summon_rarity(self, user: Dict[str, Any]) -> int:

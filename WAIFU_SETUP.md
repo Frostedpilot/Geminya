@@ -49,7 +49,11 @@ The system uses SQLite with the following main tables:
 ### Academy Management
 
 - `/nwnl_daily` - Claim daily Sakura Crystal rewards
-- `/nwnl_shop` - Browse academy shop (coming soon)
+- `/nwnl_shop` - Browse academy shop with quartzs items
+- `/nwnl_buy` - Purchase items from the shop
+- `/nwnl_inventory` - View your purchased items
+- `/nwnl_use_item` - Use items from your inventory
+- `/nwnl_purchase_history` - View your purchase history
 - `/nwnl_rename_academy <name>` - Rename your academy
 
 ## Gacha System

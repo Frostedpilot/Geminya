@@ -119,7 +119,7 @@ class WaifuSummonCog(BaseCommand):
 
     @commands.hybrid_command(
         name="nwnl_multi_summon",
-        description="🎰🎊 Perform x10 summons with discount! (90 crystals instead of 100)",
+        description="🎰🎊 Perform multiple summons! (10 crystals per summon)",
     )
     async def nwnl_multi_summon(self, ctx: commands.Context, count: int = 10):
         """Perform multiple waifu summons."""
@@ -251,8 +251,7 @@ class WaifuSummonCog(BaseCommand):
             if embeds:
                 embeds[-1].set_footer(
                     text=f"Multi-summon complete! Cost: {result['total_cost']} crystals • "
-                    f"Remaining: {result['crystals_remaining']} crystals • "
-                    f"{'10% Discount Applied!' if result['discount_applied'] else ''}"
+                    f"Remaining: {result['crystals_remaining']} crystals"
                 )
 
             # Create special content message for high rarity pulls

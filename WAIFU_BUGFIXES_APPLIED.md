@@ -82,6 +82,10 @@ if created_at_timestamp == 0:
 - `/nwnl_status` - ✅ Ready (timestamp issue fixed)
 - `/nwnl_daily` - ✅ Ready
 - `/nwnl_shop` - ✅ Ready
+- `/nwnl_buy` - ✅ Ready
+- `/nwnl_inventory` - ✅ Ready
+- `/nwnl_use_item` - ✅ Ready
+- `/nwnl_purchase_history` - ✅ Ready
 
 ### Database Status
 

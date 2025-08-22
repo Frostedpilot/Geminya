@@ -33,12 +33,12 @@ class ShopCog(BaseCommand):
         # Create a shortcut for database access
         self.db = self.services.waifu_service.db
 
-    @app_commands.command(name="shop", description="Browse the academy shop")
+    @app_commands.command(name="nwnl_shop", description="Browse the academy shop")
     @app_commands.describe(
         category="Filter by item category",
         page="Page number for shop listings"
     )
-    async def shop(
+    async def nwnl_shop(
         self, 
         interaction: discord.Interaction, 
         category: Optional[str] = None,
@@ -148,12 +148,12 @@ class ShopCog(BaseCommand):
             )
             await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="buy", description="Purchase an item from the shop")
+    @app_commands.command(name="nwnl_buy", description="Purchase an item from the shop")
     @app_commands.describe(
         item_id="The ID of the item to purchase",
         quantity="Number of items to buy (default: 1)"
     )
-    async def buy(
+    async def nwnl_buy(
         self, 
         interaction: discord.Interaction, 
         item_id: int,
@@ -276,9 +276,9 @@ class ShopCog(BaseCommand):
             )
             await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="inventory", description="View your purchased items")
+    @app_commands.command(name="nwnl_inventory", description="View your purchased items")
     @app_commands.describe(page="Page number for inventory listings")
-    async def inventory(self, interaction: discord.Interaction, page: int = 1):
+    async def nwnl_inventory(self, interaction: discord.Interaction, page: int = 1):
         """Display user's inventory of purchased items."""
         await interaction.response.defer()
         
@@ -344,9 +344,9 @@ class ShopCog(BaseCommand):
             )
             await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="purchase_history", description="View your purchase history")
+    @app_commands.command(name="nwnl_purchase_history", description="View your purchase history")
     @app_commands.describe(limit="Number of recent purchases to show (max 50)")
-    async def purchase_history(self, interaction: discord.Interaction, limit: int = 20):
+    async def nwnl_purchase_history(self, interaction: discord.Interaction, limit: int = 20):
         """Display user's purchase history."""
         await interaction.response.defer()
         
@@ -389,9 +389,9 @@ class ShopCog(BaseCommand):
             )
             await interaction.followup.send(embed=embed)
 
-    @app_commands.command(name="use_item", description="Use an item from your inventory")
+    @app_commands.command(name="nwnl_use_item", description="Use an item from your inventory")
     @app_commands.describe(item_name="Name of the item to use")
-    async def use_item(self, interaction: discord.Interaction, item_name: str):
+    async def nwnl_use_item(self, interaction: discord.Interaction, item_name: str):
         """Use an item from inventory and apply its effects."""
         await interaction.response.defer()
         

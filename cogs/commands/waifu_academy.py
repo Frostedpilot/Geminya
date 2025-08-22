@@ -160,62 +160,6 @@ class WaifuAcademyCog(BaseCommand):
             )
             await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="nwnl_shop", description="🛒 Browse the academy shop")
-    async def nwnl_shop(self, ctx: commands.Context):
-        """Display the academy shop."""
-        await ctx.defer()
-
-        embed = discord.Embed(
-            title="🛒 Waifu Academy Shop",
-            description="Welcome to the academy shop! Purchase items with Sakura Crystals.",
-            color=0xE74C3C,
-        )
-
-        # Shop items (placeholder - could be stored in database)
-        shop_items = [
-            {
-                "name": "10x Summon Bundle",
-                "price": 90,
-                "description": "10 summons for the price of 9!",
-            },
-            {
-                "name": "Sakura Crystal Pack",
-                "price": 0,
-                "description": "Get 100 free crystals! (Daily)",
-            },
-            {
-                "name": "Bond Boost Potion",
-                "price": 50,
-                "description": "Increase bond level faster",
-            },
-            {
-                "name": "Academy Decoration",
-                "price": 25,
-                "description": "Customize your academy",
-            },
-            {
-                "name": "Nickname Permit",
-                "price": 20,
-                "description": "Give custom nicknames to waifus",
-            },
-        ]
-
-        shop_text = ""
-        for i, item in enumerate(shop_items, 1):
-            shop_text += f"**{i}.** {item['name']} - 💎{item['price']}\n{item['description']}\n\n"
-
-        embed.add_field(name="Available Items", value=shop_text, inline=False)
-
-        embed.add_field(
-            name="💡 How to Purchase",
-            value="Shop functionality coming soon!\nFor now, enjoy free summoning with your starter crystals!",
-            inline=False,
-        )
-
-        embed.set_footer(text="More items will be added in future updates!")
-
-        await ctx.send(embed=embed)
-
     @commands.hybrid_command(
         name="nwnl_daily", description="🎁 Claim your daily rewards"
     )

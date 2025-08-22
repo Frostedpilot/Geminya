@@ -32,7 +32,11 @@ The **No Waifu No Life** academy system has been successfully implemented and in
 - `/nwnl_profile` - View specific waifu details
 - `/nwnl_status` - Check academy status and stats
 - `/nwnl_daily` - Claim daily crystal rewards
-- `/nwnl_shop` - Browse academy shop (preview)
+- `/nwnl_shop` - Browse academy shop
+- `/nwnl_buy` - Purchase items from the shop
+- `/nwnl_inventory` - View your purchased items
+- `/nwnl_use_item` - Use items from your inventory
+- `/nwnl_purchase_history` - View your purchase history
 
 ## 📁 File Structure
 
