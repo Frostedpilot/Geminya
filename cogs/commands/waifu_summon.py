@@ -289,7 +289,13 @@ class WaifuSummonCog(BaseCommand):
                     config = rarity_config[rarity]
                     rarity_text.append(f"{config['emoji']} {config['name']}: {count}")
 
-            embed.add_field(
+            # Create final summary embed
+            final_summary = discord.Embed(
+                title="📊 Multi-Summon Summary",
+                color=0x4A90E2,
+            )
+            
+            final_summary.add_field(
                 name="📊 Rarity Breakdown",
                 value="\n".join(rarity_text) if rarity_text else "No results",
                 inline=True,
@@ -324,7 +330,7 @@ class WaifuSummonCog(BaseCommand):
 
             # Add 3★ characters field if any
             if three_star_chars:
-                embed.add_field(
+                final_summary.add_field(
                     name="✨ 3★ RARE Characters",
                     value="\n".join(three_star_chars),
                     inline=False,
@@ -332,15 +338,15 @@ class WaifuSummonCog(BaseCommand):
 
             # Add 2★ characters field if any
             if two_star_chars:
-                embed.add_field(
-                    name="� 2★ COMMON Characters", 
+                final_summary.add_field(
+                    name="🟣 2★ COMMON Characters", 
                     value="\n".join(two_star_chars),
                     inline=False,
                 )
 
             # Add 1★ summary if any
             if one_star_count > 0:
-                embed.add_field(
+                final_summary.add_field(
                     name="⭐ 1★ BASIC Characters",
                     value=f"Summoned {one_star_count} basic character{'s' if one_star_count > 1 else ''}",
                     inline=False,
@@ -353,7 +359,7 @@ class WaifuSummonCog(BaseCommand):
                 if len(new_waifus) > 5:
                     new_names.append(f"...and {len(new_waifus) - 5} more!")
                 
-                embed.add_field(
+                final_summary.add_field(
                     name=f"🆕 New Characters ({len(new_waifus)})",
                     value="\n".join(new_names),
                     inline=True,
@@ -368,7 +374,7 @@ class WaifuSummonCog(BaseCommand):
                 if len(shard_summary) > 3:
                     shard_text.append(f"...and {len(shard_summary) - 3} more!")
                 
-                embed.add_field(
+                final_summary.add_field(
                     name="💫 Shard Gains",
                     value="\n".join(shard_text),
                     inline=True,
@@ -381,23 +387,26 @@ class WaifuSummonCog(BaseCommand):
                 if len(upgrade_summary) > 5:
                     upgrade_text.append(f"...and {len(upgrade_summary) - 5} more!")
                 
-                embed.add_field(
+                final_summary.add_field(
                     name="⬆️ AUTO UPGRADES!",
                     value="\n".join(upgrade_text),
                     inline=False,
                 )
 
             # Summary
-            embed.add_field(
+            final_summary.add_field(
                 name="💎 Crystals Remaining",
                 value=f"{result['crystals_remaining']}",
                 inline=True,
             )
-            embed.add_field(
+            final_summary.add_field(
                 name="💰 Total Cost",
                 value=f"{result['total_cost']} crystals",
                 inline=True,
             )
+            
+            # Add the final summary to embeds
+            embeds.append(final_summary)
 
             # Add footer to the last embed
             if embeds:

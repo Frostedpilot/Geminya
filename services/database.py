@@ -643,10 +643,21 @@ class DatabaseService:
                     if not item:
                         return False
 
-                    total_cost = item["price"] * quantity
+                    # Parse item_data to get currency type
+                    item_data = item.get('item_data')
+                    if isinstance(item_data, str):
+                        try:
+                            item_data = json.loads(item_data)
+                        except:
+                            item_data = {}
+                    elif not item_data:
+                        item_data = {}
 
-                    # Check if user has enough quartzs
-                    if user["quartzs"] < total_cost:
+                    total_cost = item["price"] * quantity
+                    currency_type = item_data.get('currency_type', 'sakura_crystals')
+
+                    # Check if user has enough of the required currency
+                    if user[currency_type] < total_cost:
                         return False
 
                     # Check stock limit
@@ -659,9 +670,9 @@ class DatabaseService:
                         if sold["total_sold"] + quantity > item["stock_limit"]:
                             return False
 
-                    # Deduct quartzs
+                    # Deduct the correct currency
                     await cursor.execute(
-                        "UPDATE users SET quartzs = quartzs - %s WHERE discord_id = %s",
+                        f"UPDATE users SET {currency_type} = {currency_type} - %s WHERE discord_id = %s",
                         (total_cost, user_id),
                     )
 

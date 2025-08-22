@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to initialize the shop with basic items.
+Script to initialize the shop with bas                currency_symbol = "💠                currency_symbol = "💠" if item_data.get('currency_type') == "quartzs" else "💎" if item_data.get("currency_type") == "quartzs" else "💎"               currency_symbol = "💠" if item_data.get("currency_type") == "quartzs" else "💎"c items.
 """
 
 import asyncio
@@ -42,11 +42,11 @@ async def populate_shop():
     # Clear existing shop data first
     await clear_shop_tables(db)
     
-    # Define shop items for NEW 3★ system
+    # Define shop items for NEW 3★ system - ONLY 3★ guarantee card
     shop_items = [
         {
             "name": "3★ Guarantee Summon Ticket",
-            "description": "Immediately summons a guaranteed 3★ waifu! Perfect for the new star system.",
+            "description": "Immediately summons a guaranteed 3★ legendary waifu! The ultimate prize for collectors.",
             "item_type": "guarantee_ticket",
             "price": 100,
             "category": "summons",
@@ -54,32 +54,6 @@ async def populate_shop():
                 "currency_type": "quartzs",
                 "rarity": "legendary",
                 "effects": {"guarantee_rarity": 3, "uses": 1},
-                "requirements": {}
-            }
-        },
-        {
-            "name": "2★ Guarantee Summon Ticket", 
-            "description": "Guaranteed 2★ or higher waifu summon. Great for building your collection!",
-            "item_type": "guarantee_ticket",
-            "price": 50,
-            "category": "summons",
-            "item_data": {
-                "currency_type": "quartzs",
-                "rarity": "rare",
-                "effects": {"guarantee_rarity": 2, "uses": 1},
-                "requirements": {}
-            }
-        },
-        {
-            "name": "Star Shard Bundle",
-            "description": "A bundle of universal star shards to upgrade your waifus! Contains 50 shards.",
-            "item_type": "shards",
-            "price": 75,
-            "category": "upgrades",
-            "item_data": {
-                "currency_type": "quartzs",
-                "rarity": "epic",
-                "effects": {"shard_amount": 50, "uses": 1},
                 "requirements": {}
             }
         }
@@ -91,7 +65,7 @@ async def populate_shop():
             item_id = await db.add_shop_item(item)
             if item_id > 0:
                 item_data = item.get("item_data", {})
-                currency_symbol = "🔹" if item_data.get("currency_type") == "quartzs" else "💎"
+                currency_symbol = "�" if item_data.get("currency_type") == "quartzs" else "💎"
                 currency_name = "quartzs" if item_data.get("currency_type") == "quartzs" else "crystals"
                 print(f"✅ Added: {item['name']} (ID: {item_id}) - {currency_symbol}{item['price']} {currency_name}")
                 added_count += 1
@@ -128,7 +102,7 @@ async def populate_shop():
                     'legendary': '🟡'
                 }
                 emoji = rarity_emoji.get(item_data.get('rarity', ''), '⚪')
-                currency_symbol = "🔹" if item_data.get('currency_type') == "quartzs" else "💎"
+                currency_symbol = "�" if item_data.get('currency_type') == "quartzs" else "💎"
                 print(f"  {emoji} {item['name']} - {currency_symbol}{item['price']}")
                 print(f"    {item['description']}")
         
@@ -195,7 +169,7 @@ async def test_shop_purchase():
         quartz_items = [item for item in items if item.get('currency_type') == 'quartzs']
         if quartz_items:
             cheapest_quartz_item = min(quartz_items, key=lambda x: x['price'])
-            currency_symbol = "🔹"
+            currency_symbol = "�"
             print(f"🛒 Testing quartz purchase: {cheapest_quartz_item['name']} for {currency_symbol}{cheapest_quartz_item['price']}")
             
             success = await db.purchase_item(test_user_id, cheapest_quartz_item['id'], 1)

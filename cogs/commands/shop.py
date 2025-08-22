@@ -1,6 +1,53 @@
 """
 Shop command for the waifu academy system.
-Handles browsing shop items, purchasing, and inventory management.
+Handles browsing shop items, pur            # Add u                   # Add user currency info - Shop only us                    # All shop items use Quartzs only  
+                    currency_symbol = "💠"Quartzs
+            quartzs = user.get('quartzs', 0)
+            embed.add_field(
+                            #            # This section is duplicate - removing old code
+            # Check currency - Shop only uses Quartzs (already handled above) - Shop only uses Quartzs
+            total_price = item['price'] * quantity
+            currency_symbol = "�"
+            currency_name = "Quartzs"
+            
+            user_quartzs = user.get('quartzs', 0)
+            if user_quartzs < total_price:
+                embed = discord.Embed(
+                    title="❌ Insufficient Currency",
+                    description=f"You need {currency_symbol}{format_number(total_price)} {currency_name} but only have {currency_symbol}{format_number(user_quartzs)}.",
+                    color=0xFF0000
+                )
+                await interaction.followup.send(embed=embed)
+                returnurrency",
+                value=f"💠 {format_number(quartzs)} Quartzs",
+                inline=False
+            )dd user currency info                     # All shop items use Quartzs only
+                    currency_symbol = "💠"hop only uses Quartzs
+            quartzs = user.get('quartzs', 0)
+            embed.add_field(
+                name="💰 Your Currency",
+                value=f"💠 {format_number(quartzs)} Quartzs",
+                inline=False
+            )ency info                     # All shop items use Quartzs only
+                    currency_symbol = "💠"hop only uses Quartzs            # Check currency - Shop only uses Quartzs
+            total_price = item['price'] * quantity
+            currency_symbol = "💠"
+            currency_name = "Quartzs"
+            
+            user_quartzs = user.get('quartzs', 0)
+            if user_quartzs < total_price:
+                embed = discord.Embed(
+                    title="❌ Insufficient Currency",
+                    description=f"You need {currency_symbol}{format_number(total_price)} {currency_name} but only have {currency_symbol}{format_number(user_quartzs)}.",
+                    color=0xFF0000
+                )
+                await interaction.followup.send(embed=embed)
+                returnartzs = user.get('quartzs', 0)
+            embed.add_field(
+                name="💰 Your Currency",
+                value=f"💠 {format_number(quartzs)} Quartzs",
+                inline=False
+            ) and inventory management.
 """
 
 import discord
@@ -84,7 +131,7 @@ class ShopCog(BaseCommand):
             quartzs = user.get('quartzs', 0)
             embed.add_field(
                 name="💰 Your Currency",
-                value=f"💎 {format_number(crystals)} Crystals\n🔹 {format_number(quartzs)} Quartzs",
+                value=f"💎 {format_number(crystals)} Crystals\n� {format_number(quartzs)} Quartzs",
                 inline=False
             )
 
@@ -100,9 +147,19 @@ class ShopCog(BaseCommand):
             for cat_name, cat_items in categories.items():
                 items_text = ""
                 for item in cat_items:
-                    # Currency symbol
-                    currency_type = item.get('currency_type', 'sakura_crystals')
-                    currency_symbol = "🔹" if currency_type == "quartzs" else "💎"
+                    # Parse item_data to get currency type and other info
+                    item_data = item.get('item_data')
+                    if isinstance(item_data, str):
+                        try:
+                            item_data = json.loads(item_data)
+                        except:
+                            item_data = {}
+                    elif not item_data:
+                        item_data = {}
+                    
+                    # Currency symbol - get from item_data
+                    currency_type = item_data.get('currency_type', 'sakura_crystals')
+                    currency_symbol = "�" if currency_type == "quartzs" else "💎"
                     
                     # Rarity emoji
                     rarity_emojis = {
@@ -112,12 +169,12 @@ class ShopCog(BaseCommand):
                         'epic': '🟣',
                         'legendary': '🟡'
                     }
-                    rarity_emoji = rarity_emojis.get(item.get('rarity', 'common'), '⚪')
+                    rarity_emoji = rarity_emojis.get(item_data.get('rarity', 'common'), '⚪')
                     
                     # Requirements
                     requirements = ""
-                    if item.get('requirements'):
-                        req_data = json.loads(item['requirements']) if isinstance(item['requirements'], str) else item['requirements']
+                    if item_data.get('requirements'):
+                        req_data = item_data['requirements']
                         if req_data.get('min_rank'):
                             requirements = f" (Rank {req_data['min_rank']}+)"
                     
@@ -194,10 +251,21 @@ class ShopCog(BaseCommand):
 
             # Check requirements
             user = await self.db.get_or_create_user(str(interaction.user.id))
-            requirements = item.get('requirements')
+            
+            # Parse item_data to get currency type and requirements
+            item_data = item.get('item_data')
+            if isinstance(item_data, str):
+                try:
+                    item_data = json.loads(item_data)
+                except:
+                    item_data = {}
+            elif not item_data:
+                item_data = {}
+                
+            # Check requirements from item_data
+            requirements = item_data.get('requirements', {})
             if requirements:
-                req_data = json.loads(requirements) if isinstance(requirements, str) else requirements
-                min_rank = req_data.get('min_rank', 0)
+                min_rank = requirements.get('min_rank', 0)
                 if user.get('collector_rank', 1) < min_rank:
                     embed = discord.Embed(
                         title="❌ Requirements Not Met",
@@ -207,10 +275,10 @@ class ShopCog(BaseCommand):
                     await interaction.followup.send(embed=embed)
                     return
 
-            # Check currency
+            # Check currency - get currency type from item_data
             total_price = item['price'] * quantity
-            currency_type = item.get('currency_type', 'sakura_crystals')
-            currency_symbol = "🔹" if currency_type == "quartzs" else "💎"
+            currency_type = item_data.get('currency_type', 'sakura_crystals')
+            currency_symbol = "�" if currency_type == "quartzs" else "💎"
             currency_name = "Quartzs" if currency_type == "quartzs" else "Crystals"
             
             user_currency = user.get(currency_type, 0)
@@ -229,7 +297,7 @@ class ShopCog(BaseCommand):
             if success:
                 # Get updated user data
                 updated_user = await self.db.get_or_create_user(str(interaction.user.id))
-                new_balance = updated_user.get(currency_type, 0)
+                new_balance = updated_user.get('quartzs', 0)
                 
                 embed = discord.Embed(
                     title="✅ Purchase Successful!",
@@ -309,6 +377,16 @@ class ShopCog(BaseCommand):
             )
 
             for item in page_items:
+                # Parse metadata to get rarity and other info
+                metadata = item.get('metadata')
+                if isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata)
+                    except:
+                        metadata = {}
+                elif not metadata:
+                    metadata = {}
+                
                 # Rarity emoji
                 rarity_emojis = {
                     'common': '⚪',
@@ -317,7 +395,7 @@ class ShopCog(BaseCommand):
                     'epic': '🟣',
                     'legendary': '🟡'
                 }
-                rarity_emoji = rarity_emojis.get(item.get('rarity', 'common'), '⚪')
+                rarity_emoji = rarity_emojis.get(metadata.get('rarity', 'common'), '⚪')
                 
                 # Status and expiration
                 status = ""
@@ -327,8 +405,8 @@ class ShopCog(BaseCommand):
                     status = f" (Expires: {item['expires_at']})"
                 
                 embed.add_field(
-                    name=f"{rarity_emoji} {item['name']} x{item['quantity']}{status}",
-                    value=f"*{item.get('description', 'No description')}*\nAcquired: {item.get('acquired_at', 'Unknown')}",
+                    name=f"{rarity_emoji} {item['item_name']} x{item['quantity']}{status}",
+                    value=f"*Type: {item.get('item_type', 'Unknown')}*\nAcquired: {item.get('acquired_at', 'Unknown')}",
                     inline=False
                 )
 
@@ -370,7 +448,7 @@ class ShopCog(BaseCommand):
             )
 
             for purchase in history:
-                currency_symbol = "🔹" if purchase.get('currency_type') == "quartzs" else "💎"
+                currency_symbol = "�" if purchase.get('currency_type') == "quartzs" else "💎"
                 
                 embed.add_field(
                     name=f"{purchase['name']} x{purchase['quantity']}",
@@ -519,7 +597,7 @@ class ShopCog(BaseCommand):
                     # Handle quartz conversion
                     quartzs_text = ""
                     if rolled_waifu.get('quartzs_gained', 0) > 0:
-                        quartzs_text = f"\n🔹 +{rolled_waifu['quartzs_gained']} Quartzs (Max star duplicate)"
+                        quartzs_text = f"\n� +{rolled_waifu['quartzs_gained']} Quartzs (Max star duplicate)"
                     
                     new_text = "**NEW!** " if rolled_waifu.get('is_new', True) else ""
                     
@@ -750,7 +828,7 @@ class ShopView(discord.ui.View):
             quartzs = user.get('quartzs', 0)
             embed.add_field(
                 name="💰 Your Currency",
-                value=f"💎 {format_number(crystals)} Crystals\n🔹 {format_number(quartzs)} Quartzs",
+                value=f"💎 {format_number(crystals)} Crystals\n� {format_number(quartzs)} Quartzs",
                 inline=False
             )
 
@@ -766,7 +844,7 @@ class ShopView(discord.ui.View):
                 items_text = ""
                 for item in cat_items:
                     currency_type = item.get('currency_type', 'sakura_crystals')
-                    currency_symbol = "🔹" if currency_type == "quartzs" else "💎"
+                    currency_symbol = "�" if currency_type == "quartzs" else "💎"
                     
                     rarity_emojis = {
                         'common': '⚪', 'uncommon': '🟢', 'rare': '🔵',

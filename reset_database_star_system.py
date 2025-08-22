@@ -211,32 +211,6 @@ async def initialize_shop_for_star_system(db):
                 "effects": {"guarantee_rarity": 3, "uses": 1},
                 "requirements": {}
             }
-        },
-        {
-            "name": "2★ Guarantee Summon Ticket", 
-            "description": "Guaranteed 2★ or higher waifu summon. Great for building your collection!",
-            "item_type": "guarantee_ticket",
-            "price": 50,
-            "category": "summons",
-            "item_data": {
-                "currency_type": "quartzs",
-                "rarity": "rare",
-                "effects": {"guarantee_rarity": 2, "uses": 1},
-                "requirements": {}
-            }
-        },
-        {
-            "name": "Star Shard Bundle",
-            "description": "A bundle of universal star shards to upgrade your waifus! Contains 50 shards.",
-            "item_type": "shards",
-            "price": 75,
-            "category": "upgrades",
-            "item_data": {
-                "currency_type": "quartzs",
-                "rarity": "epic",
-                "effects": {"shard_amount": 50, "uses": 1},
-                "requirements": {}
-            }
         }
     ]
     
@@ -255,9 +229,9 @@ async def initialize_shop_for_star_system(db):
 
 async def upload_character_data():
     """Upload character data from processed CSV."""
-    csv_path = Path("data/characters_processed.csv")
+    csv_path = Path("data/character_final.csv")
     if not csv_path.exists():
-        print("❌ characters_processed.csv not found. Run process_character_final.py first.")
+        print("❌ character_final.csv not found. Run process_character_final.py first.")
         return False
     
     print("🔄 Uploading character data...")
