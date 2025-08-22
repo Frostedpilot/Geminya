@@ -91,8 +91,8 @@ Database Files:
 ### Currency System
 
 - **Sakura Crystals**: Primary gacha currency (10 per summon)
-- **Daily Rewards**: 50 crystals per day
-- **Starting Crystals**: 60 crystals for new users
+- **Daily Rewards**: 500 crystals per day (24-hour cooldown)
+- **Starting Crystals**: 2000 crystals for new users
 
 ### Progression Systems
 

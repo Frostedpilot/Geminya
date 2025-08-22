@@ -52,9 +52,7 @@ class Config:
     mal_client_id: str
     mal_client_secret: str
 
-    # Database configuration
-    database_type: str = "sqlite"
-    sqlite_path: str = "data/waifu_academy.db"
+    # Database configuration (MySQL only)
     mysql_host: str = ""
     mysql_port: int = 3306
     mysql_user: str = ""
@@ -306,8 +304,6 @@ class Config:
             ),
             max_response_length=int(os.getenv("MAX_RESPONSE_LENGTH", "1999")),
             active_servers=active_servers,
-            database_type=os.getenv("DATABASE_TYPE", "sqlite"),
-            sqlite_path=os.getenv("SQLITE_PATH", "data/waifu_academy.db"),
             mysql_host=os.getenv("MYSQL_HOST", ""),
             mysql_port=int(os.getenv("MYSQL_PORT", "3306")),
             mysql_user=os.getenv("MYSQL_USER", ""),
@@ -396,11 +392,8 @@ class Config:
             active_servers = [s.strip() for s in active_servers.split(",") if s.strip()]
         active_servers = tuple(str(s) for s in active_servers)
 
-        # Database configuration from config file and secrets
+        # Database configuration from config file and secrets (MySQL only)
         database_config = config_data.get("database", {})
-        database_type = database_config.get("type", "sqlite")
-        sqlite_config = database_config.get("sqlite", {})
-        sqlite_path = sqlite_config.get("path", "data/waifu_academy.db")
 
         return cls(
             discord_token=discord_token_dev,
@@ -426,8 +419,6 @@ class Config:
             active_servers=active_servers,
             anidle=config_data.get("anidle", {}),
             guess_character=config_data.get("guess_character", {}),
-            database_type=database_type,
-            sqlite_path=sqlite_path,
             mysql_host=mysql_host,
             mysql_port=mysql_port,
             mysql_user=mysql_user,
@@ -486,14 +477,6 @@ class Config:
             raise ConfigError("Max response length must be at least 100")
         if not self.language.strip():
             raise ConfigError("Language cannot be empty")
-
-    def get_database_type(self) -> str:
-        """Get the database type configuration."""
-        return self.database_type
-
-    def get_sqlite_path(self) -> str:
-        """Get SQLite database path."""
-        return self.sqlite_path
 
     def get_mysql_config(self) -> Dict[str, Any]:
         """Get MySQL configuration dictionary."""

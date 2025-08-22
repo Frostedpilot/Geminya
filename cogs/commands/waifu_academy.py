@@ -228,31 +228,84 @@ class WaifuAcademyCog(BaseCommand):
                 str(ctx.author.id)
             )
 
-            # Check if user can claim daily (simplified logic)
-            from datetime import datetime, timedelta
+            from datetime import datetime, timezone
+            import time
 
-            now = datetime.now()
+            now = datetime.now(timezone.utc)
+            current_timestamp = int(now.timestamp())
+            
+            # Get the last daily reset timestamp
+            last_daily_reset = user.get("last_daily_reset", 0)
+            
+            # Calculate if 24 hours have passed since last claim
+            time_since_last_claim = current_timestamp - last_daily_reset
+            hours_since_claim = time_since_last_claim / 3600
+            
+            # Check if user can claim (24 hours = 86400 seconds)
+            if last_daily_reset > 0 and time_since_last_claim < 86400:
+                # Calculate remaining time
+                remaining_seconds = 86400 - time_since_last_claim
+                remaining_hours = int(remaining_seconds // 3600)
+                remaining_minutes = int((remaining_seconds % 3600) // 60)
+                
+                embed = discord.Embed(
+                    title="⏰ Daily Reward Already Claimed",
+                    description=f"You've already claimed your daily rewards today!",
+                    color=0xF39C12,
+                )
+                
+                embed.add_field(
+                    name="⏳ Time Until Next Claim",
+                    value=f"{remaining_hours}h {remaining_minutes}m",
+                    inline=True,
+                )
+                
+                embed.add_field(
+                    name="💎 Current Crystals",
+                    value=f"{user['sakura_crystals']:,}",
+                    inline=True,
+                )
+                
+                embed.set_footer(text="Come back tomorrow for more rewards!")
+                await ctx.send(embed=embed)
+                return
 
-            # For now, just give rewards (in a real implementation, check last_daily_reset)
-            daily_crystals = 5000
+            # Simple daily reward: 500 crystals
+            daily_crystals = 500
+
+            # Update user's crystals and daily reset timestamp
             await self.services.waifu_service.db.update_user_crystals(
                 str(ctx.author.id), daily_crystals
             )
+            
+            # Update the last daily reset timestamp (no streak tracking)
+            await self.services.waifu_service.db.update_daily_reset(
+                str(ctx.author.id), current_timestamp, 0  # 0 for streak since we're not using it
+            )
 
+            # Create success embed
             embed = discord.Embed(
                 title="🎁 Daily Rewards Claimed!",
-                description=f"You received **{daily_crystals} Sakura Crystals**!",
+                description=f"Welcome back! You've earned your daily crystals!",
                 color=0x2ECC71,
             )
 
             embed.add_field(
-                name="💎 Current Crystals",
-                value=f"{user['sakura_crystals'] + daily_crystals}",
+                name="💎 Crystals Earned",
+                value=f"**{daily_crystals}** crystals",
                 inline=True,
             )
 
             embed.add_field(
-                name="⏰ Next Daily", value="Available tomorrow!", inline=True
+                name="💎 Current Crystals",
+                value=f"{user['sakura_crystals'] + daily_crystals:,}",
+                inline=True,
+            )
+
+            embed.add_field(
+                name="⏰ Next Reward",
+                value="Available in 24 hours",
+                inline=True,
             )
 
             embed.set_footer(text="Come back tomorrow for more rewards!")
@@ -287,7 +340,7 @@ class WaifuAcademyCog(BaseCommand):
                         "• 🗂️ All waifus in your collection\n"
                         "• 💬 All conversations and memories\n"
                         "• 🏆 All mission progress\n"
-                        "• 💎 Crystals will reset to 100\n"
+                        "• 💎 Crystals will reset to 2000\n"
                         "• 📊 Pity counter will reset to 0\n"
                         "• 🏛️ Academy rank will reset to 1\n\n"
                         "**To confirm this action, use:**\n"
@@ -318,7 +371,7 @@ class WaifuAcademyCog(BaseCommand):
                         f"• Academy Rank: {stats['user']['collector_rank']}\n"
                         f"• Crystals: {stats['user']['sakura_crystals']}\n\n"
                         "**New Academy:**\n"
-                        "• 💎 100 Sakura Crystals\n"
+                        "• 💎 2000 Sakura Crystals\n"
                         "• 🏛️ Rank 1 Academy\n"
                         "• 📊 Fresh pity counter\n"
                         "• 🎯 Ready for new adventures!\n\n"

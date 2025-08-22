@@ -96,7 +96,7 @@ Welcome to **Waifu Academy** - where dimensions collide and legendary waifus awa
 - `discord_id` (TEXT, UNIQUE)
 - `academy_name` (TEXT) - Custom academy name
 - `collector_rank` (INTEGER, DEFAULT 1)
-- `sakura_crystals` (INTEGER, DEFAULT 100) - There are no free/premium currencies, all purchases uses this.
+- `sakura_crystals` (INTEGER, DEFAULT 2000) - There are no free/premium currencies, all purchases uses this.
 - `pity_counter` (INTEGER, DEFAULT 0)
 - `last_daily_reset` (TIMESTAMP)
 

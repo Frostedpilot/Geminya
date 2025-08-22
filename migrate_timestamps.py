@@ -141,7 +141,7 @@ async def migrate_timestamps():
                     name TEXT NOT NULL,
                     anime_title TEXT,
                     image_url TEXT,
-                    description TEXT,
+                    
                     rarity INTEGER NOT NULL,
                     base_stats TEXT,
                     birthday DATE,
@@ -154,8 +154,8 @@ async def migrate_timestamps():
 
             await db.execute(
                 """
-                INSERT INTO waifus_new (id, mal_id, name, anime_title, image_url, description, rarity, base_stats, birthday, favorite_gifts, special_dialogue, created_at)
-                SELECT id, mal_id, name, anime_title, image_url, description, rarity, base_stats, birthday, favorite_gifts, special_dialogue,
+                INSERT INTO waifus_new (id, mal_id, name, anime_title, image_url, rarity, base_stats, birthday, favorite_gifts, special_dialogue, created_at)
+                SELECT id, mal_id, name, anime_title, image_url, rarity, base_stats, birthday, favorite_gifts, special_dialogue,
                        COALESCE(created_at_new, strftime('%s', 'now'))
                 FROM waifus
             """
