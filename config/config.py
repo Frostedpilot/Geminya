@@ -95,7 +95,7 @@ class Config:
 
     # Anidle game configuration
     anidle: Dict[str, Any] = field(default_factory=dict)
-    
+
     # Character guessing game configuration
     guess_character: Dict[str, Any] = field(default_factory=dict)
 
@@ -166,6 +166,12 @@ class Config:
                     "GOOGLE_API_KEY": "",  # Will be set in __post_init__
                     "GOOGLE_SEARCH_ENGINE_ID": "",  # Will be set in __post_init__
                 },
+            },
+            "fetch-mcp": {
+                "command": "python",
+                "args": ["-m", "mcp_server_fetch", "--ignore-robots-txt"],
+                "env": None,
+                "blacklist": [],
             },
         }
     )
