@@ -42,15 +42,16 @@ class MALDataPuller:
     def load_existing_characters(self) -> Set[int]:
         """Load existing character IDs from CSV to skip re-pulling."""
         existing_ids = set()
+        csv_path = os.path.join('data', 'characters_mal.csv')
         try:
-            with open('characters_mal.csv', 'r', encoding='utf-8', newline='') as f:
+            with open(csv_path, 'r', encoding='utf-8', newline='') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     if 'mal_id' in row and row['mal_id']:
                         existing_ids.add(int(row['mal_id']))
-            logger.info(f"Loaded {len(existing_ids)} existing character IDs from characters_mal.csv")
+            logger.info(f"Loaded {len(existing_ids)} existing character IDs from {csv_path}")
         except FileNotFoundError:
-            logger.info("No existing characters_mal.csv found - will create new file")
+            logger.info(f"No existing {csv_path} found - will create new file")
         except Exception as e:
             logger.warning(f"Error loading existing characters: {e}")
         return existing_ids
@@ -58,15 +59,16 @@ class MALDataPuller:
     def load_existing_anime(self) -> Set[int]:
         """Load existing anime IDs from CSV to skip re-pulling."""
         existing_ids = set()
+        csv_path = os.path.join('data', 'anime_mal.csv')
         try:
-            with open('anime_mal.csv', 'r', encoding='utf-8', newline='') as f:
+            with open(csv_path, 'r', encoding='utf-8', newline='') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     if 'mal_id' in row and row['mal_id']:
                         existing_ids.add(int(row['mal_id']))
-            logger.info(f"Loaded {len(existing_ids)} existing anime IDs from anime_mal.csv")
+            logger.info(f"Loaded {len(existing_ids)} existing anime IDs from {csv_path}")
         except FileNotFoundError:
-            logger.info("No existing anime_mal.csv found - will create new file")
+            logger.info(f"No existing {csv_path} found - will create new file")
         except Exception as e:
             logger.warning(f"Error loading existing anime: {e}")
         return existing_ids
@@ -159,12 +161,22 @@ class MALDataPuller:
                         
                         logger.info(f"Retrieved character {character_id}: {res['name']} ({favorites} favorites)")
                         return res
+                    elif response.status == 404:
+                        logger.warning(f"❌ Character {character_id} not found on Jikan API (404)")
+                        return None
+                    elif response.status == 429:
+                        logger.warning(f"⏳ Rate limited for character {character_id}, waiting longer...")
+                        await asyncio.sleep(5)
+                        return await self.get_character_details(character_id)  # Retry once
                     else:
-                        logger.warning(f"Failed to get character details for {character_id}: {response.status}")
+                        logger.warning(f"❌ Failed to get character details for {character_id}: HTTP {response.status}")
                         return None
 
+        except asyncio.TimeoutError:
+            logger.error(f"⏰ Timeout getting character details for {character_id}")
+            return None
         except Exception as e:
-            logger.error(f"Error getting character details for {character_id}: {e}")
+            logger.error(f"❌ Error getting character details for {character_id}: {e}")
             return None
 
     async def get_anime_details(self, anime_id: int) -> Optional[Dict[str, Any]]:
@@ -211,17 +223,29 @@ class MALDataPuller:
                         
                         logger.info(f"Retrieved anime {anime_id}: {res['title']}")
                         return res
+                    elif response.status == 404:
+                        logger.warning(f"❌ Anime {anime_id} not found on Jikan API (404) - may have been removed from MAL")
+                        return None
+                    elif response.status == 429:
+                        logger.warning(f"⏳ Rate limited for anime {anime_id}, waiting longer...")
+                        await asyncio.sleep(5)
+                        return await self.get_anime_details(anime_id)  # Retry once
                     else:
-                        logger.warning(f"Failed to get anime details for {anime_id}: {response.status}")
+                        logger.warning(f"❌ Failed to get anime details for {anime_id}: HTTP {response.status}")
                         return None
 
+        except asyncio.TimeoutError:
+            logger.error(f"⏰ Timeout getting anime details for {anime_id}")
+            return None
         except Exception as e:
-            logger.error(f"Error getting anime details for {anime_id}: {e}")
+            logger.error(f"❌ Error getting anime details for {anime_id}: {e}")
             return None
 
     async def get_anime_characters(self, anime_id: int) -> List[Dict[str, Any]]:
         """Get characters from an anime using Jikan API."""
         try:
+            await asyncio.sleep(1.5)  # Rate limiting
+            
             url = f"https://api.jikan.moe/v4/anime/{anime_id}/characters"
 
             async with aiohttp.ClientSession() as session:
@@ -231,13 +255,16 @@ class MALDataPuller:
                     if response.status == 200:
                         data = await response.json()
                         characters = []
+                        
+                        total_chars = len(data.get("data", []))
+                        logger.info(f"  Found {total_chars} characters in anime {anime_id}")
 
                         for char_data in data.get("data", []):
                             character = char_data.get("character", {})
                             character_id = character.get("mal_id")
 
                             if character_id and character_id not in self.processed_character_ids:
-                                logger.info(f"Processing character {character_id} from anime {anime_id}: {character.get('name', 'Unknown')}")
+                                logger.debug(f"Processing character {character_id} from anime {anime_id}: {character.get('name', 'Unknown')}")
 
                                 # Get detailed character information
                                 character_details = await self.get_character_details(character_id)
@@ -248,14 +275,28 @@ class MALDataPuller:
                                     character_details["series_mal_id"] = anime_id
                                     characters.append(character_details)
                                     self.processed_character_ids.add(character_id)
+                                else:
+                                    logger.debug(f"  Skipped character {character_id} (likely 0 favorites or already exists)")
+                            elif character_id in self.processed_character_ids:
+                                logger.debug(f"  Skipped character {character_id} - already processed")
 
                         return characters
+                    elif response.status == 404:
+                        logger.warning(f"❌ Anime {anime_id} not found on Jikan API (404) - may have been removed from MAL")
+                        return []
+                    elif response.status == 429:
+                        logger.warning(f"⏳ Rate limited for anime {anime_id}, waiting longer...")
+                        await asyncio.sleep(5)
+                        return await self.get_anime_characters(anime_id)  # Retry once
                     else:
-                        logger.warning(f"Failed to get characters for anime {anime_id}: {response.status}")
+                        logger.warning(f"❌ Failed to get characters for anime {anime_id}: HTTP {response.status}")
                         return []
 
+        except asyncio.TimeoutError:
+            logger.error(f"⏰ Timeout getting characters for anime {anime_id}")
+            return []
         except Exception as e:
-            logger.error(f"Error getting characters for anime {anime_id}: {e}")
+            logger.error(f"❌ Error getting characters for anime {anime_id}: {e}")
             return []
 
     async def get_manga_characters(self, manga_id: int) -> List[Dict[str, Any]]:
@@ -308,10 +349,14 @@ class MALDataPuller:
             "favorites", "series_type", "series_mal_id"
         ]
 
+        # Ensure data directory exists
+        os.makedirs('data', exist_ok=True)
+        csv_path = os.path.join('data', 'characters_mal.csv')
+
         # Check if file exists to determine if we need headers
-        file_exists = os.path.exists('characters_mal.csv')
+        file_exists = os.path.exists(csv_path)
         
-        with open('characters_mal.csv', 'a', encoding='utf-8', newline='') as f:
+        with open(csv_path, 'a', encoding='utf-8', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             
             # Write header only if file is new
@@ -321,7 +366,7 @@ class MALDataPuller:
             for character in characters:
                 writer.writerow(character)
                 
-        logger.info(f"Wrote {len(characters)} characters to characters_mal.csv")
+        logger.info(f"Wrote {len(characters)} characters to {csv_path}")
 
     def write_anime_csv(self, anime_list: List[Dict[str, Any]]):
         """Write anime to CSV file."""
@@ -335,10 +380,14 @@ class MALDataPuller:
             "popularity", "members", "favorites", "synopsis", "image_url", "genres", "studios"
         ]
 
+        # Ensure data directory exists
+        os.makedirs('data', exist_ok=True)
+        csv_path = os.path.join('data', 'anime_mal.csv')
+
         # Check if file exists to determine if we need headers
-        file_exists = os.path.exists('anime_mal.csv')
+        file_exists = os.path.exists(csv_path)
         
-        with open('anime_mal.csv', 'a', encoding='utf-8', newline='') as f:
+        with open(csv_path, 'a', encoding='utf-8', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             
             # Write header only if file is new
@@ -348,7 +397,7 @@ class MALDataPuller:
             for anime in anime_list:
                 writer.writerow(anime)
                 
-        logger.info(f"Wrote {len(anime_list)} anime to anime_mal.csv")
+        logger.info(f"Wrote {len(anime_list)} anime to {csv_path}")
 
     async def pull_from_mal_user(self):
         """Main function to pull data from MAL user's lists and export to CSV."""
@@ -377,6 +426,11 @@ class MALDataPuller:
                 anime_id = anime["id"]
                 title = anime["title"]
 
+                # Skip if anime already exists in CSV
+                if anime_id in self.existing_anime:
+                    logger.info(f"Skipping anime {i}/{len(anime_list)}: {title} - already exists in data/anime_mal.csv")
+                    continue
+
                 logger.info(f"Processing anime {i}/{len(anime_list)}: {title}")
                 
                 # Get anime details
@@ -403,15 +457,27 @@ class MALDataPuller:
                 logger.info(f"  Found {len(characters)} new characters")
 
             # Write data to CSV files
-            logger.info(f"💾 Writing {len(all_characters)} characters to characters_mal.csv...")
+            logger.info(f"💾 Writing {len(all_characters)} characters to data/characters_mal.csv...")
             self.write_characters_csv(all_characters)
 
-            logger.info(f"💾 Writing {len(all_anime)} anime to anime_mal.csv...")
+            logger.info(f"💾 Writing {len(all_anime)} anime to data/anime_mal.csv...")
             self.write_anime_csv(all_anime)
 
+            # Summary statistics
+            total_anime_in_list = len(anime_list)
+            anime_already_existed = len([a for a in anime_list if a["id"] in self.existing_anime])
+            anime_processed = total_anime_in_list - anime_already_existed
+
             logger.info(f"✅ Successfully exported data to CSV files!")
-            logger.info(f"   - Characters: {len(all_characters)} new entries")
-            logger.info(f"   - Anime: {len(all_anime)} new entries")
+            logger.info(f"📊 Processing Summary:")
+            logger.info(f"   - Total anime in MAL list: {total_anime_in_list}")
+            logger.info(f"   - Anime already in CSV (skipped): {anime_already_existed}")
+            logger.info(f"   - Anime processed: {anime_processed}")
+            logger.info(f"   - New anime added to CSV: {len(all_anime)}")
+            logger.info(f"   - New characters added to CSV: {len(all_characters)}")
+            
+            if anime_processed > len(all_anime):
+                logger.warning(f"⚠️  {anime_processed - len(all_anime)} anime were processed but not added to CSV (likely due to API errors or rate limiting)")
             
             return True
 

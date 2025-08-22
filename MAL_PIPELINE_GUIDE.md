@@ -13,13 +13,13 @@ The MAL (MyAnimeList) data pipeline has been split into modular components for b
 - ✅ Removes gender filters (no male/female filtering)
 - ✅ Removes bio filters  
 - ✅ Only filters out characters with 0 favorites
-- ✅ Exports to `characters_mal.csv` and `anime_mal.csv`
+- ✅ Exports to `data/characters_mal.csv` and `data/anime_mal.csv`
 - ✅ Skips existing data for faster subsequent runs
 - ✅ Rate limiting for API compliance
 
 **Output Files**:
-- `characters_mal.csv` - Raw character data from MAL
-- `anime_mal.csv` - Anime metadata for series lookup
+- `data/characters_mal.csv` - Raw character data from MAL
+- `data/anime_mal.csv` - Anime metadata for series lookup
 
 **Usage**:
 ```bash
@@ -27,7 +27,7 @@ python pull_from_mal.py
 ```
 
 ### 2. `character_edit.py` - Data Processing (Placeholder)
-**Purpose**: Process and customize character data from `characters_mal.csv`.
+**Purpose**: Process and customize character data from `data/characters_mal.csv`.
 
 **Current Status**: 📝 **PLACEHOLDER** - Implement your custom logic here
 
@@ -39,7 +39,7 @@ python pull_from_mal.py
 - Favorite gifts assignment
 - Special dialogue creation
 
-**Input**: `characters_mal.csv`
+**Input**: `data/characters_mal.csv`
 **Output**: `character_sql.csv`
 
 **Usage**:
@@ -89,7 +89,7 @@ python populate_from_mal_orchestrator.py --status
 ## Data Flow
 
 ```
-MAL API → pull_from_mal.py → characters_mal.csv + anime_mal.csv
+MAL API → pull_from_mal.py → data/characters_mal.csv + data/anime_mal.csv
                                       ↓
 character_edit.py (PLACEHOLDER) → character_sql.csv
                                       ↓
@@ -98,13 +98,13 @@ upload_to_mysql.py → MySQL Database
 
 ## CSV File Formats
 
-### `characters_mal.csv`
+### `data/characters_mal.csv`
 ```csv
 mal_id,name,name_kanji,nicknames,about,image_url,favorites,series_type,series_mal_id
 123,Character Name,キャラクター,Nick1|Nick2,Character description,https://...,500,anime,456
 ```
 
-### `anime_mal.csv`
+### `data/anime_mal.csv`
 ```csv
 mal_id,title,title_english,title_japanese,type,episodes,status,aired_from,aired_to,score,scored_by,rank,popularity,members,favorites,synopsis,image_url,genres,studios
 456,Anime Title,English Title,日本語タイトル,TV,24,Finished Airing,2023-01-01,2023-06-30,8.5,10000,100,50,50000,1000,Synopsis...,https://...,Action|Drama,Studio Name
@@ -144,7 +144,7 @@ The pipeline uses the existing configuration system:
 
 The upload script expects these database columns:
 - `name` - Character name
-- `series` - Series title (from anime_mal.csv lookup)
+- `series` - Series title (from data/anime_mal.csv lookup)
 - `genre` - "Anime" or "Manga"
 - `element` - Character element (fire, water, earth, etc.)
 - `rarity` - 1-5 star rarity

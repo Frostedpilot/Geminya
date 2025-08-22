@@ -69,10 +69,11 @@ class MySQLUploader:
         return characters
 
     def load_anime_data(self) -> Dict[str, Dict[str, Any]]:
-        """Load anime data from anime_mal.csv for series information."""
+        """Load anime data from data/anime_mal.csv for series information."""
         anime_data = {}
+        anime_csv_path = os.path.join("data", "anime_mal.csv")
         try:
-            with open("anime_mal.csv", 'r', encoding='utf-8', newline='') as f:
+            with open(anime_csv_path, 'r', encoding='utf-8', newline='') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     mal_id = row.get("mal_id")
@@ -80,7 +81,7 @@ class MySQLUploader:
                         anime_data[mal_id] = row
             logger.info(f"Loaded {len(anime_data)} anime records for series lookup")
         except FileNotFoundError:
-            logger.warning("anime_mal.csv not found - series titles will use MAL IDs")
+            logger.warning(f"{anime_csv_path} not found - series titles will use MAL IDs")
         except Exception as e:
             logger.warning(f"Error loading anime data: {e}")
         

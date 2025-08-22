@@ -8,13 +8,13 @@ The `populate_from_mal.py` functionality has been split into 4 modular scripts a
 - ✅ **Removes gender filters** (no male/female filtering)
 - ✅ **Removes bio filters** (no substantial description requirement)
 - ✅ **Only filters characters with 0 favorites**
-- ✅ **Exports to CSV**: `characters_mal.csv` + `anime_mal.csv`
+- ✅ **Exports to CSV**: `data/characters_mal.csv` + `data/anime_mal.csv`
 - ✅ **Skips existing data** for faster subsequent runs
 - ✅ **Rate limiting** for API compliance
 
 ### **2. Data Processing: `character_edit.py`** 🔧  
 - 📝 **Placeholder script** - ready for your custom implementation
-- ✅ **Input**: `characters_mal.csv`
+- ✅ **Input**: `data/characters_mal.csv`
 - ✅ **Output**: `character_sql.csv`
 - 💡 **Implement your custom logic** for:
   - Element determination
@@ -27,7 +27,7 @@ The `populate_from_mal.py` functionality has been split into 4 modular scripts a
 ### **3. Database Upload: `upload_to_mysql.py`** 💾
 - ✅ **Reads processed data** from `character_sql.csv`
 - ✅ **Checks for duplicates** by MAL ID
-- ✅ **Series lookup** from `anime_mal.csv`
+- ✅ **Series lookup** from `data/anime_mal.csv`
 - ✅ **Generates missing attributes** (element, rarity, stats, etc.)
 - ✅ **Bulk upload** with progress tracking
 - ✅ **Error handling** for individual character failures
@@ -64,8 +64,8 @@ python populate_from_mal_orchestrator.py --status
 - ✅ **Added**: Only characters with >0 favorites
 
 ### ✅ **CSV Export System**
-- `characters_mal.csv` - Raw character data from MAL
-- `anime_mal.csv` - Anime metadata for series titles
+- `data/characters_mal.csv` - Raw character data from MAL
+- `data/anime_mal.csv` - Anime metadata for series titles
 - `character_sql.csv` - Processed data ready for database
 
 ### ✅ **Performance Features**

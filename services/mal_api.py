@@ -161,6 +161,7 @@ class MALAPIService:
         params = {
             "fields": "id,title,main_picture,mean,genres,media_type,status,start_date,end_date",
             "limit": 1000,  # Maximum allowed
+            "nsfw": "true",  # Include NSFW content
         }
 
         if status:
@@ -183,6 +184,7 @@ class MALAPIService:
         params = {
             "fields": "id,title,main_picture,mean,genres,media_type,status,start_date,end_date",
             "limit": 1000,  # Maximum allowed
+            "nsfw": "true",  # Include NSFW content
         }
 
         if status:

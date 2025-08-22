@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Placeholder script for character editing - takes characters_mal.csv and outputs character_sql.csv."""
+"""Placeholder script for character editing - takes data/characters_mal.csv and outputs character_sql.csv."""
 
 import csv
+import os
 import sys
 import logging
 from typing import Dict, Any, List
@@ -17,11 +18,11 @@ class CharacterEditor:
     """Service to edit and filter characters from MAL data."""
 
     def __init__(self):
-        self.input_file = "characters_mal.csv"
+        self.input_file = os.path.join("data", "characters_mal.csv")
         self.output_file = "character_sql.csv"
 
     def load_characters(self) -> List[Dict[str, Any]]:
-        """Load characters from characters_mal.csv."""
+        """Load characters from data/characters_mal.csv."""
         characters = []
         try:
             with open(self.input_file, 'r', encoding='utf-8', newline='') as f:
@@ -192,7 +193,7 @@ if __name__ == "__main__":
     print("2. Update the fieldnames in save_processed_characters()")
     print("3. Update the process_character() method to include your fields")
     print("")
-    print("For now, this script just copies data from characters_mal.csv")
+    print("For now, this script just copies data from data/characters_mal.csv")
     print("to character_sql.csv with minimal processing.")
     print("="*60)
     
