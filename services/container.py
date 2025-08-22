@@ -13,7 +13,7 @@ from services.llm import LLMManager
 from services.ai_service import AIService
 from services.error_handler import ErrorHandler
 from services.mcp import MCPClientManager
-from services.database import DatabaseService
+from .database import DatabaseService
 from services.waifu_service import WaifuService
 
 
