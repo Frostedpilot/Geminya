@@ -296,6 +296,42 @@ class DatabaseService:
                 await conn.commit()
                 return cursor.lastrowid or 0
 
+    async def get_waifu_by_mal_id(self, mal_id: int) -> Optional[Dict[str, Any]]:
+        """Get a waifu by MAL ID."""
+        async with self.connection_pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT * FROM waifus WHERE mal_id = %s", (mal_id,)
+                )
+                row = await cursor.fetchone()
+                if row:
+                    return {
+                        "id": row[0],
+                        "name": row[1],
+                        "series": row[2],
+                        "genre": row[3],
+                        "element": row[4],
+                        "rarity": row[5],
+                        "image_url": row[6],
+                        "mal_id": row[7],
+                        "base_stats": json.loads(row[8]) if row[8] else {},
+                        "birthday": row[9],
+                        "favorite_gifts": json.loads(row[10]) if row[10] else [],
+                        "special_dialogue": json.loads(row[11]) if row[11] else {},
+                        "created_at": row[12],
+                    }
+                return None
+
+    async def test_connection(self) -> bool:
+        """Test database connection."""
+        try:
+            async with self.connection_pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.execute("SELECT 1")
+                    return True
+        except Exception:
+            return False
+
     async def get_waifus_by_rarity(self, rarity: int, limit: int = 100) -> List[Dict[str, Any]]:
         """Get waifus by rarity level."""
         async with self.connection_pool.acquire() as conn:
