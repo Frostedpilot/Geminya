@@ -85,10 +85,10 @@ class DatabaseService:
                 image_url TEXT,
                 mal_id INT,
                 personality_profile TEXT,
-                base_stats JSON,
+                base_stats TEXT,
                 birthday DATE,
-                favorite_gifts JSON,
-                special_dialogue JSON,
+                favorite_gifts TEXT,
+                special_dialogue TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_rarity (rarity),
                 INDEX idx_name (name)
@@ -110,7 +110,7 @@ class DatabaseService:
                 total_conversations INT DEFAULT 0,
                 favorite_memory TEXT,
                 custom_nickname VARCHAR(100),
-                room_decorations JSON,
+                room_decorations TEXT,
                 obtained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
                 FOREIGN KEY (waifu_id) REFERENCES waifus (id) ON DELETE CASCADE,
@@ -165,7 +165,7 @@ class DatabaseService:
                 current_progress INT DEFAULT 0,
                 completed BOOLEAN DEFAULT FALSE,
                 claimed BOOLEAN DEFAULT FALSE,
-                date DATE DEFAULT (CURDATE()),
+                date DATE,
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
                 FOREIGN KEY (mission_id) REFERENCES daily_missions (id) ON DELETE CASCADE,
                 UNIQUE KEY unique_user_mission_date (user_id, mission_id, date)
@@ -183,7 +183,7 @@ class DatabaseService:
                 start_date TIMESTAMP NOT NULL,
                 end_date TIMESTAMP NOT NULL,
                 event_type VARCHAR(50) NOT NULL,
-                bonus_conditions JSON,
+                bonus_conditions TEXT,
                 is_active BOOLEAN DEFAULT TRUE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """
@@ -199,7 +199,7 @@ class DatabaseService:
                 price INT NOT NULL,
                 category VARCHAR(50) NOT NULL,
                 item_type VARCHAR(50) NOT NULL,
-                item_data JSON,
+                item_data TEXT,
                 stock_limit INT DEFAULT -1,
                 is_active BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -232,7 +232,7 @@ class DatabaseService:
                 item_name VARCHAR(255) NOT NULL,
                 item_type VARCHAR(50) NOT NULL,
                 quantity INT DEFAULT 1,
-                metadata JSON,
+                metadata TEXT,
                 acquired_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci

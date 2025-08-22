@@ -19,21 +19,13 @@ async def clear_shop_tables(db):
     """Clear all existing data from shop tables"""
     print("🗑️ Clearing existing shop data...")
     
-    if db.db_type == "mysql":
-        async with db.connection_pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                # Clear in reverse order due to foreign key constraints
-                await cursor.execute("DELETE FROM user_purchases")
-                await cursor.execute("DELETE FROM user_inventory") 
-                await cursor.execute("DELETE FROM shop_items")
-                await conn.commit()
-    else:
-        # SQLite implementation (though deprecated)
-        import aiosqlite
-        async with aiosqlite.connect(db.db_path) as conn:
-            await conn.execute("DELETE FROM user_purchases")
-            await conn.execute("DELETE FROM user_inventory") 
-            await conn.execute("DELETE FROM shop_items")
+    # MySQL-only implementation
+    async with db.connection_pool.acquire() as conn:
+        async with conn.cursor() as cursor:
+            # Clear in reverse order due to foreign key constraints
+            await cursor.execute("DELETE FROM user_purchases")
+            await cursor.execute("DELETE FROM user_inventory") 
+            await cursor.execute("DELETE FROM shop_items")
             await conn.commit()
     
     print("✅ Shop tables cleared successfully!")
@@ -57,11 +49,13 @@ async def populate_shop():
             "description": "Immediately summons a guaranteed 5★ waifu! No waiting required.",
             "item_type": "guarantee_ticket",
             "price": 100,
-            "currency_type": "quartzs",
-            "category": "summons", 
-            "rarity": "legendary",
-            "effects": {"guarantee_rarity": 5, "uses": 1},
-            "requirements": {}
+            "category": "summons",
+            "item_data": {
+                "currency_type": "quartzs",
+                "rarity": "legendary",
+                "effects": {"guarantee_rarity": 5, "uses": 1},
+                "requirements": {}
+            }
         }
     ]
     
@@ -70,8 +64,9 @@ async def populate_shop():
         for item in shop_items:
             item_id = await db.add_shop_item(item)
             if item_id > 0:
-                currency_symbol = "🔹" if item.get("currency_type") == "quartzs" else "💎"
-                currency_name = "quartzs" if item.get("currency_type") == "quartzs" else "crystals"
+                item_data = item.get("item_data", {})
+                currency_symbol = "🔹" if item_data.get("currency_type") == "quartzs" else "💎"
+                currency_name = "quartzs" if item_data.get("currency_type") == "quartzs" else "crystals"
                 print(f"✅ Added: {item['name']} (ID: {item_id}) - {currency_symbol}{item['price']} {currency_name}")
                 added_count += 1
             else:
@@ -93,6 +88,12 @@ async def populate_shop():
         for category, cat_items in categories.items():
             print(f"\n🏷️ {category.upper()}:")
             for item in cat_items:
+                # Parse item_data JSON
+                try:
+                    item_data = json.loads(item['item_data']) if item['item_data'] else {}
+                except:
+                    item_data = {}
+                
                 rarity_emoji = {
                     'common': '⚪',
                     'uncommon': '🟢', 
@@ -100,8 +101,8 @@ async def populate_shop():
                     'epic': '🟣',
                     'legendary': '🟡'
                 }
-                emoji = rarity_emoji.get(item['rarity'], '⚪')
-                currency_symbol = "🔹" if item.get('currency_type') == "quartzs" else "💎"
+                emoji = rarity_emoji.get(item_data.get('rarity', ''), '⚪')
+                currency_symbol = "🔹" if item_data.get('currency_type') == "quartzs" else "💎"
                 print(f"  {emoji} {item['name']} - {currency_symbol}{item['price']}")
                 print(f"    {item['description']}")
         
