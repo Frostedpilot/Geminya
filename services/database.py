@@ -686,8 +686,9 @@ class DatabaseService:
     async def purchase_item(self, user_id: str, item_id: int, quantity: int = 1) -> bool:
         """Purchase an item from the shop."""
         try:
+            self.logger.info(f"Starting purchase: user={user_id}, item_id={item_id}, qty={quantity}")
             async with self.connection_pool.acquire() as conn:
-                async with conn.cursor() as cursor:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
                     # Start transaction
                     await conn.begin()
                     
@@ -698,21 +699,27 @@ class DatabaseService:
                         
                         if not item:
                             await conn.rollback()
+                            self.logger.error(f"Item {item_id} not found")
                             return False
                         
+                        self.logger.info(f"Found item: {item['name']}")
+                        
                         # Calculate total cost (shop uses quartzs)
-                        total_cost = item[3] * quantity  # price is at index 3
+                        total_cost = item['price'] * quantity
                         
                         # Check user's quartzs
                         await cursor.execute("SELECT quartzs FROM users WHERE discord_id = %s", (user_id,))
                         user_result = await cursor.fetchone()
                         
-                        if not user_result or user_result[0] < total_cost:
+                        if not user_result or user_result['quartzs'] < total_cost:
                             await conn.rollback()
+                            self.logger.error(f"Insufficient funds: has {user_result['quartzs'] if user_result else 0}, needs {total_cost}")
                             return False
                         
+                        self.logger.info(f"User has sufficient funds: {user_result['quartzs']} >= {total_cost}")
+                        
                         # Deduct quartzs
-                        new_balance = user_result[0] - total_cost
+                        new_balance = user_result['quartzs'] - total_cost
                         await cursor.execute("UPDATE users SET quartzs = %s WHERE discord_id = %s", (new_balance, user_id))
                         
                         # Record purchase
@@ -721,13 +728,35 @@ class DatabaseService:
                             VALUES (%s, %s, %s, %s, %s)
                         """, (user_id, item_id, quantity, total_cost, 'quartzs'))
                         
-                        # Add to inventory
+                        self.logger.info(f"Purchase recorded")
+                        
+                        # Add to inventory - check if item already exists first
                         await cursor.execute("""
-                            INSERT INTO user_inventory (user_id, item_name, item_type, quantity, metadata, effects)
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                        """, (user_id, item[1], item[5], quantity, item[6], item[7]))  # name, item_type, item_data, effects
+                            SELECT id, quantity FROM user_inventory 
+                            WHERE user_id = %s AND item_name = %s AND item_type = %s AND is_active = TRUE
+                        """, (user_id, item['name'], item['item_type']))
+                        
+                        existing_item = await cursor.fetchone()
+                        
+                        if existing_item:
+                            # Update existing item quantity
+                            new_quantity = existing_item['quantity'] + quantity
+                            self.logger.info(f"Updating existing item quantity: {existing_item['quantity']} + {quantity} = {new_quantity}")
+                            await cursor.execute("""
+                                UPDATE user_inventory SET quantity = %s WHERE id = %s
+                            """, (new_quantity, existing_item['id']))
+                        else:
+                            # Create new inventory entry
+                            self.logger.info(f"Creating new inventory entry for {item['name']}")
+                            await cursor.execute("""
+                                INSERT INTO user_inventory (user_id, item_name, item_type, quantity, metadata, effects, is_active)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            """, (user_id, item['name'], item['item_type'], quantity, 
+                                  json.dumps(item['item_data']) if item['item_data'] else '{}', 
+                                  json.dumps(item['effects']) if item['effects'] else '{}', True))
                         
                         await conn.commit()
+                        self.logger.info(f"Purchase transaction committed successfully")
                         return True
                         
                     except Exception as e:
@@ -746,29 +775,37 @@ class DatabaseService:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
                     await cursor.execute("""
                         SELECT * FROM user_inventory 
-                        WHERE user_id = %s 
+                        WHERE user_id = %s AND is_active = TRUE
                         ORDER BY acquired_at DESC
                     """, (user_id,))
                     
                     items = await cursor.fetchall()
+                    self.logger.info(f"Raw inventory query returned {len(items)} items for user {user_id}")
                     
                     # Convert items to proper format
                     result = []
                     for item in items:
-                        item_dict = dict(item)
-                        # Parse JSON fields
-                        if item_dict.get('metadata'):
-                            try:
-                                item_dict['metadata'] = json.loads(item_dict['metadata'])
-                            except:
-                                item_dict['metadata'] = {}
-                        if item_dict.get('effects'):
-                            try:
-                                item_dict['effects'] = json.loads(item_dict['effects'])
-                            except:
-                                item_dict['effects'] = {}
-                        result.append(item_dict)
+                        try:
+                            item_dict = dict(item)
+                            # Parse JSON fields
+                            if item_dict.get('metadata'):
+                                try:
+                                    item_dict['metadata'] = json.loads(item_dict['metadata'])
+                                except Exception as e:
+                                    self.logger.warning(f"Failed to parse metadata JSON: {e}")
+                                    item_dict['metadata'] = {}
+                            if item_dict.get('effects'):
+                                try:
+                                    item_dict['effects'] = json.loads(item_dict['effects'])
+                                except Exception as e:
+                                    self.logger.warning(f"Failed to parse effects JSON: {e}")
+                                    item_dict['effects'] = {}
+                            result.append(item_dict)
+                        except Exception as e:
+                            self.logger.error(f"Error processing inventory item: {e}")
+                            continue
                     
+                    self.logger.info(f"Processed inventory returned {len(result)} items")
                     return result
                     
         except Exception as e:
@@ -800,7 +837,7 @@ class DatabaseService:
         """Use an item from user's inventory."""
         try:
             async with self.connection_pool.acquire() as conn:
-                async with conn.cursor() as cursor:
+                async with conn.cursor(aiomysql.DictCursor) as cursor:
                     # Start transaction
                     await conn.begin()
                     
@@ -814,19 +851,26 @@ class DatabaseService:
                         item = await cursor.fetchone()
                         if not item:
                             await conn.rollback()
+                            self.logger.warning(f"Item not found or insufficient quantity: user={user_id}, item_id={item_id}, requested={quantity}")
                             return False
                         
                         # Reduce quantity or remove item
-                        new_quantity = item[5] - quantity  # quantity is at index 5
+                        current_quantity = item['quantity']
+                        new_quantity = current_quantity - quantity
+                        
+                        self.logger.info(f"Using item: {item['item_name']} qty {current_quantity} -> {new_quantity}")
                         
                         if new_quantity <= 0:
                             # Remove item completely
+                            self.logger.info(f"Removing item completely (new_quantity={new_quantity})")
                             await cursor.execute("DELETE FROM user_inventory WHERE id = %s", (item_id,))
                         else:
                             # Update quantity
+                            self.logger.info(f"Updating quantity to {new_quantity}")
                             await cursor.execute("UPDATE user_inventory SET quantity = %s WHERE id = %s", (new_quantity, item_id))
                         
                         await conn.commit()
+                        self.logger.info(f"Transaction committed successfully")
                         return True
                         
                     except Exception as e:

@@ -467,8 +467,40 @@ class ShopCog(BaseCommand):
             )
             await interaction.followup.send(embed=embed)
 
+    async def inventory_item_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> List[discord.app_commands.Choice[str]]:
+        """Autocomplete function for inventory items."""
+        try:
+            user_id = str(interaction.user.id)
+            inventory = await self.db.get_user_inventory(user_id)
+            
+            if not inventory:
+                return []
+            
+            # Get unique item names from inventory
+            current_lower = current.lower()
+            matches = []
+            seen_names = set()
+            
+            for item in inventory:
+                item_name = item.get('item_name') or item.get('name', 'Unknown Item')
+                if item_name not in seen_names and current_lower in item_name.lower():
+                    seen_names.add(item_name)
+                    matches.append(discord.app_commands.Choice(name=item_name, value=item_name))
+                    
+                    if len(matches) >= 25:  # Discord limit
+                        break
+            
+            return matches
+            
+        except Exception as e:
+            self.logger.error(f"Error in inventory autocomplete: {e}")
+            return []
+
     @app_commands.command(name="nwnl_use_item", description="Use an item from your inventory")
     @app_commands.describe(item_name="Name of the item to use")
+    @app_commands.autocomplete(item_name=inventory_item_autocomplete)
     async def nwnl_use_item(self, interaction: discord.Interaction, item_name: str):
         """Use an item from inventory and apply its effects."""
         await interaction.response.defer()
@@ -491,12 +523,14 @@ class ShopCog(BaseCommand):
             # Find the item in inventory
             item_to_use = None
             for item in inventory:
-                if item['name'].lower() == item_name.lower():
+                # Check both 'item_name' and 'name' keys for compatibility
+                item_name_key = item.get('item_name') or item.get('name', '')
+                if item_name_key.lower() == item_name.lower():
                     item_to_use = item
                     break
             
             if not item_to_use:
-                available_items = [item['name'] for item in inventory]
+                available_items = [item.get('item_name') or item.get('name', 'Unknown') for item in inventory]
                 embed = discord.Embed(
                     title="❌ Item Not Found",
                     description=f"You don't have '{item_name}' in your inventory.\n\n**Available items:**\n{', '.join(available_items) if available_items else 'None'}",
@@ -507,9 +541,10 @@ class ShopCog(BaseCommand):
             
             # Check if item can be used
             if not item_to_use.get('is_active', True):
+                item_display_name = item_to_use.get('item_name') or item_to_use.get('name', 'Unknown Item')
                 embed = discord.Embed(
                     title="❌ Item Expired",
-                    description=f"The item '{item_to_use['name']}' has expired and cannot be used.",
+                    description=f"The item '{item_display_name}' has expired and cannot be used.",
                     color=0xff6b6b
                 )
                 await interaction.followup.send(embed=embed)
@@ -522,22 +557,131 @@ class ShopCog(BaseCommand):
                 # Remove one instance of the item from inventory
                 await self.db.use_inventory_item(user_id, item_to_use['id'], 1)
                 
-                embed = discord.Embed(
-                    title="✅ Item Used Successfully!",
-                    description=f"**{item_to_use['name']}** has been used!\n\n{result['description']}",
-                    color=0x7ed321
-                )
-                
-                # Add remaining quantity info if applicable
-                remaining = item_to_use['quantity'] - 1
-                if remaining > 0:
-                    embed.add_field(
-                        name="📦 Remaining",
-                        value=f"You have {remaining} more of this item.",
-                        inline=False
+                # Check if this is a guarantee ticket with embed result
+                if result.get('embed_result'):
+                    rolled_waifu = result['rolled_waifu']
+                    guarantee_rarity = result['guarantee_rarity']
+                    
+                    # Create the same embed format as regular summon
+                    rarity_config = {
+                        3: {"color": 0xFFD700, "emoji": "⭐⭐⭐", "name": "Legendary"},
+                        2: {"color": 0x9932CC, "emoji": "⭐⭐", "name": "Epic"},
+                        1: {"color": 0x808080, "emoji": "⭐", "name": "Basic"},
+                    }
+                    
+                    config = rarity_config[guarantee_rarity]
+                    
+                    # Create embed exactly like regular summon
+                    embed = discord.Embed(
+                        title=f"🌟 Guaranteed {guarantee_rarity}★ Roll Complete!",
+                        description=f"🎟️ **3★ Guarantee Ticket** activated!",
+                        color=config["color"]
                     )
-                
-                await interaction.followup.send(embed=embed)
+                    
+                    # NEW or DUPLICATE status
+                    if rolled_waifu.get('is_new', True):
+                        embed.add_field(
+                            name="✨ NEW SUMMON!",
+                            value=f"**{rolled_waifu['name']}** joined your academy!",
+                            inline=False,
+                        )
+                    else:
+                        embed.add_field(
+                            name="🌟 Duplicate Summon!",
+                            value=f"**{rolled_waifu['name']}** gained {rolled_waifu.get('shard_reward', 0)} shards!",
+                            inline=False,
+                        )
+                    
+                    # Show automatic upgrades if any occurred
+                    if rolled_waifu.get("upgrades_performed"):
+                        upgrade_text = []
+                        for upgrade in rolled_waifu["upgrades_performed"]:
+                            upgrade_text.append(f"🔥 {upgrade['from_star']}★ → {upgrade['to_star']}★")
+                        
+                        embed.add_field(
+                            name="⬆️ AUTOMATIC UPGRADES!",
+                            value="\n".join(upgrade_text),
+                            inline=False,
+                        )
+                    
+                    # Character details (same layout as regular summon)
+                    embed.add_field(name="Character", value=f"**{rolled_waifu['name']}**", inline=True)
+                    embed.add_field(name="Series", value=rolled_waifu.get("series", "Unknown"), inline=True)
+                    embed.add_field(
+                        name="Current Star Level",
+                        value=f"{'⭐' * rolled_waifu.get('current_star_level', guarantee_rarity)} ({rolled_waifu.get('current_star_level', guarantee_rarity)}★)",
+                        inline=True,
+                    )
+                    
+                    embed.add_field(
+                        name="Pull Rarity", 
+                        value=f"{config['emoji']} {config['name']}", 
+                        inline=True
+                    )
+                    
+                    # Show shard info for duplicates
+                    if not rolled_waifu.get('is_new', True):
+                        embed.add_field(
+                            name="Star Shards",
+                            value=f"💫 {rolled_waifu.get('total_shards', 0)}",
+                            inline=True,
+                        )
+                    
+                    # Show quartz gained if any
+                    if rolled_waifu.get('quartzs_gained', 0) > 0:
+                        embed.add_field(
+                            name="Quartz Gained",
+                            value=f"💠 +{rolled_waifu['quartzs_gained']} (from excess shards)",
+                            inline=True,
+                        )
+                    
+                    # Add image if available
+                    if rolled_waifu.get("image_url"):
+                        embed.set_image(url=rolled_waifu["image_url"])
+                    
+                    embed.set_footer(
+                        text=f"Use /nwnl_collection to view your academy! • Guaranteed roll by {interaction.user.display_name}"
+                    )
+                    
+                    # Add special animation for 3★ like regular summon
+                    content = ""
+                    if rolled_waifu.get("upgrades_performed"):
+                        content = "🔥✨ **AUTO UPGRADE!** ✨🔥"
+                    elif guarantee_rarity == 3:
+                        content = "🌟💫 **LEGENDARY GUARANTEED SUMMON!** 💫🌟"
+                    elif guarantee_rarity == 2:
+                        content = "✨🎆 **EPIC GUARANTEED SUMMON!** 🎆✨"
+                    
+                    # Add remaining quantity info if applicable
+                    remaining = item_to_use['quantity'] - 1
+                    if remaining > 0:
+                        embed.add_field(
+                            name="📦 Remaining Tickets",
+                            value=f"You have {remaining} more guarantee tickets.",
+                            inline=False
+                        )
+                    
+                    await interaction.followup.send(content=content, embed=embed)
+                    
+                else:
+                    # Standard item usage response
+                    item_display_name = item_to_use.get('item_name') or item_to_use.get('name', 'Unknown Item')
+                    embed = discord.Embed(
+                        title="✅ Item Used Successfully!",
+                        description=f"**{item_display_name}** has been used!\n\n{result['description']}",
+                        color=0x7ed321
+                    )
+                    
+                    # Add remaining quantity info if applicable
+                    remaining = item_to_use['quantity'] - 1
+                    if remaining > 0:
+                        embed.add_field(
+                            name="📦 Remaining",
+                            value=f"You have {remaining} more of this item.",
+                            inline=False
+                        )
+                    
+                    await interaction.followup.send(embed=embed)
             else:
                 embed = discord.Embed(
                     title="❌ Cannot Use Item",
@@ -580,30 +724,12 @@ class ShopCog(BaseCommand):
                 rolled_waifu = await self._perform_guaranteed_roll(user_id, guarantee_rarity, waifu_service)
                 
                 if rolled_waifu:
-                    # Build detailed success message with new star system info
-                    current_star = rolled_waifu.get('current_star_level', rolled_waifu['rarity'])
-                    star_display = "⭐" * current_star
-                    
-                    # Handle upgrade information
-                    upgrade_text = ""
-                    if rolled_waifu.get('was_upgraded', False):
-                        upgrade_text = f"\n🌟 **AUTO-UPGRADED to {current_star}★!** {rolled_waifu.get('upgrade_message', '')}"
-                    
-                    # Handle shard rewards for duplicates
-                    shard_text = ""
-                    if rolled_waifu.get('shard_reward', 0) > 0:
-                        shard_text = f"\n⚡ +{rolled_waifu['shard_reward']} Star Shards!"
-                    
-                    # Handle quartz conversion
-                    quartzs_text = ""
-                    if rolled_waifu.get('quartzs_gained', 0) > 0:
-                        quartzs_text = f"\n� +{rolled_waifu['quartzs_gained']} Quartzs (Max star duplicate)"
-                    
-                    new_text = "**NEW!** " if rolled_waifu.get('is_new', True) else ""
-                    
+                    # Create an embed that matches the regular summon format
                     return {
                         'success': True,
-                        'description': f"🌟 **Guaranteed {guarantee_rarity}★ Roll Complete!**\n\n✨ {new_text}You summoned: **{rolled_waifu['name']}** {star_display} ({current_star}★)\n*From: {rolled_waifu.get('source', 'Unknown')}*{upgrade_text}{shard_text}{quartzs_text}"
+                        'embed_result': True,  # Signal that we need to send an embed
+                        'rolled_waifu': rolled_waifu,
+                        'guarantee_rarity': guarantee_rarity
                     }
                 else:
                     return {
@@ -684,6 +810,11 @@ class ShopCog(BaseCommand):
                         'success': True,
                         'description': "🏷️ You can now give **custom names** to your waifus! This feature has been permanently unlocked."
                     }
+                else:
+                    return {
+                        'success': False,
+                        'error': "Unknown utility item effect."
+                    }
             
             elif item_type == "upgrade":
                 # Apply permanent upgrades
@@ -693,6 +824,11 @@ class ShopCog(BaseCommand):
                     return {
                         'success': True,
                         'description': f"📈 Your waifu collection limit has been permanently increased by **{increase}**!"
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': "Unknown upgrade item effect."
                     }
             
             else:
@@ -724,9 +860,8 @@ class ShopCog(BaseCommand):
             
             # Use the new waifu service to handle the summon (includes automatic star upgrades)
             # This will handle shards, automatic upgrades, and proper duplicate logic
-            user_data = await self.db.get_or_create_user(user_id)
             result = await waifu_service._handle_summon_result(
-                user_data, selected_waifu, is_guaranteed=True
+                user_id, selected_waifu, rarity
             )
             
             # Return the result data with new star system information
@@ -734,14 +869,17 @@ class ShopCog(BaseCommand):
                 'id': selected_waifu['id'],
                 'name': selected_waifu['name'],
                 'rarity': selected_waifu['rarity'],
-                'source': selected_waifu.get('source', 'Unknown'),
+                'series': selected_waifu.get('series', 'Unknown'),  # Use 'series' instead of 'source'
+                'image_url': selected_waifu.get('image_url'),  # Add image URL
                 'current_star_level': result.get('current_star_level', selected_waifu['rarity']),
                 'character_shards': result.get('character_shards', 0),
                 'is_new': result.get('is_new', True),
                 'was_upgraded': result.get('was_upgraded', False),
                 'upgrade_message': result.get('upgrade_message', ''),
-                'quartzs_gained': result.get('quartzs_gained', 0),
-                'shard_reward': result.get('shard_reward', 0)
+                'quartzs_gained': result.get('quartz_gained', 0),  # Use correct field name
+                'shard_reward': result.get('shards_gained', 0),  # Map shards_gained to shard_reward
+                'total_shards': result.get('total_shards', 0),  # Add total shards
+                'upgrades_performed': result.get('upgrades_performed', [])  # Add upgrades info
             }
             
         except Exception as e:

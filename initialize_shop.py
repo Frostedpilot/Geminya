@@ -13,89 +13,6 @@ logger = logging.getLogger(__name__)
 
 # Default shop items for NWNL
 DEFAULT_SHOP_ITEMS = [
-    # Currency Packs
-    {
-        "name": "Sakura Crystal Pack (Small)",
-        "description": "A small pack of Sakura Crystals for summoning waifus",
-        "price": 50,
-        "category": "currency",
-        "item_type": "currency_pack",
-        "item_data": {
-            "rarity": "common",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "sakura_crystals": 100
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    {
-        "name": "Sakura Crystal Pack (Medium)",
-        "description": "A medium pack of Sakura Crystals for summoning waifus",
-        "price": 200,
-        "category": "currency",
-        "item_type": "currency_pack",
-        "item_data": {
-            "rarity": "uncommon",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "sakura_crystals": 500
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    {
-        "name": "Sakura Crystal Pack (Large)",
-        "description": "A large pack of Sakura Crystals for summoning waifus",
-        "price": 800,
-        "category": "currency",
-        "item_type": "currency_pack",
-        "item_data": {
-            "rarity": "rare",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "sakura_crystals": 2500
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    
-    # Guarantee Tickets
-    {
-        "name": "1★ Guarantee Ticket",
-        "description": "Guarantees a 1★ waifu summon",
-        "price": 25,
-        "category": "tickets",
-        "item_type": "guarantee_ticket",
-        "item_data": {
-            "rarity": "common",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "guarantee_rarity": 1
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    {
-        "name": "2★ Guarantee Ticket",
-        "description": "Guarantees a 2★ waifu summon",
-        "price": 100,
-        "category": "tickets",
-        "item_type": "guarantee_ticket",
-        "item_data": {
-            "rarity": "uncommon",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "guarantee_rarity": 2
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
     {
         "name": "3★ Guarantee Ticket",
         "description": "Guarantees a 3★ waifu summon (max rarity for direct summons)",
@@ -108,181 +25,6 @@ DEFAULT_SHOP_ITEMS = [
         },
         "effects": {
             "guarantee_rarity": 3
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    
-    # Boosts
-    {
-        "name": "Bond Experience Boost",
-        "description": "2x bond experience for 24 hours",
-        "price": 150,
-        "category": "boosts",
-        "item_type": "boost",
-        "item_data": {
-            "rarity": "uncommon",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "bond_multiplier": 2.0,
-            "duration_hours": 24
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    {
-        "name": "Super Bond Experience Boost",
-        "description": "3x bond experience for 12 hours",
-        "price": 300,
-        "category": "boosts",
-        "item_type": "boost",
-        "item_data": {
-            "rarity": "rare",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "bond_multiplier": 3.0,
-            "duration_hours": 12
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    
-    # Summon Tickets
-    {
-        "name": "Standard Summon Ticket",
-        "description": "Equivalent to one standard summon",
-        "price": 20,
-        "category": "tickets",
-        "item_type": "summon_ticket",
-        "item_data": {
-            "rarity": "common",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "summons": 1
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    {
-        "name": "10x Summon Ticket Bundle",
-        "description": "Equivalent to 10 standard summons",
-        "price": 180,
-        "category": "tickets",
-        "item_type": "summon_ticket",
-        "item_data": {
-            "rarity": "uncommon",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "summons": 10
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    
-    # Utility Items
-    {
-        "name": "Waifu Naming Permit",
-        "description": "Allows you to give custom names to your waifus permanently",
-        "price": 100,
-        "category": "utility",
-        "item_type": "utility",
-        "item_data": {
-            "rarity": "uncommon",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "allows_naming": True
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    
-    # Collection Upgrades
-    {
-        "name": "Collection Expansion (+5)",
-        "description": "Permanently increases your waifu collection limit by 5",
-        "price": 250,
-        "category": "upgrades",
-        "item_type": "upgrade",
-        "item_data": {
-            "rarity": "rare",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "collection_limit_increase": 5
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    {
-        "name": "Collection Expansion (+10)",
-        "description": "Permanently increases your waifu collection limit by 10",
-        "price": 450,
-        "category": "upgrades",
-        "item_type": "upgrade",
-        "item_data": {
-            "rarity": "epic",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "collection_limit_increase": 10
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    
-    # Cosmetics
-    {
-        "name": "Cherry Blossom Profile Frame",
-        "description": "A beautiful cherry blossom frame for your profile",
-        "price": 75,
-        "category": "cosmetics",
-        "item_type": "frame",
-        "item_data": {
-            "rarity": "uncommon",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "frame_type": "cherry_blossom",
-            "frame_url": "https://example.com/frames/cherry_blossom.png"
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    {
-        "name": "Academy Student Title",
-        "description": "Show your dedication with the 'Academy Student' title",
-        "price": 50,
-        "category": "cosmetics",
-        "item_type": "title",
-        "item_data": {
-            "rarity": "common",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "title": "Academy Student",
-            "title_color": "#4A90E2"
-        },
-        "stock_limit": -1,
-        "is_active": True
-    },
-    {
-        "name": "Star Collector Title",
-        "description": "Show your prowess with the 'Star Collector' title",
-        "price": 200,
-        "category": "cosmetics",
-        "item_type": "title",
-        "item_data": {
-            "rarity": "rare",
-            "currency_type": "quartzs"
-        },
-        "effects": {
-            "title": "Star Collector",
-            "title_color": "#FFD700"
         },
         "stock_limit": -1,
         "is_active": True
@@ -323,16 +65,17 @@ async def initialize_shop():
         
         logger.info("Initializing shop with default items...")
         
-        # Check if shop_items table exists and has items
+        # Remove all existing items from shop
         async with conn.cursor() as cursor:
             await cursor.execute("SELECT COUNT(*) FROM shop_items")
             count_result = await cursor.fetchone()
             existing_count = count_result[0] if count_result else 0
             
             if existing_count > 0:
-                logger.info(f"Shop already has {existing_count} items. Skipping initialization.")
-                await conn.close()
-                return
+                logger.info(f"Removing {existing_count} existing shop items...")
+                await cursor.execute("DELETE FROM shop_items")
+                await conn.commit()
+                logger.info("All existing shop items removed.")
         
         # Add all default items
         added_count = 0
