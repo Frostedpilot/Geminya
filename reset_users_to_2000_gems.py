@@ -318,11 +318,12 @@ def create_backup_log():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = f"reset_operation_{timestamp}.log"
     
-    with open(log_filename, "w", encoding="utf-8") as f:
-        f.write(f"User Reset Operation Log\n")
-        f.write(f"Timestamp: {datetime.now().isoformat()}\n")
-        f.write(f"Operation: Reset all users to 2000 sakura crystals\n")
-        f.write(f"=" * 50 + "\n\n")
+    # Log currently have nothing so just don't log for now
+    # with open(log_filename, "w", encoding="utf-8") as f:
+    #     f.write(f"User Reset Operation Log\n")
+    #     f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+    #     f.write(f"Operation: Reset all users to 2000 sakura crystals\n")
+    #     f.write(f"=" * 50 + "\n\n")
     
     return log_filename
 

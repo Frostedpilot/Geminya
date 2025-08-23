@@ -15,6 +15,7 @@ from services.error_handler import ErrorHandler
 from services.mcp import MCPClientManager
 from services.database import DatabaseService
 from services.waifu_service import WaifuService
+from services.command_queue import CommandQueueService
 
 
 class ServiceContainer:
@@ -62,6 +63,7 @@ class ServiceContainer:
         # Initialize Waifu Academy services
         self.database = DatabaseService(config)
         self.waifu_service = WaifuService(self.database)
+        self.command_queue = CommandQueueService()
 
         self.logger.info("Service container created")
 
@@ -93,6 +95,8 @@ class ServiceContainer:
         self.logger.info("Cleaning up all services...")
 
         try:
+            if hasattr(self, "command_queue"):
+                await self.command_queue.shutdown()
             if hasattr(self, "waifu_service"):
                 await self.waifu_service.close()
             if hasattr(self, "llm_manager"):
@@ -133,3 +137,7 @@ class ServiceContainer:
     def get_waifu_service(self) -> WaifuService:
         """Get the waifu service."""
         return self.waifu_service
+
+    def get_command_queue(self) -> CommandQueueService:
+        """Get the command queue service."""
+        return self.command_queue

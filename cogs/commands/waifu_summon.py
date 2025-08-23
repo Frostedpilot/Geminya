@@ -18,7 +18,10 @@ class WaifuSummonCog(BaseCommand):
     async def nwnl_summon(self, ctx: commands.Context):
         """Perform a waifu summon with the new star upgrade system."""
         await ctx.defer()
+        return await self.queue_command(ctx, self._nwnl_summon_impl)
 
+    async def _nwnl_summon_impl(self, ctx: commands.Context):
+        """Implementation of nwnl_summon command."""
         try:
             # Perform the summon using the new service
             result = await self.services.waifu_service.perform_summon(str(ctx.author.id))
@@ -601,11 +604,13 @@ class WaifuSummonCog(BaseCommand):
             collection = await self.services.database.get_user_collection(str(ctx.author.id))
             user_waifu = next((w for w in collection if w["waifu_id"] == waifu["id"]), None)
 
-            # Create profile embed with updated star system colors like old system
+            # Create profile embed with updated star system colors
             rarity_colors = {
-                3: 0xFFD700,  # Gold for 3★ (like old 5★ Legendary)
-                2: 0x9932CC,  # Purple for 2★ (like old 4★ Epic)
-                1: 0x808080,  # Gray for 1★ (same as old 1★ Basic)
+                5: 0xFF0000,  # Red for 5★ (Mythic)
+                4: 0xFFD700,  # Gold for 4★ (Legendary) 
+                3: 0x9932CC,  # Purple for 3★ (Epic)
+                2: 0x4169E1,  # Blue for 2★ (Rare)
+                1: 0x808080,  # Gray for 1★ (Common)
             }
 
             current_star = user_waifu.get("current_star_level", waifu["rarity"]) if user_waifu else waifu["rarity"]
@@ -620,24 +625,37 @@ class WaifuSummonCog(BaseCommand):
             embed.add_field(name="🏷️ Genre", value=waifu.get("genre", "Unknown"), inline=True)
             embed.add_field(name="🔮 Element", value=waifu.get("element", "Unknown"), inline=True)
             embed.add_field(name="⭐ Base Rarity", value="⭐" * waifu["rarity"], inline=True)
+            
+            # Add MAL ID if available
+            if waifu.get("mal_id"):
+                embed.add_field(name="🔗 MAL ID", value=str(waifu["mal_id"]), inline=True)
+            
+            # Add birthday if available  
+            if waifu.get("birthday"):
+                embed.add_field(name="🎂 Birthday", value=str(waifu["birthday"]), inline=True)
 
             # User-specific info if owned
             if user_waifu:
                 current_star = user_waifu.get("current_star_level", waifu["rarity"])
-                shards = user_waifu.get("character_shards", 0)
-                is_max_star = current_star >= 3  # NEW: Max 3★ system
+                
+                # Get shards from WaifuService (not database field)
+                shards = await self.services.waifu_service.get_character_shards(str(ctx.author.id), waifu["id"])
+                
+                is_max_star = current_star >= 5  # Max 5★ system
 
                 star_info = f"**Current Star Level:** {'⭐' * current_star} ({current_star}★)\n"
-                star_info += f"**Star Shards:** {shards}"
+                star_info += f"**Star Shards:** {shards:,}"
                 
                 if is_max_star:
-                    star_info += " (MAX STAR)"
+                    star_info += " (MAX STAR - converts to quartz)"
                 else:
                     next_star = current_star + 1
-                    required = {2: 50, 3: 100}.get(next_star, 999)  # Updated costs for 3★ max
-                    star_info += f"/{required} (for {next_star}★)"
+                    # Updated costs: 2=50, 3=100, 4=150, 5=200
+                    upgrade_costs = {2: 50, 3: 100, 4: 150, 5: 200}
+                    required = upgrade_costs.get(next_star, 999)
+                    star_info += f"/{required:,} (for {next_star}★)"
                     if shards >= required:
-                        star_info += " 🔥 READY!"
+                        star_info += " 🔥 READY TO UPGRADE!"
                 
                 embed.add_field(
                     name="🌟 Star Progress",
@@ -645,10 +663,24 @@ class WaifuSummonCog(BaseCommand):
                     inline=True,
                 )
 
+                # Calculate character power based on star level  
+                if current_star == 1:
+                    power = 100
+                elif current_star == 2:
+                    power = 250
+                elif current_star == 3:
+                    power = 500
+                elif current_star == 4:
+                    power = 1000
+                elif current_star >= 5:
+                    power = 2000 * (2 ** (current_star - 5))
+                else:
+                    power = 100
+
                 embed.add_field(
-                    name="💖 Your Bond",
-                    value=f"**Bond Level:** {user_waifu.get('bond_level', 1)}\n"
-                    f"**Mood:** {user_waifu.get('current_mood', 'happy').title()}\n"
+                    name="⚡ Combat Stats",
+                    value=f"**Power:** {power:,}\n"
+                    f"**Bond Level:** {user_waifu.get('bond_level', 1)}\n"
                     f"**Conversations:** {user_waifu.get('total_conversations', 0)}",
                     inline=True,
                 )
@@ -659,6 +691,24 @@ class WaifuSummonCog(BaseCommand):
                         value=user_waifu["custom_nickname"],
                         inline=True,
                     )
+                
+                # Add when obtained info
+                obtained_at = user_waifu.get("obtained_at")
+                if obtained_at:
+                    if isinstance(obtained_at, str):
+                        embed.add_field(
+                            name="📅 Obtained",
+                            value=f"<t:{int(obtained_at)}:R>" if obtained_at.isdigit() else "Unknown",
+                            inline=True,
+                        )
+                    else:
+                        # Assume it's a datetime object
+                        timestamp = int(obtained_at.timestamp()) if hasattr(obtained_at, 'timestamp') else 0
+                        embed.add_field(
+                            name="📅 Obtained",
+                            value=f"<t:{timestamp}:R>",
+                            inline=True,
+                        )
             else:
                 embed.add_field(
                     name="❓ Status",
@@ -670,9 +720,13 @@ class WaifuSummonCog(BaseCommand):
             if waifu.get("image_url"):
                 embed.set_image(url=waifu["image_url"])
 
-            embed.set_footer(
-                text=f"Waifu ID: {waifu['id']} • Use /nwnl_chat to interact!"
-            )
+            # Updated footer with more relevant commands
+            if user_waifu:
+                footer_text = f"ID: {waifu['id']} • Use /nwnl_upgrade to upgrade stars • /nwnl_collection to view all"
+            else:
+                footer_text = f"ID: {waifu['id']} • Use /nwnl_summon to try collecting • /nwnl_collection to view owned"
+            
+            embed.set_footer(text=footer_text)
 
             await ctx.send(embed=embed)
 

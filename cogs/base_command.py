@@ -19,6 +19,24 @@ class BaseCommand(commands.Cog):
 
         self.logger.debug(f"Initialized {self.__class__.__name__}")
 
+    async def queue_command(self, ctx: commands.Context, command_impl, *args, **kwargs):
+        """
+        Queue a command for sequential execution per user.
+        
+        Args:
+            ctx: Discord context
+            command_impl: The actual command implementation function
+            *args, **kwargs: Arguments to pass to the command implementation
+        """
+        command_queue = self.services.get_command_queue()
+        return await command_queue.enqueue_command(
+            str(ctx.author.id), 
+            command_impl, 
+            ctx,
+            *args, 
+            **kwargs
+        )
+
     async def cog_command_error(
         self, ctx: commands.Context, error: commands.CommandError
     ) -> None:

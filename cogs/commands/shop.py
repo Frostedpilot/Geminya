@@ -112,7 +112,7 @@ class ShopCog(BaseCommand):
                     
                     # Currency symbol - get from item_data
                     currency_type = item_data.get('currency_type', 'sakura_crystals')
-                    currency_symbol = "�" if currency_type == "quartzs" else "💎"
+                    currency_symbol = "💠" if currency_type == "quartzs" else "💎"
                     
                     # Rarity emoji
                     rarity_emojis = {
@@ -231,7 +231,7 @@ class ShopCog(BaseCommand):
             # Check currency - get currency type from item_data
             total_price = item['price'] * quantity
             currency_type = item_data.get('currency_type', 'sakura_crystals')
-            currency_symbol = "�" if currency_type == "quartzs" else "💎"
+            currency_symbol = "💠" if currency_type == "quartzs" else "💎"
             currency_name = "Quartzs" if currency_type == "quartzs" else "Crystals"
             
             user_currency = user.get(currency_type, 0)
@@ -401,7 +401,7 @@ class ShopCog(BaseCommand):
             )
 
             for purchase in history:
-                currency_symbol = "�" if purchase.get('currency_type') == "quartzs" else "💎"
+                currency_symbol = "💠" if purchase.get('currency_type') == "quartzs" else "💎"
                 
                 embed.add_field(
                     name=f"{purchase['name']} x{purchase['quantity']}",
@@ -927,7 +927,7 @@ class ShopView(discord.ui.View):
                 items_text = ""
                 for item in cat_items:
                     currency_type = item.get('currency_type', 'sakura_crystals')
-                    currency_symbol = "�" if currency_type == "quartzs" else "💎"
+                    currency_symbol = "💠" if currency_type == "quartzs" else "💎"
                     
                     rarity_emojis = {
                         'common': '⚪', 'uncommon': '🟢', 'rare': '🔵',

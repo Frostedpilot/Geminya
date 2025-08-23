@@ -16,8 +16,15 @@ class WaifuAcademyCog(BaseCommand):
     async def nwnl_status(self, ctx: commands.Context):
         """Display user's academy status."""
         await ctx.defer()
+        return await self.queue_command(ctx, self._nwnl_status_impl)
 
+    async def _nwnl_status_impl(self, ctx: commands.Context):
+        """Implementation of nwnl_status command."""
         try:
+            # Check and perform automatic rank ups FIRST
+            await self.services.waifu_service.check_and_update_rank(str(ctx.author.id))
+            
+            # Then get the updated stats
             stats = await self.services.waifu_service.get_user_stats(str(ctx.author.id))
             user = stats["user"]
 
@@ -26,38 +33,54 @@ class WaifuAcademyCog(BaseCommand):
             )
 
             # Academy Info
-            # Use the new integer timestamp field, fallback to old field if needed
-            created_at_timestamp = user.get("created_at_new", 0)
-            if created_at_timestamp == 0:
-                # Fallback to old timestamp format
-                try:
-                    from datetime import datetime
-
-                    created_at_str = user.get("created_at", "2025-01-01 00:00:00")
-                    if isinstance(created_at_str, str):
+            # Handle timestamp conversion for created_at field
+            created_at_timestamp = 0
+            try:
+                from datetime import datetime
+                
+                created_at = user.get("created_at")
+                if created_at:
+                    if isinstance(created_at, str):
+                        # Parse string timestamp
                         created_at_dt = datetime.fromisoformat(
-                            created_at_str.replace("Z", "+00:00").replace(" ", "T")
+                            created_at.replace("Z", "+00:00").replace(" ", "T")
                         )
                         created_at_timestamp = int(created_at_dt.timestamp())
                     else:
-                        created_at_timestamp = int(created_at_str or 0)
-                except (ValueError, TypeError):
-                    created_at_timestamp = 0
+                        # Assume it's already a timestamp or datetime object
+                        if hasattr(created_at, 'timestamp'):
+                            created_at_timestamp = int(created_at.timestamp())
+                        else:
+                            created_at_timestamp = int(created_at)
+            except (ValueError, TypeError, AttributeError):
+                created_at_timestamp = 0
 
+            academy_name = user.get('academy_name') or f"{ctx.author.display_name}'s Academy"
+            
             embed.add_field(
                 name="🏛️ Academy Details",
-                value=f"**Name:** {user['academy_name']}\n"
+                value=f"**Name:** {academy_name}\n"
                 f"**Rank:** Level {user['collector_rank']}\n"
                 f"**Founded:** <t:{created_at_timestamp}:R>",
                 inline=True,
             )
 
             # Resources
+            sakura_crystals = user.get('sakura_crystals', 0)
+            quartzs = user.get('quartzs', 0)
+            pity_counter = user.get('pity_counter', 0)
+            
+            # Calculate pity information based on actual gacha system
+            # Only 3⭐ has pity (guaranteed at 90 pulls)
+            # 2⭐ is only guaranteed on 10th roll of multi-summon, not regular pity
+            guaranteed_3star = max(0, 90 - pity_counter)
+            
             embed.add_field(
                 name="💎 Resources",
-                value=f"**Sakura Crystals:** {user['sakura_crystals']}\n"
-                f"**Pity Counter:** {user['pity_counter']}/90\n"
-                f"**Next 4⭐ in:** {max(0, 10 - user['pity_counter'])} pulls",
+                value=f"**Sakura Crystals:** {sakura_crystals:,}\n"
+                f"**Quartzs:** 💠 {quartzs:,}\n"
+                f"**Pity Counter:** {pity_counter}/90\n"
+                f"**Next 3⭐ in:** {guaranteed_3star} pulls",
                 inline=True,
             )
 
@@ -70,32 +93,59 @@ class WaifuAcademyCog(BaseCommand):
                 inline=True,
             )
 
-            # Rarity breakdown
+            # Star level distribution (updated for new star system)
             rarity_dist = stats["rarity_distribution"]
             if rarity_dist:
                 rarity_text = ""
-                for rarity in sorted(rarity_dist.keys(), reverse=True):
-                    count = rarity_dist[rarity]
-                    stars = "⭐" * rarity
-                    rarity_text += f"{stars}: {count}\n"
+                # Sort by star level (highest first)
+                for star_level in sorted(rarity_dist.keys(), reverse=True):
+                    count = rarity_dist[star_level]
+                    if star_level >= 5:
+                        # 5+ stars get special formatting
+                        rarity_text += f"🌟 {star_level}⭐: {count}\n"
+                    else:
+                        stars = "⭐" * star_level
+                        rarity_text += f"{stars}: {count}\n"
 
                 embed.add_field(
-                    name="🌟 Rarity Distribution", value=rarity_text, inline=True
+                    name="🌟 Star Distribution", value=rarity_text.strip(), inline=True
                 )
 
-            # Progress to next rank (placeholder logic)
-            next_rank_requirement = user["collector_rank"] * 50
-            progress = min(stats["collection_power"], next_rank_requirement)
-            progress_bar = self._create_progress_bar(progress, next_rank_requirement)
-
+            # Calculate rank progression (stats are already updated from the rank check above)
+            current_rank = user["collector_rank"]
+            current_power = stats["collection_power"]
+            current_waifus = stats["total_waifus"]
+            
+            # Exponential progression: rank 1->2 needs 2000, 2->3 needs 4000, 3->4 needs 8000, etc.
+            next_rank_power_req = 1000 * (2 ** current_rank)  # Exponential power growth
+            next_rank_waifu_req = 5 * current_rank             # Linear waifu growth
+            
+            # Show normal progress to next rank
+            power_progress = min(current_power, next_rank_power_req)
+            waifu_progress = min(current_waifus, next_rank_waifu_req)
+            
+            # Overall progress is the minimum of both requirements
+            power_percent = power_progress / next_rank_power_req if next_rank_power_req > 0 else 1
+            waifu_percent = waifu_progress / next_rank_waifu_req if next_rank_waifu_req > 0 else 1
+            overall_percent = min(power_percent, waifu_percent)
+            
+            progress_bar = self._create_progress_bar(int(overall_percent * 100), 100)
+            
+            rank_text = f"{progress_bar}\n"
+            rank_text += f"**Power:** {current_power:,}/{next_rank_power_req:,}\n"
+            rank_text += f"**Waifus:** {current_waifus}/{next_rank_waifu_req}"
+            
             embed.add_field(
                 name="📈 Rank Progress",
-                value=f"{progress_bar}\n{progress}/{next_rank_requirement} power",
+                value=rank_text,
                 inline=False,
             )
 
             embed.set_thumbnail(url=ctx.author.display_avatar.url)
-            embed.set_footer(text="Use /nwnl_summon to grow your academy!")
+            
+            # Updated footer with more relevant commands
+            footer_text = "Use /nwnl_summon to grow your academy • /nwnl_collection to view waifus"
+            embed.set_footer(text=footer_text)
 
             await ctx.send(embed=embed)
 
@@ -114,7 +164,10 @@ class WaifuAcademyCog(BaseCommand):
     async def nwnl_rename_academy(self, ctx: commands.Context, *, new_name: str):
         """Rename user's academy."""
         await ctx.defer()
+        return await self.queue_command(ctx, self._nwnl_rename_academy_impl, new_name)
 
+    async def _nwnl_rename_academy_impl(self, ctx: commands.Context, new_name: str):
+        """Implementation of nwnl_rename_academy command."""
         # Validate name length
         if len(new_name) > 50:
             embed = discord.Embed(

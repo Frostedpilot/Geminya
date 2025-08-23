@@ -1,11 +1,10 @@
-"""Enhanced Waifu Service wit    # UPGRADE COSTS (shards required to upgrade)
-    UPGRADE_COSTS = {
-        2: 50,   # 1→2 star: 50 shards
-        3: 100,  # 2→3 star: 100 shards
-    }
+"""Enhanced Waifu Service with shard-based upgrade system.
 
-    # Maximum star level (NEW SYSTEM: 1-3★ direct gacha, no 4-5★)
-    MAX_STAR_LEVEL = 3-based upgrade system."""
+This service manages the waifu gacha system where:
+- Gacha pulls give 1⭐, 2⭐, or 3⭐ characters only
+- 4⭐ and 5⭐ are achieved through duplicate upgrades using shards
+- Duplicate pulls give shards which auto-upgrade characters when enough are collected
+"""
 
 import random
 import logging
@@ -34,12 +33,12 @@ class WaifuService:
         1: 5,   # 1-star dupe = 5 shards
     }
 
-    # UPGRADE COSTS (shards required to upgrade)
+    # UPGRADE COSTS (shards required to upgrade) - FIXED
     UPGRADE_COSTS = {
         2: 50,   # 1→2 star: 50 shards
         3: 100,  # 2→3 star: 100 shards
-        4: 200,  # 3→4 star: 200 shards
-        5: 300,  # 4→5 star: 300 shards
+        4: 150,  # 3→4 star: 150 shards
+        5: 200,  # 4→5 star: 200 shards
     }
 
     # Maximum star level
@@ -77,7 +76,8 @@ class WaifuService:
         
         # Keep upgrading while possible
         while final_star_level < self.MAX_STAR_LEVEL:
-            required_shards = self.UPGRADE_COSTS.get(final_star_level)
+            target_star_level = final_star_level + 1
+            required_shards = self.UPGRADE_COSTS.get(target_star_level)
             if required_shards is None or remaining_shards < required_shards:
                 break
                 
@@ -127,8 +127,8 @@ class WaifuService:
             async with self.db.connection_pool.acquire() as conn:
                 async with conn.cursor() as cursor:
                     await cursor.execute("""
-                        SELECT shard_count 
-                        FROM user_character_shards 
+                        SELECT star_shards 
+                        FROM user_waifus 
                         WHERE user_id = %s AND waifu_id = %s
                     """, (user["id"], waifu_id))
                     
@@ -146,19 +146,17 @@ class WaifuService:
             
             async with self.db.connection_pool.acquire() as conn:
                 async with conn.cursor() as cursor:
-                    # Insert or update shard count
+                    # Update shards in user_waifus table
                     await cursor.execute("""
-                        INSERT INTO user_character_shards (user_id, waifu_id, shard_count, updated_at)
-                        VALUES (%s, %s, %s, NOW())
-                        ON DUPLICATE KEY UPDATE 
-                        shard_count = shard_count + %s,
-                        updated_at = NOW()
-                    """, (user["id"], waifu_id, amount, amount))
+                        UPDATE user_waifus 
+                        SET star_shards = star_shards + %s 
+                        WHERE user_id = %s AND waifu_id = %s
+                    """, (amount, user["id"], waifu_id))
                     
                     # Get new total
                     await cursor.execute("""
-                        SELECT shard_count 
-                        FROM user_character_shards 
+                        SELECT star_shards 
+                        FROM user_waifus 
                         WHERE user_id = %s AND waifu_id = %s
                     """, (user["id"], waifu_id))
                     
@@ -237,20 +235,12 @@ class WaifuService:
             
             async with self.db.connection_pool.acquire() as conn:
                 async with conn.cursor() as cursor:
-                    # Update star level
+                    # Update star level and deduct shards in user_waifus table
                     await cursor.execute("""
                         UPDATE user_waifus 
-                        SET current_star_level = %s 
+                        SET current_star_level = %s, star_shards = star_shards - %s 
                         WHERE user_id = %s AND waifu_id = %s
-                    """, (next_star, user["id"], waifu_id))
-                    
-                    # Deduct shards
-                    await cursor.execute("""
-                        UPDATE user_character_shards 
-                        SET shard_count = shard_count - %s,
-                            updated_at = NOW()
-                        WHERE user_id = %s AND waifu_id = %s
-                    """, (required_shards, user["id"], waifu_id))
+                    """, (next_star, required_shards, user["id"], waifu_id))
                     
                     await conn.commit()
                     
@@ -333,6 +323,9 @@ class WaifuService:
         else:
             await self.db.update_pity_counter(discord_id)
 
+        # Check for automatic rank up after summon
+        await self.check_and_update_rank(discord_id)
+
         return {
             "success": True,
             "waifu": selected_waifu,
@@ -353,23 +346,38 @@ class WaifuService:
             current_star = existing_waifu.get("current_star_level") or pulled_rarity
             shard_reward = self.SHARD_REWARDS.get(pulled_rarity, 5)  # Based on pulled rarity
             
-            # Add shards first
-            current_shards = await self.get_character_shards(discord_id, waifu_id)
-            new_shard_total = current_shards + shard_reward
-            await self.add_character_shards(discord_id, waifu_id, shard_reward)
-            
-            # Perform automatic upgrades after adding shards
-            upgrade_result = await self._check_and_perform_auto_upgrades(discord_id, waifu_id, new_shard_total, current_star)
-            
-            return {
-                "is_new": False,
-                "is_duplicate": True,
-                "current_star_level": upgrade_result["final_star_level"],
-                "shards_gained": shard_reward,
-                "total_shards": upgrade_result["remaining_shards"],
-                "quartz_gained": upgrade_result["quartz_gained"],
-                "upgrades_performed": upgrade_result["upgrades_performed"]
-            }
+            # Check if character is already at max star level
+            if current_star >= self.MAX_STAR_LEVEL:
+                # Character is already 5⭐, convert all shards directly to quartz
+                quartz_gained = await self.convert_excess_shards_to_quartz(discord_id, waifu_id, shard_reward)
+                
+                return {
+                    "is_new": False,
+                    "is_duplicate": True,
+                    "current_star_level": current_star,
+                    "shards_gained": 0,  # No shards gained, converted to quartz
+                    "total_shards": 0,   # No shards remaining
+                    "quartz_gained": quartz_gained,
+                    "upgrades_performed": []  # No upgrades possible
+                }
+            else:
+                # Character can still be upgraded, add shards and check for upgrades
+                current_shards = await self.get_character_shards(discord_id, waifu_id)
+                new_shard_total = current_shards + shard_reward
+                await self.add_character_shards(discord_id, waifu_id, shard_reward)
+                
+                # Perform automatic upgrades after adding shards
+                upgrade_result = await self._check_and_perform_auto_upgrades(discord_id, waifu_id, new_shard_total, current_star)
+                
+                return {
+                    "is_new": False,
+                    "is_duplicate": True,
+                    "current_star_level": upgrade_result["final_star_level"],
+                    "shards_gained": shard_reward,
+                    "total_shards": upgrade_result["remaining_shards"],
+                    "quartz_gained": upgrade_result["quartz_gained"],
+                    "upgrades_performed": upgrade_result["upgrades_performed"]
+                }
         else:
             # NEW CHARACTER: Add to collection
             await self.db.add_waifu_to_user(discord_id, waifu_id)
@@ -515,6 +523,9 @@ class WaifuService:
         # Get final user state
         final_user = await self.db.get_or_create_user(discord_id)
 
+        # Check for automatic rank up after multi-summon
+        await self.check_and_update_rank(discord_id)
+
         return {
             "success": True,
             "results": results,
@@ -561,3 +572,123 @@ class WaifuService:
         except Exception as e:
             self.logger.error(f"Error getting enhanced collection: {e}")
             return []
+
+    async def get_user_stats(self, discord_id: str) -> Dict[str, Any]:
+        """Get comprehensive user statistics for academy status display."""
+        try:
+            # Get user data
+            user = await self.db.get_or_create_user(discord_id)
+            
+            # Get user's collection
+            collection = await self.db.get_user_collection(discord_id)
+            
+            # Calculate stats
+            total_waifus = len(collection)
+            unique_waifus = len(set(waifu['waifu_id'] for waifu in collection))
+            
+            # Calculate collection power and star distribution
+            collection_power = 0
+            star_distribution = {}
+            
+            for waifu in collection:
+                waifu_id = waifu['waifu_id']
+                # Get current star level for this waifu
+                star_level = await self.get_character_star_level(discord_id, waifu_id)
+                
+                # Ensure minimum star level is 1
+                if star_level == 0:
+                    star_level = 1
+                
+                # Calculate power based on star level (exponential growth)
+                # 1* = 100, 2* = 250, 3* = 500, 4* = 1000, 5* = 2000, etc.
+                if star_level == 1:
+                    power = 100
+                elif star_level == 2:
+                    power = 250
+                elif star_level == 3:
+                    power = 500
+                elif star_level == 4:
+                    power = 1000
+                elif star_level >= 5:
+                    # Exponential growth for 5+ stars
+                    power = 2000 * (2 ** (star_level - 5))
+                else:
+                    power = 100
+                    
+                collection_power += power
+                
+                # Count star distribution
+                if star_level in star_distribution:
+                    star_distribution[star_level] += 1
+                else:
+                    star_distribution[star_level] = 1
+            
+            return {
+                "user": user,
+                "total_waifus": total_waifus,
+                "unique_waifus": unique_waifus,
+                "collection_power": collection_power,
+                "rarity_distribution": star_distribution  # Renamed for clarity
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error getting user stats: {e}")
+            # Return default stats structure
+            user = await self.db.get_or_create_user(discord_id)
+            return {
+                "user": user,
+                "total_waifus": 0,
+                "unique_waifus": 0,
+                "collection_power": 0,
+                "rarity_distribution": {}
+            }
+
+    async def check_and_update_rank(self, discord_id: str) -> int:
+        """Check if user qualifies for rank up and automatically update their rank.
+        Returns the new rank level."""
+        try:
+            # Get current stats
+            stats = await self.get_user_stats(discord_id)
+            user = stats["user"]
+            current_rank = user["collector_rank"]
+            current_power = stats["collection_power"]
+            current_waifus = stats["total_waifus"]
+            
+            # Calculate what rank the user should actually be based on their power
+            # Rank 1: 0 power, Rank 2: 2000 power, Rank 3: 6000 power (2000+4000), etc.
+            actual_rank_by_power = 1
+            total_power_needed = 0
+            
+            # Keep checking if user has enough power for next rank
+            while True:
+                next_rank = actual_rank_by_power + 1
+                power_needed_for_next_rank = 1000 * (2 ** actual_rank_by_power)  # 2000, 4000, 8000, etc.
+                
+                if current_power >= total_power_needed + power_needed_for_next_rank:
+                    total_power_needed += power_needed_for_next_rank
+                    actual_rank_by_power = next_rank
+                else:
+                    break
+            
+            # Calculate what rank by waifus (5 waifus per rank: rank 1 = 0-4 waifus, rank 2 = 5-9, etc.)
+            actual_rank_by_waifus = (current_waifus // 5) + 1
+            
+            # True rank should be minimum of both (both requirements must be met)
+            suggested_rank = min(actual_rank_by_power, actual_rank_by_waifus)
+            
+            # If user should be higher rank, update their rank
+            if suggested_rank > current_rank:
+                await self.db.update_user_rank(discord_id, suggested_rank)
+                self.logger.info(f"Auto-ranked up user {discord_id} from {current_rank} to {suggested_rank}")
+                return suggested_rank
+            else:
+                # Debug logging to see why no rank up occurred
+                self.logger.info(f"No rank up for {discord_id}: Current={current_rank}, Power rank={actual_rank_by_power} (power={current_power}), Waifu rank={actual_rank_by_waifus} (waifus={current_waifus}), Suggested={suggested_rank}")
+            
+            return current_rank
+            
+        except Exception as e:
+            self.logger.error(f"Error checking/updating rank for {discord_id}: {e}")
+            # Return current rank as fallback
+            user = await self.db.get_or_create_user(discord_id)
+            return user["collector_rank"]
