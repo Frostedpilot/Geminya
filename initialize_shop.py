@@ -16,7 +16,7 @@ DEFAULT_SHOP_ITEMS = [
     {
         "name": "3★ Guarantee Ticket",
         "description": "Guarantees a 3★ waifu summon (max rarity for direct summons)",
-        "price": 5,
+        "price": 500,
         "category": "tickets",
         "item_type": "guarantee_ticket",
         "item_data": {

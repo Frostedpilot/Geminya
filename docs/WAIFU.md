@@ -16,7 +16,7 @@ NWNL Academy is a Discord bot-based gacha collection system where users can:
 - **1★ (Basic):** 85% rate - Gray rarity, common characters
 - **2★ (Epic):** 14% rate - Purple rarity, rare characters  
 - **3★ (Legendary):** 1% rate - Gold rarity, legendary characters
-- **Pity System:** Guaranteed 3★ at 90 pulls without one
+- **Pity System:** Guaranteed 3★ at 50 pulls without one
 
 ### 🔥 **Automatic Star Upgrades (4★-5★)**
 - **Duplicate pulls** give shards based on original rarity:

@@ -23,8 +23,7 @@ class WaifuService:
     }
 
     # NEW PITY SYSTEM
-    PITY_3_STAR = 90   # Guaranteed 3-star every 90 pulls
-    PITY_2_STAR = 10   # Guaranteed 2-star every 10 pulls
+    PITY_3_STAR = 50   # Guaranteed 3-star every 50 pulls
 
     # SHARD REWARDS (based on current star level of pulled character)
     SHARD_REWARDS = {
@@ -407,17 +406,17 @@ class WaifuService:
         """Determine summon rarity using NEW gacha rates and pity system."""
         pity_count = user["pity_counter"]
 
-        # NEW Pity system check - 3* pity at 90 pulls
+        # NEW Pity system check - 3* pity at 50 pulls
         if pity_count >= self.PITY_3_STAR:
             return 3
 
         # Normal rates with pity soft increase
         rates = self.GACHA_RATES.copy()
 
-        # Soft pity - increase 3-star rate after 75 pulls
-        if pity_count >= 75:
-            increase = (pity_count - 74) * 0.6
-            rates[3] = min(rates[3] + increase, 100)
+        # # Soft pity - increase 3-star rate after 75 pulls
+        # if pity_count >= 75:
+        #     increase = (pity_count - 74) * 0.6
+        #     rates[3] = min(rates[3] + increase, 100)
 
         # Generate random number and determine rarity
         roll = random.random() * 100
