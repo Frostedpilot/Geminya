@@ -1,53 +1,6 @@
 """
 Shop command for the waifu academy system.
-Handles browsing shop items, pur            # Add u                   # Add user currency info - Shop only us                    # All shop items use Quartzs only  
-                    currency_symbol = "💠"Quartzs
-            quartzs = user.get('quartzs', 0)
-            embed.add_field(
-                            #            # This section is duplicate - removing old code
-            # Check currency - Shop only uses Quartzs (already handled above) - Shop only uses Quartzs
-            total_price = item['price'] * quantity
-            currency_symbol = "�"
-            currency_name = "Quartzs"
-            
-            user_quartzs = user.get('quartzs', 0)
-            if user_quartzs < total_price:
-                embed = discord.Embed(
-                    title="❌ Insufficient Currency",
-                    description=f"You need {currency_symbol}{format_number(total_price)} {currency_name} but only have {currency_symbol}{format_number(user_quartzs)}.",
-                    color=0xFF0000
-                )
-                await interaction.followup.send(embed=embed)
-                returnurrency",
-                value=f"💠 {format_number(quartzs)} Quartzs",
-                inline=False
-            )dd user currency info                     # All shop items use Quartzs only
-                    currency_symbol = "💠"hop only uses Quartzs
-            quartzs = user.get('quartzs', 0)
-            embed.add_field(
-                name="💰 Your Currency",
-                value=f"💠 {format_number(quartzs)} Quartzs",
-                inline=False
-            )ency info                     # All shop items use Quartzs only
-                    currency_symbol = "💠"hop only uses Quartzs            # Check currency - Shop only uses Quartzs
-            total_price = item['price'] * quantity
-            currency_symbol = "💠"
-            currency_name = "Quartzs"
-            
-            user_quartzs = user.get('quartzs', 0)
-            if user_quartzs < total_price:
-                embed = discord.Embed(
-                    title="❌ Insufficient Currency",
-                    description=f"You need {currency_symbol}{format_number(total_price)} {currency_name} but only have {currency_symbol}{format_number(user_quartzs)}.",
-                    color=0xFF0000
-                )
-                await interaction.followup.send(embed=embed)
-                returnartzs = user.get('quartzs', 0)
-            embed.add_field(
-                name="💰 Your Currency",
-                value=f"💠 {format_number(quartzs)} Quartzs",
-                inline=False
-            ) and inventory management.
+Handles browsing shop items, purchasing, and inventory management.
 """
 
 import discord
@@ -62,11 +15,11 @@ from services.container import ServiceContainer
 
 
 def format_number(num: int) -> str:
-    """Format a number with appropriate separators."""
+    """Format a number with appropriate separators without rounding for clarity."""
     if num >= 1000000:
-        return f"{num / 1000000:.1f}M"
+        return f"{num // 1000000}M" if num % 1000000 == 0 else f"{num:,}"
     elif num >= 1000:
-        return f"{num / 1000:.1f}K"
+        return f"{num // 1000}K" if num % 1000 == 0 else f"{num:,}"
     else:
         return str(num)
 
@@ -131,7 +84,7 @@ class ShopCog(BaseCommand):
             quartzs = user.get('quartzs', 0)
             embed.add_field(
                 name="💰 Your Currency",
-                value=f"💎 {format_number(crystals)} Crystals\n� {format_number(quartzs)} Quartzs",
+                value=f"💎 {format_number(crystals)} Crystals\n💠 {format_number(quartzs)} Quartzs",
                 inline=False
             )
 
@@ -296,7 +249,7 @@ class ShopCog(BaseCommand):
             
             if success:
                 # Get updated user data
-                updated_user = await self.db.get_or_create_user(str(interaction.user.id))
+                updated_user = await self.db.get_user_fresh(str(interaction.user.id))
                 new_balance = updated_user.get('quartzs', 0)
                 
                 embed = discord.Embed(
@@ -306,7 +259,7 @@ class ShopCog(BaseCommand):
                 )
                 embed.add_field(
                     name="💸 Transaction",
-                    value=f"Cost: {currency_symbol}{format_number(total_price)} {currency_name}\nNew Balance: {currency_symbol}{format_number(new_balance)} {currency_name}",
+                    value=f"Cost: {currency_symbol}{format_number(total_price)} {currency_name}\n**New Balance: {currency_symbol}{format_number(new_balance)} {currency_name}**",
                     inline=False
                 )
                 
@@ -325,7 +278,7 @@ class ShopCog(BaseCommand):
                             inline=False
                         )
                 
-                embed.set_footer(text="Use /inventory to view your purchased items")
+                embed.set_footer(text="Use /nwnl_inventory to view purchased items")
                 await interaction.followup.send(embed=embed)
             else:
                 embed = discord.Embed(
@@ -920,14 +873,6 @@ class ShopView(discord.ui.View):
             
         await self._update_page(interaction, self.current_page + 1)
 
-    @discord.ui.button(label="🔄 Refresh", style=discord.ButtonStyle.secondary)
-    async def refresh_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("This is not your shop session!", ephemeral=True)
-            return
-            
-        await self._update_page(interaction, self.current_page)
-
     async def _update_page(self, interaction: discord.Interaction, new_page: int):
         """Update the shop display with a new page."""
         try:
@@ -966,7 +911,7 @@ class ShopView(discord.ui.View):
             quartzs = user.get('quartzs', 0)
             embed.add_field(
                 name="💰 Your Currency",
-                value=f"💎 {format_number(crystals)} Crystals\n� {format_number(quartzs)} Quartzs",
+                value=f"💎 {format_number(crystals)} Crystals\n💠 {format_number(quartzs)} Quartzs",
                 inline=False
             )
 

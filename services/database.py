@@ -22,7 +22,7 @@ class DatabaseService:
     async def initialize(self):
         """Initialize database connection and create tables."""
         try:
-            # Create connection pool for MySQL
+            # Create connection pool for MySQL with autocommit enabled
             self.connection_pool = await aiomysql.create_pool(
                 host=self.mysql_config["host"],
                 port=self.mysql_config["port"],
@@ -31,7 +31,7 @@ class DatabaseService:
                 db=self.mysql_config["database"],
                 minsize=5,
                 maxsize=20,
-                autocommit=False,
+                autocommit=True,
             )
 
             # Create tables
@@ -297,6 +297,25 @@ class DatabaseService:
                     "SELECT * FROM users WHERE discord_id = %s", (discord_id,)
                 )
                 user = await cursor.fetchone()
+                return user if user else {}
+
+    async def get_user_fresh(self, discord_id: str) -> Dict[str, Any]:
+        """Get user with fresh connection - now all connections have autocommit=True."""
+        self.logger.info(f"get_user_fresh: Starting query for user {discord_id}")
+        
+        async with self.connection_pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cursor:
+                # With autocommit=True, this connection will see all committed changes
+                await cursor.execute(
+                    "SELECT quartzs FROM users WHERE discord_id = %s", (discord_id,)
+                )
+                balance_only = await cursor.fetchone()
+                
+                await cursor.execute(
+                    "SELECT * FROM users WHERE discord_id = %s", (discord_id,)
+                )
+                user = await cursor.fetchone()
+                
                 return user if user else {}
 
     # Waifu-related methods
@@ -689,6 +708,9 @@ class DatabaseService:
             self.logger.info(f"Starting purchase: user={user_id}, item_id={item_id}, qty={quantity}")
             async with self.connection_pool.acquire() as conn:
                 async with conn.cursor(aiomysql.DictCursor) as cursor:
+                    # Disable autocommit for this transaction block
+                    await conn.autocommit(False)
+                    
                     # Start transaction
                     await conn.begin()
                     
@@ -699,6 +721,7 @@ class DatabaseService:
                         
                         if not item:
                             await conn.rollback()
+                            await conn.autocommit(True)  # Reset to pool default
                             self.logger.error(f"Item {item_id} not found")
                             return False
                         
@@ -713,14 +736,22 @@ class DatabaseService:
                         
                         if not user_result or user_result['quartzs'] < total_cost:
                             await conn.rollback()
+                            await conn.autocommit(True)  # Reset to pool default
                             self.logger.error(f"Insufficient funds: has {user_result['quartzs'] if user_result else 0}, needs {total_cost}")
                             return False
                         
-                        self.logger.info(f"User has sufficient funds: {user_result['quartzs']} >= {total_cost}")
+                        current_balance = user_result['quartzs']
+                        self.logger.info(f"User has sufficient funds: {current_balance} >= {total_cost}")
                         
                         # Deduct quartzs
-                        new_balance = user_result['quartzs'] - total_cost
+                        new_balance = current_balance - total_cost
+                        self.logger.info(f"Updating balance: {current_balance} - {total_cost} = {new_balance}")
                         await cursor.execute("UPDATE users SET quartzs = %s WHERE discord_id = %s", (new_balance, user_id))
+                        
+                        # Verify the update worked
+                        await cursor.execute("SELECT quartzs FROM users WHERE discord_id = %s", (user_id,))
+                        verify_result = await cursor.fetchone()
+                        self.logger.info(f"Balance after update: {verify_result['quartzs']}")
                         
                         # Record purchase
                         await cursor.execute("""
@@ -757,10 +788,14 @@ class DatabaseService:
                         
                         await conn.commit()
                         self.logger.info(f"Purchase transaction committed successfully")
+                        
+                        # Reset autocommit to pool default
+                        await conn.autocommit(True)
                         return True
                         
                     except Exception as e:
                         await conn.rollback()
+                        await conn.autocommit(True)  # Reset to pool default
                         self.logger.error(f"Error in purchase transaction: {e}")
                         return False
                         
