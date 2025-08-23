@@ -325,6 +325,9 @@ class WaifuService:
         # Check for automatic rank up after summon
         await self.check_and_update_rank(discord_id)
 
+        # Add 1 quartz for every single roll (not a guaranteed ticket)
+        await self.db.update_user_quartzs(discord_id, 1)
+
         return {
             "success": True,
             "waifu": selected_waifu,
@@ -524,6 +527,9 @@ class WaifuService:
 
         # Check for automatic rank up after multi-summon
         await self.check_and_update_rank(discord_id)
+
+        # Add 10 quartz for every multi roll (not a guaranteed ticket)
+        await self.db.update_user_quartzs(discord_id, 10)
 
         return {
             "success": True,
