@@ -98,7 +98,7 @@ async def reset_sqlite_users(db_path, dry_run=False):
             if dry_run:
                 # Show what would be reset
                 cursor = await db.execute("""
-                    SELECT discord_id, academy_name, sakura_crystals, collector_rank, 
+                    SELECT discord_id, academy_name, sakura_crystals, quartzs, collector_rank, 
                            pity_counter, last_daily_reset
                     FROM users 
                     ORDER BY discord_id
@@ -111,14 +111,14 @@ async def reset_sqlite_users(db_path, dry_run=False):
                 for i, user in enumerate(users_list):
                     if i >= 10:  # Safety check
                         break
-                    discord_id, academy_name, crystals, rank, pity, last_daily = user
+                    discord_id, academy_name, crystals, quartzs, rank, pity, last_daily = user
                     print(f"Discord ID: {discord_id}")
                     print(f"  Academy: {academy_name or 'None'}")
                     print(f"  Crystals: {crystals} → 2000")
+                    print(f"  Quartz: {quartzs} → 0")
                     print(f"  Rank: {rank} → 1")
                     print(f"  Pity: {pity} → 0")
                     print(f"  Last Daily: {last_daily} → 0")
-                    print(f"  Login Streak: 0 → 0")
                     print("-" * 40)
                 
                 if user_count > 10:
@@ -146,10 +146,20 @@ async def reset_sqlite_users(db_path, dry_run=False):
                 result = await cursor.fetchone()
                 mission_count = result[0] if result else 0
                 
+                cursor = await db.execute("SELECT COUNT(*) FROM user_purchases")
+                result = await cursor.fetchone()
+                purchase_count = result[0] if result else 0
+                
+                cursor = await db.execute("SELECT COUNT(*) FROM user_inventory")
+                result = await cursor.fetchone()
+                inventory_count = result[0] if result else 0
+                
                 print(f"\n📊 Related data that would be deleted:")
                 print(f"  User Waifus: {waifu_count}")
                 print(f"  Conversations: {conversation_count}")
                 print(f"  Mission Progress: {mission_count}")
+                print(f"  User Purchases: {purchase_count}")
+                print(f"  User Inventory: {inventory_count}")
                 
                 return True
             
@@ -165,6 +175,16 @@ async def reset_sqlite_users(db_path, dry_run=False):
                     await db.execute("DELETE FROM user_waifus WHERE user_id = ?", (user_id,))
                     await db.execute("DELETE FROM conversations WHERE user_id = ?", (user_id,))
                     await db.execute("DELETE FROM user_mission_progress WHERE user_id = ?", (user_id,))
+                    # Note: user_purchases and user_inventory use discord_id, not user_id
+                
+                # Get all discord_ids for cleaning string-based foreign keys
+                cursor = await db.execute("SELECT discord_id FROM users")
+                discord_ids = [row[0] for row in await cursor.fetchall()]
+                
+                # Clean tables that use discord_id as foreign key
+                for discord_id in discord_ids:
+                    await db.execute("DELETE FROM user_purchases WHERE user_id = ?", (discord_id,))
+                    await db.execute("DELETE FROM user_inventory WHERE user_id = ?", (discord_id,))
                 
                 print(f"🗑️ Deleted related data for {len(user_ids)} users")
                 
@@ -174,9 +194,9 @@ async def reset_sqlite_users(db_path, dry_run=False):
                         academy_name = NULL,
                         collector_rank = 1,
                         sakura_crystals = 2000,
+                        quartzs = 0,
                         pity_counter = 0,
-                        last_daily_reset = 0,
-                        login_streak = 0
+                        last_daily_reset = 0
                 """)
                 
                 # Step 4: Commit changes
@@ -220,7 +240,7 @@ async def reset_mysql_users(mysql_config, dry_run=False):
             if dry_run:
                 # Show what would be reset
                 await cursor.execute("""
-                    SELECT discord_id, academy_name, sakura_crystals, collector_rank, 
+                    SELECT discord_id, academy_name, sakura_crystals, quartzs, collector_rank, 
                            pity_counter, last_daily_reset
                     FROM users 
                     ORDER BY discord_id
@@ -231,10 +251,11 @@ async def reset_mysql_users(mysql_config, dry_run=False):
                 print("\n🔍 Users that would be reset:")
                 print("=" * 80)
                 for user in users_list:
-                    discord_id, academy_name, crystals, rank, pity, last_daily = user
+                    discord_id, academy_name, crystals, quartzs, rank, pity, last_daily = user
                     print(f"Discord ID: {discord_id}")
                     print(f"  Academy: {academy_name or 'None'}")
                     print(f"  Crystals: {crystals} → 2000")
+                    print(f"  Quartz: {quartzs} → 0")
                     print(f"  Rank: {rank} → 1")
                     print(f"  Pity: {pity} → 0")
                     print(f"  Last Daily: {last_daily} → 0")
@@ -265,10 +286,20 @@ async def reset_mysql_users(mysql_config, dry_run=False):
                 result = await cursor.fetchone()
                 mission_count = result[0] if result else 0
                 
+                await cursor.execute("SELECT COUNT(*) FROM user_purchases")
+                result = await cursor.fetchone()
+                purchase_count = result[0] if result else 0
+                
+                await cursor.execute("SELECT COUNT(*) FROM user_inventory")
+                result = await cursor.fetchone()
+                inventory_count = result[0] if result else 0
+                
                 print(f"\n📊 Related data that would be deleted:")
                 print(f"  User Waifus: {waifu_count}")
                 print(f"  Conversations: {conversation_count}")
                 print(f"  Mission Progress: {mission_count}")
+                print(f"  User Purchases: {purchase_count}")
+                print(f"  User Inventory: {inventory_count}")
                 
                 await conn.ensure_closed()
                 return True
@@ -276,10 +307,12 @@ async def reset_mysql_users(mysql_config, dry_run=False):
             else:
                 # Perform actual reset in a transaction
                 try:
-                    # Step 1: Delete all related user data (CASCADE should handle this)
+                    # Step 1: Delete all related user data (CASCADE should handle most, but be explicit)
                     await cursor.execute("DELETE FROM user_waifus")
                     await cursor.execute("DELETE FROM conversations")
                     await cursor.execute("DELETE FROM user_mission_progress")
+                    await cursor.execute("DELETE FROM user_purchases")
+                    await cursor.execute("DELETE FROM user_inventory")
                     
                     print(f"🗑️ Deleted related data for all users")
                     
@@ -289,6 +322,7 @@ async def reset_mysql_users(mysql_config, dry_run=False):
                             academy_name = NULL,
                             collector_rank = 1,
                             sakura_crystals = 2000,
+                            quartzs = 0,
                             pity_counter = 0,
                             last_daily_reset = 0
                     """)
@@ -347,13 +381,16 @@ def main():
     if not args.dry_run and not args.confirm:
         print("⚠️  WARNING: This will reset ALL user data!")
         print("   • All users will have 2000 sakura crystals")
+        print("   • All users will have 0 quartz")
         print("   • All academies will be unnamed")
         print("   • All collector ranks reset to 1")
         print("   • All pity counters reset to 0")
-        print("   • All daily login streaks reset")
+        print("   • All daily login data reset")
         print("   • All user waifus will be deleted")
         print("   • All conversations will be deleted")
         print("   • All mission progress will be deleted")
+        print("   • All purchase history will be deleted")
+        print("   • All inventory items will be deleted")
         print()
         
         confirmation = input("Type 'RESET' to confirm this operation: ")

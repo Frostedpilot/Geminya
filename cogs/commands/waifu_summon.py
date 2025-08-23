@@ -61,11 +61,21 @@ class WaifuSummonCog(BaseCommand):
                     inline=False,
                 )
             else:
-                embed.add_field(
-                    name="🌟 Duplicate Summon!",
-                    value=f"**{waifu['name']}** gained {summon_result['shards_gained']} shards!",
-                    inline=False,
-                )
+                # Different message based on whether character is maxed or not
+                if summon_result.get("quartz_gained", 0) > 0 and summon_result.get("shards_gained", 0) == 0:
+                    # Character is already maxed (5⭐), shards converted to quartz
+                    embed.add_field(
+                        name="🌟 Max Level Duplicate!",
+                        value=f"**{waifu['name']}** is already 5⭐! Converted to {summon_result['quartz_gained']} quartz!",
+                        inline=False,
+                    )
+                else:
+                    # Normal duplicate with shards
+                    embed.add_field(
+                        name="🌟 Duplicate Summon!",
+                        value=f"**{waifu['name']}** gained {summon_result['shards_gained']} shards!",
+                        inline=False,
+                    )
 
             # Show automatic upgrades if any occurred
             if summon_result.get("upgrades_performed"):
@@ -136,7 +146,13 @@ class WaifuSummonCog(BaseCommand):
             await ctx.send(content=content, embed=embed)
 
             # Log the result
-            status_text = "NEW" if summon_result['is_new'] else f"+{summon_result['shards_gained']} shards"
+            if summon_result['is_new']:
+                status_text = "NEW"
+            elif summon_result.get("quartz_gained", 0) > 0 and summon_result.get("shards_gained", 0) == 0:
+                status_text = f"+{summon_result['quartz_gained']} quartz (maxed)"
+            else:
+                status_text = f"+{summon_result['shards_gained']} shards"
+                
             self.logger.info(
                 f"User {ctx.author} summoned {waifu['name']} ({rarity}⭐ pull) "
                 f"{status_text} Current: {summon_result['current_star_level']}⭐"
@@ -206,11 +222,21 @@ class WaifuSummonCog(BaseCommand):
                             inline=False,
                         )
                     else:
-                        embed.add_field(
-                            name="� Duplicate Summon!",
-                            value=f"**{waifu['name']}** gained {summon_result['shards_gained']} shards!",
-                            inline=False,
-                        )
+                        # Different message based on whether character is maxed or not
+                        if summon_result.get("quartz_gained", 0) > 0 and summon_result.get("shards_gained", 0) == 0:
+                            # Character is already maxed (5⭐), shards converted to quartz
+                            embed.add_field(
+                                name="🌟 Max Level Duplicate!",
+                                value=f"**{waifu['name']}** is already 5⭐! Converted to {summon_result['quartz_gained']} quartz!",
+                                inline=False,
+                            )
+                        else:
+                            # Normal duplicate with shards
+                            embed.add_field(
+                                name="🌟 Duplicate Summon!",
+                                value=f"**{waifu['name']}** gained {summon_result['shards_gained']} shards!",
+                                inline=False,
+                            )
 
                     # Show automatic upgrades if any occurred
                     if summon_result.get("upgrades_performed"):
@@ -265,11 +291,13 @@ class WaifuSummonCog(BaseCommand):
                             f"🎉 An epic waifu has answered your call! 🎉"
                         )
                 else:  # 1★ goes to summary like old system
-                    status = (
-                        "🆕 NEW"
-                        if summon_result["is_new"]
-                        else f"💫 +{summon_result['shards_gained']} shards"
-                    )
+                    if summon_result["is_new"]:
+                        status = "🆕 NEW"
+                    elif summon_result.get("quartz_gained", 0) > 0 and summon_result.get("shards_gained", 0) == 0:
+                        status = f"💠 +{summon_result['quartz_gained']} quartz (maxed)"
+                    else:
+                        status = f"💫 +{summon_result['shards_gained']} shards"
+                    
                     low_rarity_pulls.append(
                         f"**#{i+1}** {config['emoji']} **{waifu['name']}** ({waifu.get('series', 'Unknown')}) - {status}"
                     )
@@ -722,7 +750,7 @@ class WaifuSummonCog(BaseCommand):
 
             # Updated footer with more relevant commands
             if user_waifu:
-                footer_text = f"ID: {waifu['id']} • Use /nwnl_upgrade to upgrade stars • /nwnl_collection to view all"
+                footer_text = f"ID: {waifu['id']} • Auto upgrades with shards • /nwnl_collection to view all"
             else:
                 footer_text = f"ID: {waifu['id']} • Use /nwnl_summon to try collecting • /nwnl_collection to view owned"
             

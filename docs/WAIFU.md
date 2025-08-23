@@ -1,287 +1,223 @@
-# 🌸 No Waifu No Laifu Academy: The Ultimate Dimensional Collector 🌸
+# 🌸 No Waifu No Laifu (NWNL) Academy: Gacha Collection System 🌸
 
-Welcome to **Waifu Academy** - where dimensions collide and legendary waifus await their destined collector!
+Welcome to **NWNL Academy** - a comprehensive waifu collection system with gacha mechanics, automatic star progression, and academy management!
 
-## 🎯 Overview
+## 🎯 **System Overview**
 
-**Waifu Academy** is not just a collection game - it's a living, breathing multiverse where your waifus have personalities, memories, and relationships with you. Each waifu exists in their own pocket dimension that you can visit, interact with, and develop meaningful bonds.
+NWNL Academy is a Discord bot-based gacha collection system where users can:
+- **Summon waifus** using Sakura Crystals through a 1★-3★ gacha system
+- **Automatically upgrade** characters to 4★ and 5★ using shards from duplicates
+- **Manage their academy** with ranks, daily rewards, and guarantee tickets
+- **Track collection progress** with detailed statistics and power calculations
 
-## ✨ Core Features
+## ⭐ **Star System (Core Mechanic)**
 
-### 🎰 **Dimensional Summoning System**
+### 🎰 **Gacha Pulls (1★-3★)**
+- **1★ (Basic):** 85% rate - Gray rarity, common characters
+- **2★ (Epic):** 14% rate - Purple rarity, rare characters  
+- **3★ (Legendary):** 1% rate - Gold rarity, legendary characters
+- **Pity System:** Guaranteed 3★ at 90 pulls without one
 
-- **Mystic Rolls**: Use Sakura Crystals to summon waifus from different dimensions
-- **Guaranteed Pity System**: Every 50 rolls guarantees a 4-star, every 100 rolls guarantees a 5-star
-- **Elemental Affinity**: Waifus have elemental types that affect summoning rates during special events
-- **Constellation System**: Duplicate waifus unlock special abilities and deeper conversations
+### 🔥 **Automatic Star Upgrades (4★-5★)**
+- **Duplicate pulls** give shards based on original rarity:
+  - 1★ duplicates = 5 shards
+  - 2★ duplicates = 20 shards  
+  - 3★ duplicates = 90 shards
+- **Automatic upgrades** when sufficient shards collected:
+  - 1★ → 2★: 50 shards
+  - 2★ → 3★: 100 shards
+  - 3★ → 4★: 150 shards
+  - 4★ → 5★: 200 shards
+- **Quartz conversion:** When 5★ character gets duplicates, excess shards become quartz
 
-### 🏠 **Personal Waifu Dimensions**
+## 💎 **Currency System**
 
-- **Mood System**: Waifus have dynmic moods that change based on interactions and gifts
-- **Memory Bank**: AI remembers all your conversations, creating deeper relationships over time
-- **Date Simulator**: Take your waifus on special adventures and dates
+### � **Sakura Crystals (Primary Currency)**
+- **Single summon:** 10 crystals
+- **Multi-summon (10x):** 100 crystals (guaranteed 2★+ on 10th pull)
+- **Daily reward:** Claim crystals daily
+- **Starting amount:** 2000 crystals for new users
 
-### 🎮 **Interactive Gameplay**
+### 💠 **Quartz (Premium Currency)**  
+- **Source:** Converting excess shards from maxed (5★) characters
+- **Use:** Purchase guarantee tickets from shop
+- **Value:** High-value currency for guaranteed rolls
 
-- **Waifu Bonds**: Build relationship levels through conversations, gifts, and activities
-- **Academy Classes**: Send waifus to classes to improve their stats and unlock new dialogue
-- **Seasonal Events**: Limited-time waifus, special storylines, and exclusive rewards
-- **Mini-Games**: Play rock-paper-scissors, riddles, or trivia with your waifus
+## � **Academy System**
 
-### 🏆 **Progression & Competition**
+### 📊 **Collector Ranks**
+- **Automatic progression** based on collection power and waifu count
+- **Exponential requirements:** Each rank needs double the power of previous
+- **Formula:** Rank N requires 1000 × 2^N power + 5×N waifus
+- **Power calculation:** Each waifu contributes rarity² × 100 power
 
-- **Collector Ranks**: From "Novice Summoner" to "Dimensional Lord"
-- **Waifu PvP Battle**: Use your waifu to battle others'
+### 🎁 **Daily Rewards**
+- **24-hour cooldown** system
+- **Fixed rewards:** Crystals and other bonuses
+- **Streak tracking** for consecutive claims
 
-### 💝 **Gift & Care System**
+## 🛒 **Shop System**
 
-- **Daily Care**: Feed, pat, and talk to waifus to maintain happiness
-- **Gift Shop**: Buy presents using different currencies to improve relationships
-- **Special Occasions**: Birthdays, holidays, and anniversary celebrations
-- **Jealousy System**: Waifus may get jealous if you spend too much time with others and ignore them!
+### � **Guarantee Tickets**
+- **Only shop item:** Guarantee tickets for guaranteed high-rarity pulls
+- **Purchase with:** Quartz (premium currency)
+- **Usage:** Use from inventory for guaranteed pulls
+- **Simple system:** No complex item types, focused on core functionality
 
-## 🎯 Commands
+## 📋 **Commands Reference**
 
 ### 🎰 **Summoning & Collection**
 
-- `/nwnl summon [type]`: Summon waifus using Sakura Crystals (in general pool/genre specific/series specific pool)
-- `/nwnl collection [user]`: View your waifu academy with interactive cards
-- `/nwnl profile <waifu_name>`: Deep dive into a waifu's stats and relationship level
-- `/nwnl constellation <waifu_name>`: View and upgrade waifu constellations
+- `/nwnl_summon`: Basic single summon (10 crystals)
+- `/nwnl_multi_summon`: 10-pull summon (100 crystals, guaranteed 2★+ on 10th)
+- `/nwnl_collection [user]`: View waifu collection with star levels
+- `/nwnl_profile <waifu_name>`: View detailed waifu information
 
-### 💖 **Relationship & Interaction**
+### 🏫 **Academy Management**
 
-- `/nwnl chat <waifu_name> <message>`: Have meaningful conversations with your waifus
-- `/nwnl date <waifu_name> [activity]`: Take your waifu on various date activities
-- `/nwnl gift <waifu_name> <item>`: Give presents to improve relationships
-- `/nwnl pat <waifu_name>`: Give headpats for instant mood boost
+- `/nwnl_status`: Check academy rank, currencies, and statistics
+- `/nwnl_daily`: Claim daily rewards
+- `/nwnl_rename_academy <name>`: Rename your academy
+- `/nwnl_reset_account`: Reset all academy data
+- `/nwnl_delete_account`: Permanently delete account
 
-### 🎮 **Activities & Games**
+### 🛒 **Shop System**
 
-- `/nwnl class <waifu_name> <subject>`: Send waifus to academy classes
-- `/nwnl play <waifu_name> <game>`: Play mini-games together
-- `/nwnl memory <waifu_name>`: Browse special memories and moments
+- `/nwnl_shop`: Browse guarantee tickets
+- `/nwnl_buy <item>`: Purchase guarantee tickets
+- `/nwnl_inventory`: View purchased items
+- `/nwnl_purchase_history`: View purchase history
+- `/nwnl_use_item <item>`: Use guarantee tickets
 
-### 🏆 **Competition & Social**
-
-- `/nwnl trade <user> <offer> <request>`: Propose waifu trades with conditions
-
-### 📅 **Daily Life**
-
-- `/nwnl dailies`: Check and claim daily missions and rewards
-- `/nwnl events`: View current and upcoming special events
-- `/nwnl shop`: Browse the academy store for gifts and items
-- `/nwnl status`: Check your academy rank, currencies, and statistics
-
-## 🗃️ Enhanced Database Schema
+## �️ **Database Schema (Current Implementation)**
 
 ### `waifus` table
 
-- `id` (INTEGER, PRIMARY KEY)
-- `name` (TEXT, NOT NULL)
-- `series` (TEXT, NOT NULL)
-- `genre` (TEXT, NOT NULL)
-- `element` (TEXT) - Fire, Water, Earth, Air, Light, Dark
-- `rarity` (INTEGER, 1-3 stars, upgradable to infinite stars)
-- `image_url` (TEXT)
-- `personality_profile` (TEXT) - Detailed AI personality description
-- `base_stats` (JSON) - Strength, Intelligence, Charm, etc.
-- `birthday` (DATE)
-- `favorite_gifts` (JSON)
-- `special_dialogue` (JSON) - Event-specific conversations
+```sql
+CREATE TABLE waifus (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    series VARCHAR(255) NOT NULL,
+    genre VARCHAR(100) NOT NULL,
+    element VARCHAR(50),
+    rarity INT NOT NULL CHECK (rarity >= 1 AND rarity <= 3),
+    image_url TEXT,
+    mal_id INT,
+    favorites INT DEFAULT 0,
+    base_stats TEXT,
+    birthday DATE,
+    favorite_gifts TEXT,
+    special_dialogue TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
 ### `users` table
 
-- `id` (INTEGER, PRIMARY KEY)
-- `discord_id` (TEXT, UNIQUE)
-- `academy_name` (TEXT) - Custom academy name
-- `collector_rank` (INTEGER, DEFAULT 1)
-- `sakura_crystals` (INTEGER, DEFAULT 2000) - There are no free/premium currencies, all purchases uses this.
-- `pity_counter` (INTEGER, DEFAULT 0)
-- `last_daily_reset` (TIMESTAMP)
+```sql
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    discord_id VARCHAR(20) UNIQUE NOT NULL,
+    academy_name VARCHAR(100),
+    collector_rank INT DEFAULT 1,
+    sakura_crystals INT DEFAULT 2000,
+    quartzs INT DEFAULT 0,
+    pity_counter INT DEFAULT 0,
+    last_daily_claim TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
 
 ### `user_waifus` table
 
-- `id` (INTEGER, PRIMARY KEY)
-- `user_id` (INTEGER, FOREIGN KEY)
-- `waifu_id` (INTEGER, FOREIGN KEY)
-- `bond_level` (INTEGER, DEFAULT 1)
-- `constellation_level` (INTEGER, DEFAULT 0)
-- `current_mood` (TEXT, DEFAULT 'neutral')
-- `last_interaction` (TIMESTAMP)
-- `total_conversations` (INTEGER, DEFAULT 0)
-- `favorite_memory` (TEXT)
-- `custom_nickname` (TEXT)
-- `room_decorations` (JSON)
+```sql
+CREATE TABLE user_waifus (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    waifu_id INT NOT NULL,
+    bond_level INT DEFAULT 1,
+    constellation_level INT DEFAULT 0,
+    current_star_level INT DEFAULT NULL,
+    star_shards INT DEFAULT 0,
+    character_shards INT DEFAULT 0,
+    current_mood VARCHAR(50) DEFAULT 'neutral',
+    last_interaction TIMESTAMP NULL,
+    total_conversations INT DEFAULT 0,
+    favorite_memory TEXT,
+    custom_nickname VARCHAR(100),
+    room_decorations TEXT,
+    obtained_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id),
+    FOREIGN KEY (waifu_id) REFERENCES waifus (id)
+);
+```
 
-### `conversations` table
+### Additional Tables
 
-- `id` (INTEGER, PRIMARY KEY)
-- `user_id` (INTEGER, FOREIGN KEY)
-- `waifu_id` (INTEGER, FOREIGN KEY)
-- `user_message` (TEXT)
-- `waifu_response` (TEXT)
-- `mood_change` (INTEGER) - How much mood changed from this interaction
-- `timestamp` (TIMESTAMP)
+- `user_purchases`: Shop purchase history
+- `user_inventory`: Current owned items
+- `user_shards`: Shard tracking (legacy/compatibility)
 
-### `daily_missions` table
+## 📊 **Data Pipeline Workflow**
 
-- `id` (INTEGER, PRIMARY KEY)
-- `name` (TEXT, NOT NULL)
-- `description` (TEXT)
-- `type` (TEXT) - 'chat', 'summon', 'gift', 'class', etc.
-- `target_count` (INTEGER)
-- `reward_type` (TEXT)
-- `reward_amount` (INTEGER)
-- `difficulty` (TEXT) - 'easy', 'medium', 'hard'
+### 🔄 **Character Data Management Process**
 
-### `events` table
+1. **`pull_from_mal.py`** - Pull character and anime data from MyAnimeList
+   - Output: `data/characters_mal.csv`, `data/anime_mal.csv`
+   - Fetches character details, favorites, series information
 
-- `id` (INTEGER, PRIMARY KEY)
-- `name` (TEXT, NOT NULL)
-- `description` (TEXT)
-- `start_date` (TIMESTAMP)
-- `end_date` (TIMESTAMP)
-- `event_type` (TEXT) - 'rate_up', 'limited_waifu', 'special_story'
-- `bonus_conditions` (JSON)
+2. **`character_edit.py`** - Clean and filter character data  
+   - Input: `data/characters_mal.csv`
+   - Output: `data/character_final.csv`
+   - Removes male characters, redundant data, applies filters
 
-### `guilds` table
+3. **Manual Editing Phase** - Hand-edit star assignments
+   - Copy `character_final.csv` data to `data/characters_cleaned.xlsx`
+   - Manually assign star ratings (1★-3★) based on popularity/preferences
+   - Save edited Excel file for processing
 
-- `id` (INTEGER, PRIMARY KEY)
-- `name` (TEXT, NOT NULL)
-- `leader_id` (INTEGER, FOREIGN KEY)
-- `member_limit` (INTEGER, DEFAULT 30)
-- `guild_level` (INTEGER, DEFAULT 1)
-- `description` (TEXT)
-- `created_date` (TIMESTAMP)
+4. **`process_character_final.py`** - Final processing and validation
+   - Input: `data/characters_cleaned.xlsx` (manually edited)
+   - Output: `data/character_final.csv` (database-ready)
+   - Validates data, preserves manual star assignments, prepares for upload
 
-## 🌟 Innovative Features & Mechanics
+5. **`upload_to_mysql.py`** - Upload to database
+   - Input: `data/character_final.csv`
+   - Action: Inserts/updates character data in MySQL database
+   - Result: Characters available in gacha system
 
-### 🎭 **Dynamic Personality System**
+### 📁 **Key Data Files**
 
-- Each waifu has evolving personality traits based on interactions
-- Seasonal personality changes (more cheerful in spring, cozy in winter)
-- Memory of past conversations influences future responses
-- Unique voice patterns and speech quirks for each character
+- `data/characters_mal.csv` - Raw MAL character data
+- `data/anime_mal.csv` - Raw MAL anime data  
+- `data/character_final.csv` - Cleaned character data (before manual editing)
+- `data/characters_cleaned.xlsx` - Excel file for manual star assignment
+- `data/character_final.csv` - Final processed data (after manual editing)
 
-### 🎪 **Event-Driven Storytelling**
+## 🎯 **System Characteristics**
 
-- **Festival Seasons**: Summer festivals, Christmas specials, Valentine's events
-- **Crossover Events**: Waifus from different series interact with each other
-- **Mystery Events**: Community solves puzzles to unlock rare waifus
-- **Time-Limited Stories**: Weekly episodic content with your waifus
+### ✅ **What's Currently Working**
 
-### 🎨 **Creative Expression**
+- **Complete gacha system** with 1★-3★ pulls and automatic 4★-5★ upgrades
+- **Comprehensive academy management** with ranks, dailies, and statistics
+- **Shop system** focused on guarantee tickets only
+- **Data pipeline** for character management from MAL to database
+- **Race condition prevention** with command queuing
+- **Automatic progression** system for ranks and star levels
 
-- **Waifu Art Generator**: AI-powered custom art based on your interactions
-- **Story Mode**: Create custom scenarios and adventures with your waifus
-- **Academy Newspaper**: Community-generated content and stories
-- **Fashion System**: Unlock and customize outfits for special occasions
+### 🚧 **Planned/Future Features**
 
-### 🏮 **Cultural Integration**
+- **Interactive features:** Chat, dating, gifts, mood system
+- **Advanced gameplay:** Classes, mini-games, events
+- **Social features:** Trading, guilds, competitions
+- **AI integration:** Personality-driven conversations
+- **Enhanced progression:** Bond levels, memories, achievements
 
-- **Language Learning**: Waifus teach you Japanese phrases and culture
-- **Cultural Events**: Celebrate real-world festivals with themed content
-- **Recipe Sharing**: Waifus share cooking recipes from their series
-- **Music Box**: Collect theme songs and character songs
+## 🎮 **System Design Philosophy**
 
-## 🎯 Data Sources & Integration
-
-### 📚 **Multi-Source Character Database**
-
-- **AniList API**: For comprehensive anime/manga data
-- **MyAnimeList Integration**: User's personal anime lists influence summon rates
-- **Custom Character Profiles**: Hand-crafted personalities for unique interactions
-- **Community Submissions**: Players can suggest new waifus with voting system
-
-### 🤖 **AI Integration Points**
-
-- **Conversation Engine**: Context-aware responses using character personalities
-- **Mood Analysis**: AI determines waifu emotional states from interactions
-- **Event Generation**: Dynamic story events based on user preferences
-- **Relationship Dynamics**: Complex interaction patterns between multiple waifus
-
-## 🚀 Detailed Implementation Roadmap
-
-### 🌱 **Phase 1: Foundation Academy** (Weeks 1-3)
-
-1. **Core Infrastructure**
-   - Database schema implementation with SQLite
-   - Basic user registration and currency systems
-   - Simple gacha mechanics with pity system
-2. **Essential Commands**
-   - `/nwnl summon` - Basic summoning with animations
-   - `/nwnl collection` - Beautiful collection display
-   - `/nwnl profile` - Detailed waifu information
-3. **AI Integration Prep**
-   - Connect to existing `ai_service`
-   - Basic personality framework
-   - Simple conversation logging
-
-### 🌸 **Phase 2: Bonds & Relationships** (Weeks 4-6)
-
-1. **Interactive Systems**
-   - `/nwnl chat` with personality-driven responses
-   - Bond level progression mechanics
-   - Mood system implementation
-2. **Daily Engagement**
-   - Daily mission system
-   - `/nwnl pat` and `/nwnl gift` commands
-   - Basic room customization
-3. **Memory System**
-   - Conversation history tracking
-   - Relationship milestone events
-   - Personalized responses based on history
-
-### 🎭 **Phase 3: Academy Life** (Weeks 7-9)
-
-1. **Advanced Features**
-   - `/nwnl date` mini-adventures
-   - Academy class system with stat progression
-   - Mini-games and interactive activities
-2. **Social Systems**
-   - Guild creation and management
-   - Player trading with complex conditions
-   - Community leaderboards
-3. **Event Framework**
-   - Seasonal event system
-   - Limited-time waifus and content
-   - Community challenges
-
-### 🌟 **Phase 4: Creative & Advanced** (Weeks 10-12)
-
-1. **Creative Tools**
-   - Photo mode with special scenes
-   - Custom story creation tools
-   - Waifu art generation integration
-2. **Advanced AI**
-   - Cross-waifu relationship dynamics
-   - Dynamic event generation
-   - Seasonal personality changes
-3. **Community Features**
-   - Academy newspaper system
-   - Player-generated content voting
-   - Cross-server competitions
-
-### 🎆 **Phase 5: Polish & Expansion** (Ongoing)
-
-1. **Performance & UX**
-   - Command response optimization
-   - Enhanced visual presentations
-   - Mobile-friendly interfaces
-2. **Content Expansion**
-   - Regular waifu additions
-   - New event types and mechanics
-   - Player-requested features
-3. **Advanced Integrations**
-   - External API connections
-   - Real-world event tie-ins
-   - Cross-platform features
-
-## 🎮 Unique Selling Points
-
-- **Living Relationships**: Unlike static collection games, waifus remember and evolve
-- **AI-Driven Narratives**: Dynamic stories that adapt to player choices
-- **Community-Centric**: Player-generated content and collaborative events
-- **Cultural Depth**: Educational elements about anime culture and Japanese language
-- **Emotional Investment**: Deep bonding mechanics that create lasting connections
+The NWNL system prioritizes:
+- **Core mechanics first:** Solid gacha and collection foundation
+- **Automatic progression:** Reducing manual upgrade complexity  
+- **Data-driven approach:** MAL integration for authentic character data
+- **Scalable architecture:** Built for future feature expansion
+- **User-friendly experience:** Clear commands and intuitive progression

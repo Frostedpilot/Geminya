@@ -1,6 +1,7 @@
 """
 Shop command for the waifu academy system.
 Handles browsing shop items, purchasing, and inventory management.
+Currently simplified to focus on guarantee tickets only.
 """
 
 import discord
@@ -25,7 +26,7 @@ def format_number(num: int) -> str:
 
 
 class ShopCog(BaseCommand):
-    """Shop system commands for browsing and purchasing items."""
+    """Shop system commands for browsing and purchasing items. Currently focused on guarantee tickets."""
 
     def __init__(self, bot, services: ServiceContainer):
         super().__init__(bot, services)
@@ -539,11 +540,21 @@ class ShopCog(BaseCommand):
                             inline=False,
                         )
                     else:
-                        embed.add_field(
-                            name="🌟 Duplicate Summon!",
-                            value=f"**{rolled_waifu['name']}** gained {rolled_waifu.get('shard_reward', 0)} shards!",
-                            inline=False,
-                        )
+                        # Different message based on whether character is maxed or not
+                        if rolled_waifu.get("quartzs_gained", 0) > 0 and rolled_waifu.get("shard_reward", 0) == 0:
+                            # Character is already maxed (5⭐), shards converted to quartz
+                            embed.add_field(
+                                name="🌟 Max Level Duplicate!",
+                                value=f"**{rolled_waifu['name']}** is already 5⭐! Converted to {rolled_waifu.get('quartzs_gained', 0)} quartz!",
+                                inline=False,
+                            )
+                        else:
+                            # Normal duplicate with shards
+                            embed.add_field(
+                                name="🌟 Duplicate Summon!",
+                                value=f"**{rolled_waifu['name']}** gained {rolled_waifu.get('shard_reward', 0)} shards!",
+                                inline=False,
+                            )
                     
                     # Show automatic upgrades if any occurred
                     if rolled_waifu.get("upgrades_performed"):
@@ -653,7 +664,7 @@ class ShopCog(BaseCommand):
             await interaction.followup.send(embed=embed)
 
     async def apply_item_effects(self, user_id: str, item: dict) -> dict:
-        """Apply the effects of using an item"""
+        """Apply the effects of using an item. Currently only supports guarantee tickets."""
         try:
             effects_data = item.get('effects')
             if isinstance(effects_data, str):
@@ -690,111 +701,17 @@ class ShopCog(BaseCommand):
                         'error': "Failed to perform guaranteed roll. Please try again later."
                     }
             
-            elif item_type == "currency_pack":
-                # Add crystals to user
-                crystals = effects.get('sakura_crystals', 0)
-                await self.db.add_crystals(user_id, crystals)
-                return {
-                    'success': True,
-                    'description': f"💎 Added **{format_number(crystals)} Sakura Crystals** to your account!"
-                }
-            
-            elif item_type == "boost":
-                # Apply temporary boost
-                multiplier = effects.get('bond_multiplier', 1.0)
-                duration = effects.get('duration_hours', 24)
-                await self.db.apply_user_boost(user_id, 'bond', multiplier, duration)
-                return {
-                    'success': True,
-                    'description': f"⚡ Bond experience multiplier of **{multiplier}x** applied for **{duration} hours**!"
-                }
-            
-            elif item_type == "summon_ticket":
-                # Add summon tickets (convert to crystals for simplicity)
-                summons = effects.get('summons', 1)
-                crystals_equivalent = summons * 10  # Assuming 10 crystals per summon
-                await self.db.add_crystals(user_id, crystals_equivalent)
-                return {
-                    'success': True,
-                    'description': f"🎟️ Added **{summons} summon(s)** worth of crystals (**{crystals_equivalent} crystals**) to your account!"
-                }
-            
-            elif item_type == "selector":
-                # Mark user as having a selector available (updated for new star system)
-                rarity = effects.get('rarity', '3_star')  # Default to 3★ max now
-                # Convert old 5_star and 4_star to 3_star for compatibility
-                if rarity in ['5_star', '4_star']:
-                    rarity = '3_star'
-                
-                # For now, we'll skip this functionality since selectors need rework for star system
-                return {
-                    'success': True,
-                    'description': f"🎯 Selector tickets are being updated for the new star system! This feature will return soon with shard rewards instead."
-                }
-            
-            elif item_type == "enhancer":
-                # Convert constellation enhancer to shard pack for new star system
-                boost = effects.get('constellation_boost', 1)
-                shard_amount = boost * 50  # Convert constellation boost to shard amount
-                
-                # For now, we'll give equivalent crystals since shard system needs integration
-                crystal_equivalent = shard_amount * 2  # Convert to crystals temporarily
-                await self.db.add_crystals(user_id, crystal_equivalent)
-                
-                return {
-                    'success': True,
-                    'description': f"⚡ Enhancer converted to **{crystal_equivalent} Sakura Crystals** for the new star system! Use these for more summons to collect shards."
-                }
-            
-            elif item_type in ["decoration", "frame", "title"]:
-                # Unlock cosmetic items
-                await self.db.unlock_cosmetic(user_id, item_type, effects)
-                cosmetic_name = effects.get('decoration_type') or effects.get('frame_type') or effects.get('title', 'cosmetic item')
-                return {
-                    'success': True,
-                    'description': f"✨ **{cosmetic_name.title()}** cosmetic unlocked! Check your profile to equip it."
-                }
-            
-            elif item_type == "utility":
-                # Unlock utility features
-                if effects.get('allows_naming'):
-                    await self.db.unlock_feature(user_id, 'waifu_naming')
-                    return {
-                        'success': True,
-                        'description': "🏷️ You can now give **custom names** to your waifus! This feature has been permanently unlocked."
-                    }
-                else:
-                    return {
-                        'success': False,
-                        'error': "Unknown utility item effect."
-                    }
-            
-            elif item_type == "upgrade":
-                # Apply permanent upgrades
-                if 'collection_limit_increase' in effects:
-                    increase = effects['collection_limit_increase']
-                    await self.db.increase_collection_limit(user_id, increase)
-                    return {
-                        'success': True,
-                        'description': f"📈 Your waifu collection limit has been permanently increased by **{increase}**!"
-                    }
-                else:
-                    return {
-                        'success': False,
-                        'error': "Unknown upgrade item effect."
-                    }
-            
             else:
                 return {
                     'success': False,
-                    'error': f"Unknown item type: **{item_type}**. This item cannot be used yet."
+                    'error': f"Item type **{item_type}** is not supported. Only guarantee tickets are currently available."
                 }
                 
         except Exception as e:
             self.logger.error(f"Error applying item effects: {e}")
             return {
                 'success': False,
-                'error': "Failed to apply item effects. Please try again later."
+                'error': "An error occurred while using the item. Please try again later."
             }
 
     async def _perform_guaranteed_roll(self, user_id: str, rarity: int, waifu_service) -> Optional[Dict[str, Any]]:

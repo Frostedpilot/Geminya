@@ -906,30 +906,5 @@ class DatabaseService:
             self.logger.error(f"Error using inventory item: {e}")
             return False
 
-    async def add_crystals(self, user_id: str, amount: int) -> bool:
-        """Add crystals to user account."""
-        return await self.update_user_crystals(user_id, amount)
-
-    async def unlock_feature(self, user_id: str, feature: str) -> bool:
-        """Unlock a feature for a user."""
-        # TODO: Implement feature unlocking system
-        self.logger.info(f"Unlocking feature '{feature}' for user {user_id}")
-        return True
-
-    async def increase_collection_limit(self, user_id: str, increase: int) -> bool:
-        """Increase user's collection limit."""
-        # TODO: Implement collection limit system
-        self.logger.info(f"Increasing collection limit by {increase} for user {user_id}")
-        return True
-
-    async def apply_user_boost(self, user_id: str, boost_type: str, multiplier: float, duration_hours: int) -> bool:
-        """Apply a temporary boost to user."""
-        # TODO: Implement boost system
-        self.logger.info(f"Applying {boost_type} boost ({multiplier}x) for {duration_hours}h to user {user_id}")
-        return True
-
-    async def unlock_cosmetic(self, user_id: str, cosmetic_type: str, effects: dict) -> bool:
-        """Unlock a cosmetic item for user."""
-        # TODO: Implement cosmetic system
-        self.logger.info(f"Unlocking {cosmetic_type} cosmetic for user {user_id}: {effects}")
-        return True
+    # Shop-related methods for guarantee tickets only
+    # Note: Other item type methods were removed to simplify the codebase

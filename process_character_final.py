@@ -39,62 +39,6 @@ class CharacterFinalProcessor:
             logger.error(f"❌ Error loading Excel file: {e}")
             return None
 
-    def apply_star_assignment_logic(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Apply the new star assignment logic based on favorites and series popularity."""
-        logger.info("⭐ Applying new star assignment logic...")
-        
-        df_result = df.copy()
-        
-        # Step 1: Characters with over 1000 favorites get 3★
-        high_fav_mask = df_result['favorites'] > 1000
-        df_result.loc[high_fav_mask, 'rarity'] = 3
-        high_fav_count = high_fav_mask.sum()
-        logger.info(f"  📊 Step 1: {high_fav_count} characters with >1000 favorites → 3★")
-        
-        # Step 2: Most favorite character in each series gets 3★
-        # Group by series and find the character with highest favorites in each series
-        series_max_idx = df_result.groupby('series')['favorites'].idxmax()
-        df_result.loc[series_max_idx, 'rarity'] = 3
-        
-        # Count how many new 3★ characters this created (excluding those already 3★ from step 1)
-        series_max_mask = df_result.index.isin(series_max_idx)
-        new_series_max_mask = series_max_mask & ~high_fav_mask
-        series_max_count = new_series_max_mask.sum()
-        logger.info(f"  📊 Step 2: {series_max_count} series favorites (not already 3★) → 3★")
-        
-        # Step 3: For remaining characters, assign based on percentile
-        # Find characters that are not yet 3★
-        not_three_star_mask = df_result['rarity'] != 3
-        remaining_chars = df_result[not_three_star_mask].copy()
-        
-        if len(remaining_chars) > 0:
-            # Calculate 50th percentile of favorites for remaining characters
-            percentile_50 = remaining_chars['favorites'].quantile(0.5)
-            logger.info(f"  📊 Step 3: 50th percentile of remaining characters: {percentile_50:.0f} favorites")
-            
-            # Lower 50% become 1★, upper 50% become 2★
-            lower_50_mask = (df_result['rarity'] != 3) & (df_result['favorites'] <= percentile_50)
-            upper_50_mask = (df_result['rarity'] != 3) & (df_result['favorites'] > percentile_50)
-            
-            df_result.loc[lower_50_mask, 'rarity'] = 1
-            df_result.loc[upper_50_mask, 'rarity'] = 2
-            
-            lower_count = lower_50_mask.sum()
-            upper_count = upper_50_mask.sum()
-            
-            logger.info(f"  📊 Step 3a: {lower_count} characters (≤{percentile_50:.0f} fav) → 1★")
-            logger.info(f"  📊 Step 3b: {upper_count} characters (>{percentile_50:.0f} fav) → 2★")
-        
-        # Final summary
-        final_dist = df_result['rarity'].value_counts().sort_index()
-        total_chars = len(df_result)
-        logger.info("✅ Final star distribution:")
-        for rarity, count in final_dist.items():
-            percentage = (count / total_chars) * 100
-            logger.info(f"  {rarity}★: {count} characters ({percentage:.1f}%)")
-        
-        return df_result
-
     def validate_and_clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """Validate and clean the DataFrame for the new star system."""
         logger.info("🧹 Validating and cleaning data...")
@@ -128,12 +72,17 @@ class CharacterFinalProcessor:
         df_clean = df_clean.dropna(subset=['rarity'])
         df_clean['rarity'] = df_clean['rarity'].astype(int)
         
-        # Apply star assignment logic based on favorites
-        logger.info("🌟 Applying comprehensive star assignment logic...")
+        # Use the rarity values from the input file (no automatic assignment)
+        logger.info("⭐ Using star ratings from input file (no automatic assignment)")
         df_clean['favorites'] = pd.to_numeric(df_clean['favorites'], errors='coerce').fillna(0).astype(int)
         
-        # Apply the new star assignment logic
-        df_clean = self.apply_star_assignment_logic(df_clean)
+        # Log the star distribution from the input file
+        star_dist = df_clean['rarity'].value_counts().sort_index()
+        total_chars = len(df_clean)
+        logger.info("📊 Star distribution from input file:")
+        for rarity, count in star_dist.items():
+            percentage = (count / total_chars) * 100
+            logger.info(f"  {rarity}★: {count} characters ({percentage:.1f}%)")
         
         # Validate rarity range for new star system (1-3★ only)
         invalid_rarity = df_clean[(df_clean['rarity'] < 1) | (df_clean['rarity'] > 3)]
