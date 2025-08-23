@@ -212,3 +212,5 @@ __marimo__/
 secrets.json
 
 mcp_servers/
+
+data/

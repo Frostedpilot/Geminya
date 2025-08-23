@@ -1,15 +1,31 @@
 # Geminya Discord Bot
 
-A modern Discord AI chatbot powered by Openrouter and MCP.
+A modern Discord AI chatbot with integrated waifu collection system, powered by OpenRouter and MCP.
 
 ## Features
 
-- Seemless AI model switch using OpenRouter API
-- State management for models, personas and conversation history for each server.
-- Support for MCP servers for better answers
-- Seperating of LLM models used for tools and LLM model used for roleplay for consistent intelligence and style.
-- SillyTavern-style prompt for personas for better roleplay (if needed)
-- Comprehensive logging and error handling
+- **AI Chatbot:** Seamless AI model switching using OpenRouter API
+- **Waifu Collection System:** Complete gacha mechanics with star progression
+- **State Management:** Models, personas and conversation history per server
+- **MCP Integration:** Model Context Protocol servers for enhanced responses
+- **Dual LLM Support:** Separate models for tools and roleplay for optimal performance
+- **Advanced Personas:** SillyTavern-style prompts for immersive roleplay
+- **Comprehensive Logging:** Detailed error handling and debugging support
+
+## Systems Overview
+
+### 🤖 **AI Chatbot System**
+- Multiple AI model support via OpenRouter
+- Context-aware conversations with memory
+- Personality system with configurable characters
+- Tool calling capabilities with specialized models
+
+### 🌸 **NWNL (No Waifu No Laifu) Academy**
+- **Gacha System:** 1★-3★ character summoning with pity system
+- **Star Progression:** Automatic upgrades to 4★-5★ using duplicate shards
+- **Currency System:** Sakura Crystals for summoning, Quartz for premium items
+- **Academy Management:** Ranks, daily rewards, collection statistics
+- **Data Pipeline:** MAL integration for authentic character data
 
 ## Quick Start
 
@@ -100,11 +116,33 @@ You can add some intructions for tool using in `lang/<language>.json`:
 
 ### Core Commands
 
-- `/change_model <model>` - Switch AI model for the personality role playing
+- `/change_model <model>` - Switch AI model for personality roleplay
 - `/change_persona <persona>` - Change the bot's personality
 - `/change_tool_model <model>` - Change model used for tool calling
 - `/help` - Show comprehensive help information
 - `/mcp_status` - Check MCP server status
+
+### 🌸 NWNL (Waifu Collection) Commands
+
+**Summoning & Collection:**
+- `/nwnl_summon` - Single waifu summon (10 crystals)
+- `/nwnl_multi_summon` - 10-pull summon (100 crystals, guaranteed 2★+ on 10th)
+- `/nwnl_collection [user]` - View waifu collection with star levels
+- `/nwnl_profile <waifu_name>` - View detailed waifu information
+
+**Academy Management:**
+- `/nwnl_status` - Check academy rank, currencies, and statistics
+- `/nwnl_daily` - Claim daily rewards
+- `/nwnl_rename_academy <name>` - Rename your academy
+- `/nwnl_reset_account` - Reset all academy data
+- `/nwnl_delete_account` - Permanently delete account
+
+**Shop System:**
+- `/nwnl_shop` - Browse guarantee tickets
+- `/nwnl_buy <item>` - Purchase guarantee tickets
+- `/nwnl_inventory` - View purchased items
+- `/nwnl_purchase_history` - View purchase history
+- `/nwnl_use_item <item>` - Use guarantee tickets
 
 ### Entertainment Commands
 
@@ -148,18 +186,25 @@ Check the `logs/` directory for:
 ├── secrets.json              # API keys and credentials
 ├── config/
 │   ├── config.py            # Configuration management
-│   └── models.py            # llm model infos
+│   └── models.py            # LLM model definitions
 ├── services/
 │   ├── container.py         # Dependency injection container
 │   ├── state_manager.py     # Bot state management
 │   ├── ai_service.py        # AI service
 │   ├── error_handler.py     # Error handling service
-│   ├── llm/                 # Abtract module to handle requests to different LLM Providers
+│   ├── database.py          # MySQL database service
+│   ├── waifu_service.py     # Waifu gacha and collection system
+│   ├── command_queue.py     # Command queuing for race condition prevention
+│   ├── mal_api.py           # MyAnimeList API integration
+│   ├── llm/                 # Abstract module for LLM providers
 │   └── mcp/                 # MCP client and server management
 ├── cogs/
 │   ├── base_command.py      # Base class for commands
 │   ├── base_event.py        # Base class for events
 │   ├── commands/            # Command implementations
+│   │   ├── waifu_summon.py  # NWNL summoning commands
+│   │   ├── waifu_academy.py # NWNL academy management
+│   │   ├── shop.py          # NWNL shop system
 │   │   ├── anime_image.py   # Anime image search
 │   │   ├── guess_anime.py   # Anime guessing game
 │   │   ├── saucenao.py      # Image source finding
@@ -176,7 +221,16 @@ Check the `logs/` directory for:
 ├── lang/
 │   └── en.json              # Character personalities and responses
 ├── mcp_servers/             # Local MCP servers
-└── logs/                    # Application logs
+├── data/                    # Character data files (CSV, Excel)
+├── docs/                    # Documentation
+│   └── WAIFU.md            # Complete NWNL system documentation
+├── logs/                    # Application logs
+├── pull_from_mal.py         # MAL data extraction script
+├── character_edit.py        # Character data processing
+├── process_character_final.py # Final character data processing
+├── upload_to_mysql.py       # Database upload script
+├── initialize_shop.py       # Shop initialization
+└── reset_*.py               # Database reset utilities
 ```
 
 ## Service Architecture
