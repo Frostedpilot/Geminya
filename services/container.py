@@ -13,6 +13,9 @@ from services.llm import LLMManager
 from services.ai_service import AIService
 from services.error_handler import ErrorHandler
 from services.mcp import MCPClientManager
+from services.database import DatabaseService
+from services.waifu_service import WaifuService
+from services.command_queue import CommandQueueService
 
 
 class ServiceContainer:
@@ -57,6 +60,11 @@ class ServiceContainer:
             self.logger_manager.get_ai_logger(),
         )
 
+        # Initialize Waifu Academy services
+        self.database = DatabaseService(config)
+        self.waifu_service = WaifuService(self.database)
+        self.command_queue = CommandQueueService()
+
         self.logger.info("Service container created")
 
     async def initialize_all(self) -> None:
@@ -66,6 +74,9 @@ class ServiceContainer:
         try:
             await self.state_manager.initialize()
             await self.llm_manager.initialize()
+
+            # Initialize Waifu Academy services
+            await self.waifu_service.initialize()
 
             # MCP servers will connect automatically when needed
             self.logger.info(
@@ -84,6 +95,10 @@ class ServiceContainer:
         self.logger.info("Cleaning up all services...")
 
         try:
+            if hasattr(self, "command_queue"):
+                await self.command_queue.shutdown()
+            if hasattr(self, "waifu_service"):
+                await self.waifu_service.close()
             if hasattr(self, "llm_manager"):
                 await self.llm_manager.cleanup()
             if hasattr(self, "mcp_client"):
@@ -118,3 +133,11 @@ class ServiceContainer:
     def get_ai_service(self) -> AIService:
         """Get the AI service."""
         return self.ai_service
+
+    def get_waifu_service(self) -> WaifuService:
+        """Get the waifu service."""
+        return self.waifu_service
+
+    def get_command_queue(self) -> CommandQueueService:
+        """Get the command queue service."""
+        return self.command_queue
