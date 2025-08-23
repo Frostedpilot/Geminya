@@ -1,10 +1,11 @@
 import discord
 import re
 from discord.ext import commands
+from discord import Embed, File
 
 from cogs.base_event import BaseEventHandler
 from services.container import ServiceContainer
-from utils.utils import split_response
+from utils.utils import split_response, download_images_from_urls
 
 
 class OnMessage(BaseEventHandler):
@@ -200,16 +201,81 @@ class OnMessage(BaseEventHandler):
                     )
 
                 # Split response if too long
-                chunks = split_response(response, self.config.max_response_length)
+                chunks, links = split_response(
+                    response, self.config.max_response_length
+                )
 
                 self.logger.info(
                     f"Sending response to {message.author} in {len(chunks)} chunk(s)"
                 )
 
+                # Pre-download images if any links found
+                downloaded_files = []
+                if links:
+                    self.logger.debug(f"Found {len(links)} image links: {links}")
+
+                    try:
+                        # Download images from URLs
+                        downloaded_images = await download_images_from_urls(
+                            list(set(links))
+                        )
+
+                        if downloaded_images:
+                            # Create File objects from downloaded images
+                            for buffer, filename in downloaded_images:
+                                downloaded_files.append(File(buffer, filename=filename))
+
+                            self.logger.debug(
+                                f"Successfully downloaded {len(downloaded_files)} images"
+                            )
+                        else:
+                            self.logger.warning(
+                                "Failed to download any images from the provided URLs"
+                            )
+
+                    except Exception as img_error:
+                        self.logger.error(f"Error downloading images: {img_error}")
+
                 # Send response chunks
-                for chunk in chunks:
+                for i, chunk in enumerate(chunks):
                     if chunk.strip():
-                        await message.channel.send(chunk)
+                        # Attach images to the last chunk
+                        if i == len(chunks) - 1 and downloaded_files:
+                            await message.channel.send(
+                                chunk, files=downloaded_files, suppress_embeds=True
+                            )
+                            self.logger.debug(
+                                f"Sent last chunk with {len(downloaded_files)} attached images"
+                            )
+                        else:
+                            await message.channel.send(chunk, suppress_embeds=True)
+
+                # If no chunks were sent but we have images, send them separately
+                if not any(chunk.strip() for chunk in chunks) and downloaded_files:
+                    await message.channel.send(files=downloaded_files)
+
+                # Fallback for images that couldn't be downloaded
+                if links and not downloaded_files:
+                    try:
+                        # Fallback: try sending links as embeds first
+                        embeds = []
+                        for link in list(set(links))[:10]:  # Limit to 10 embeds
+                            embeds.append(Embed().set_image(url=link))
+
+                        if embeds:
+                            await message.channel.send(embeds=embeds)
+                            self.logger.debug(
+                                f"Sent {len(embeds)} images as embeds (fallback)"
+                            )
+                    except Exception as embed_error:
+                        self.logger.error(f"Error sending embeds: {embed_error}")
+                        # Final fallback: send links as text
+                        links_text = "\n".join(
+                            f"🖼️ {link}" for link in links[:5]
+                        )  # Limit to 5 links
+                        await message.channel.send(
+                            f"Found images (download failed):\n{links_text}"
+                        )
 
                 self.message_logger.info(
                     f"Response sent to {message.author} ({len(response)} chars, {len(chunks)} chunks)"

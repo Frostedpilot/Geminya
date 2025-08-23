@@ -179,6 +179,12 @@ class Config:
                     "GOOGLE_SEARCH_ENGINE_ID": "",  # Will be set in __post_init__
                 },
             },
+            "fetch-mcp": {
+                "command": "python",
+                "args": ["-m", "mcp_server_fetch", "--ignore-robots-txt"],
+                "env": None,
+                "blacklist": [],
+            },
         }
     )
 
