@@ -92,7 +92,7 @@ class AIService:
         lore_book = lore_books.get(persona_name) if lore_books else None
 
         # Build prompt (extracted from LLM Manager)
-        prompt = self._build_prompt(message, history, lore_book, use_tools=False)
+        prompt = self._build_prompt(message, history, lore_book)
 
         # Create LLM request
         request = LLMRequest(
@@ -143,7 +143,7 @@ class AIService:
         )
 
         core_prompt = self._build_augment_prompt(
-            message, tool_response.content, lore_book
+            message, tool_response.content, lore_book, history
         )
 
         # Use core model for final response generation
@@ -165,9 +165,7 @@ class AIService:
 
         return pre_message + core_response.content.strip()
 
-    def _build_prompt(
-        self, message: Message, history, lore_book, use_tools: bool = True
-    ) -> str:
+    def _build_prompt(self, message: Message, history, lore_book) -> str:
         """Build the complete prompt for AI generation."""
         # This is copied from LLM Manager but simplified for tools
         author = message.author
@@ -212,7 +210,7 @@ class AIService:
         authors = {author_name}
         if history:
             for entry in history:
-                authors.add(entry["name"])
+                authors.add(entry["nick"] if entry["nick"] else entry["name"])
 
         # Get persona name
         server_id = str(message.guild.id) if message.guild else "default"
@@ -228,7 +226,6 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
 [Start a new group chat. Group members: {persona_name}, {', '.join(authors)}]
 {history_prompt}
 [Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly. Do not start with "From {persona_name}:" or similar.]
-{"[You have access to tools, so leverage them as much as possible. You can use more than one tool at a time, and you can iteratively call them up to {self.config.max_tool_iterations} times with consecutive messages before giving answer, so plan accordingly. For tasks you deemed as hard, start with the sequential-thinking tool.]" if use_tools else ""}
 """.replace(
             "{{user}}", author_name
         )
@@ -243,6 +240,8 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
         author_name = author.name
         if author.nick:
             author_name = f"{author.nick} ({author.name})"
+
+        message_content = message.content
 
         # Build history section
         history_prompt = ""
@@ -273,7 +272,7 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
         authors = {author_name}
         if history:
             for entry in history:
-                authors.add(entry["name"])
+                authors.add(entry["nick"] if entry["nick"] else entry["name"])
 
         # Get persona name
         server_id = str(message.guild.id) if message.guild else "default"
@@ -283,15 +282,43 @@ Write {persona_name}'s next reply in a fictional chat between participants and {
 
         # Build final prompt
         final_prompt = f"""
-Write {persona_name}'s next reply in a fictional chat between participants and {author_name}.
-[Write the next reply only as {persona_name}. Only use information related to {author_name}'s message and only answer {author_name} directly.]
-[You have access to tools, so leverage them as much as possible. You can use more than one tool at a time, and you can iteratively call them up to {self.config.max_tool_iterations} times with consecutive messages before giving answer, so plan accordingly. For tasks you deem as hard, start with the sequential-thinking tool.]
-Here are some tips that maybe relevant to the request:
-{tool_prompt}
-[Based on the results from tool calls, make your answer as detailed as possible, including information not exactly relevant to {{user}}'s message.]
+### **System Directive: Research & Synthesis Engine**
+
+You are a specialized information gathering engine. Your function is to analyze a request, conduct exhaustive iterative research using tools, and output a structured, neutral data report. You do not chat or have a persona. Your only output is the final report.
+
 ---
-[Start a new group chat. Group members: {persona_name}, {', '.join(authors)}]
-{history_prompt}
+
+### **Operational Protocol**
+
+*   Identify the core questions in the `[User request]` below.
+*   Create a multi-step research plan that anticipates follow-up questions.
+*   **Immediately execute your tool call(s) to answer it.**
+*   Execute your plan with tool calls.
+*   Review results, identify gaps, and refine your plan with new calls.
+*   Repeat this `Execute -> Review -> Refine` loop up to `{self.config.max_tool_iterations}` times until the research is comprehensive.
+*   **Tool Usage Tips:** 
+```
+{tool_prompt}
+```
+
+**4. Synthesize Report:**
+*   Consolidate all findings into a single Markdown report. This report is your ONLY output.
+*   **Format:** Use a neutral tone with headers (`##`), bullets (`*`), and bolding (`**`) for clarity.
+
+---
+
+### **Input Data**
+
+*   **Request from:** `{author_name}`
+*   **Conversation History:**
+    ```
+    {history_prompt}
+    ```
+
+### **User Request**
+{author_name}: {message_content}
+
+**Task:** Execute your protocol to fulfill the information request. Produce the final Markdown report.
 """.replace(
             "{{user}}", author_name
         )
@@ -299,7 +326,7 @@ Here are some tips that maybe relevant to the request:
         return final_prompt.strip()
 
     def _build_augment_prompt(
-        self, message: Message, tool_response_content: str, lore_book
+        self, message: Message, tool_response_content: str, lore_book, history
     ):
         """Build the augment prompt for AI generation."""
         """Build the complete prompt for AI generation."""
@@ -308,6 +335,15 @@ Here are some tips that maybe relevant to the request:
         author_name = author.name
         if author.nick:
             author_name = f"{author.nick} ({author.name})"
+
+        # Build history section
+        history_prompt = ""
+        if history:
+            for entry in history:
+                nick_part = f" (aka {entry['nick']})" if entry["nick"] else ""
+                line = f"From: {entry['name']}{nick_part}\n{entry['content']}\n\n"
+                history_prompt += line
+        history_prompt = history_prompt.strip()
 
         # Get personality prompt
         personality_prompt = self._get_personality_prompt(message)
@@ -327,6 +363,11 @@ Here are some tips that maybe relevant to the request:
                                 f"Added lore example from category: {category_name}"
                             )
                             break
+        # Collect all participants
+        authors = {author_name}
+        if history:
+            for entry in history:
+                authors.add(entry["nick"] if entry["nick"] else entry["name"])
 
         # Get persona name
         server_id = str(message.guild.id) if message.guild else "default"
@@ -336,14 +377,58 @@ Here are some tips that maybe relevant to the request:
 
         # Build final prompt
         final_prompt = f"""
-Rewrite the following message in {persona_name}'s style. Try to retain the message context and meaning while incorporating relevant personality traits.
+### **Your Mission: Respond in Character to the Conversation**
+
+**Objective:** Your task is to write the next reply for `{persona_name}` in an ongoing group chat. Your response must be a natural continuation of the conversation, directly addressing `{author_name}`'s last message, and seamlessly weaving in the new information provided below. The final output must be in-character and contain only the message text.
+
 ---
-[{persona_name}'s description]
-{personality_prompt}
-{lore_prompt}
+
+### **1. Situational Awareness: The Conversation So Far**
+
+This is the most important context. Understand the flow and tone before you write.
+
+*   **Group Members:** `{persona_name}` (You), `{', '.join(authors)}`
+*   **You are responding to:** `{author_name}`
+*   **Chat History:**
+    ```
+    {history_prompt}
+    ```
+
 ---
-[The message to rewrite]
+
+### **2. Persona Profile: Get into Character**
+
+Now that you understand the situation, adopt your persona.
+
+*   **Who You Are:** `{persona_name}`
+*   **Core Personality & Vibe:**
+    ```
+    {personality_prompt}
+    {lore_prompt}
+    ```
+
+---
+
+### **3. Raw Material: The New Information to Introduce**
+
+This is the factual content you must work into your reply.
+
+```
 {tool_response_content}
+```
+
+---
+
+### **4. The Core Task: How to Write Your Response**
+
+Follow these rules to create an authentic and relevant reply:
+
+*   **Context First, Content Second:** Your primary goal is to respond to `{author_name}`'s last message. Use the "Raw Material" as the *substance* of your answer, but let the "Chat History" dictate the tone, style, and direction of your reply.
+*   **Internalize, Don't Just Report:** Imagine how `{persona_name}` would process the "Raw Material" in order to answer the question or comment from the chat. How would they phrase it for *this specific audience*?
+*   **Maintain Factual Integrity:** While the delivery is creative, the essential facts from the "Raw Material" must remain accurate.
+*   **Final Output Only:** Your final response should ONLY be the message from `{persona_name}`. Do not include any out-of-character explanations.
+
+**Begin your response now:**
 """.replace(
             "{{user}}", author_name
         )
