@@ -736,7 +736,7 @@ class ShopCog(BaseCommand):
             
             # Return the result data with new star system information
             return {
-                'id': selected_waifu['id'],
+                'waifu_id': selected_waifu['waifu_id'],
                 'name': selected_waifu['name'],
                 'rarity': selected_waifu['rarity'],
                 'series': selected_waifu.get('series', 'Unknown'),  # Use 'series' instead of 'source'

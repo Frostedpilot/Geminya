@@ -42,30 +42,27 @@ class CharacterFinalProcessor:
     def validate_and_clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
         """Validate and clean the DataFrame for the new star system."""
         logger.info("🧹 Validating and cleaning data...")
-        
         original_count = len(df)
-        
         # Required columns for upload_to_mysql.py compatibility
-        required_columns = ['mal_id', 'name', 'series', 'genre', 'rarity', 'image_url', 'favorites']
-        
+        required_columns = ['waifu_id', 'name', 'series', 'genre', 'rarity', 'image_url', 'favorites']
+        # If 'waifu_id' is not present but 'mal_id' is, rename it
+        if 'waifu_id' not in df.columns and 'mal_id' in df.columns:
+            df = df.rename(columns={"mal_id": "waifu_id"})
         # Check if all required columns exist
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
             logger.error(f"❌ Missing required columns: {missing_columns}")
             logger.info(f"Available columns: {list(df.columns)}")
             return pd.DataFrame()
-        
         # Select only the required columns
         df_clean = df[required_columns].copy()
-        
         # Clean and validate data
         # Remove rows with missing essential data
-        df_clean = df_clean.dropna(subset=['mal_id', 'name', 'rarity'])
-        
-        # Ensure mal_id is integer
-        df_clean['mal_id'] = pd.to_numeric(df_clean['mal_id'], errors='coerce')
-        df_clean = df_clean.dropna(subset=['mal_id'])
-        df_clean['mal_id'] = df_clean['mal_id'].astype(int)
+        df_clean = df_clean.dropna(subset=['waifu_id', 'name', 'rarity'])
+        # Ensure waifu_id is integer
+        df_clean['waifu_id'] = pd.to_numeric(df_clean['waifu_id'], errors='coerce')
+        df_clean = df_clean.dropna(subset=['waifu_id'])
+        df_clean['waifu_id'] = df_clean['waifu_id'].astype(int)
         
         # Ensure rarity is integer and within valid range (1-3 for new system)
         df_clean['rarity'] = pd.to_numeric(df_clean['rarity'], errors='coerce')
@@ -96,11 +93,11 @@ class CharacterFinalProcessor:
         df_clean['genre'] = df_clean['genre'].fillna('Anime')
         df_clean['image_url'] = df_clean['image_url'].fillna('')
         
-        # Remove duplicates based on mal_id
-        duplicate_count = df_clean.duplicated(subset=['mal_id']).sum()
+        # Remove duplicates based on waifu_id
+        duplicate_count = df_clean.duplicated(subset=['waifu_id']).sum()
         if duplicate_count > 0:
-            logger.warning(f"⚠️  Found {duplicate_count} duplicate mal_ids, keeping first occurrence")
-            df_clean = df_clean.drop_duplicates(subset=['mal_id'], keep='first')
+            logger.warning(f"⚠️  Found {duplicate_count} duplicate waifu_ids, keeping first occurrence")
+            df_clean = df_clean.drop_duplicates(subset=['waifu_id'], keep='first')
         
         cleaned_count = len(df_clean)
         removed_count = original_count - cleaned_count
@@ -149,7 +146,7 @@ class CharacterFinalProcessor:
             logger.info(f"💾 Saving final data to {self.output_file}")
             
             # Ensure columns are in the expected order for upload_to_mysql.py
-            column_order = ['mal_id', 'name', 'series', 'genre', 'rarity', 'image_url', 'favorites']
+            column_order = ['waifu_id', 'name', 'series', 'genre', 'rarity', 'image_url', 'favorites']
             df_final = df[column_order]
             
             # Save to CSV
@@ -216,7 +213,7 @@ def main():
     print("  ✅ Compatible with upload_to_mysql.py")
     print("")
     print("Required Excel columns:")
-    print("  - mal_id, name, series, genre, rarity, image_url, favorites")
+    print("  - waifu_id, name, series, genre, rarity, image_url, favorites")
     print("="*70)
     
     if success:

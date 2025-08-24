@@ -40,31 +40,27 @@ async def run_database_reset():
         print("❌ Reset cancelled.")
         return False
     
+    print("\n🔄 Starting database reset...")
     try:
-        print("\n🔄 Starting database reset...")
-        
         # Initialize database service directly
         print("\n📊 Initializing database connection...")
         config = Config.create()
         config.set_mode("DEV")
-        
         db = DatabaseService(config)
         await db.initialize()
-        
         # Drop and recreate all tables
         print("\n🗑️ Dropping all database tables...")
         await drop_all_tables(db)
-        
+        # Close and re-initialize the database connection to clear any lingering state
+        await db.close()
+        db = DatabaseService(config)
+        await db.initialize()
         print("\n🔧 Recreating database schema...")
         await recreate_schema(db)
-        
         await db.close()
-        
         print("\n✅ Database reset complete!")
         print("🔧 Schema has been recreated and is ready for use.")
-        
         return True
-        
     except Exception as e:
         logger.error(f"❌ Error during database reset: {e}")
         print(f"\n❌ Reset failed: {e}")

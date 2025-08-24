@@ -32,10 +32,10 @@ class CharacterEditor:
             with open(self.anime_file, 'r', encoding='utf-8', newline='') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    mal_id = row.get("mal_id")
+                    waifu_id = row.get("mal_id")
                     title = row.get("title", "Unknown Series")
-                    if mal_id:
-                        anime_lookup[mal_id] = title
+                    if waifu_id:
+                        anime_lookup[waifu_id] = title
             logger.info(f"Loaded {len(anime_lookup)} anime titles for series lookup")
         except FileNotFoundError:
             logger.warning(f"Anime file {self.anime_file} not found - series names will use MAL IDs")
@@ -116,17 +116,14 @@ class CharacterEditor:
 
     def process_character(self, character: Dict[str, Any]) -> Dict[str, Any]:
         """Process a single character for database insertion."""
-        
         # Get series name from anime lookup
         series_mal_id = character.get("series_mal_id", "")
         series_name = self.anime_lookup.get(series_mal_id, f"Unknown Series (MAL ID: {series_mal_id})")
-        
         # Calculate rarity based on favorites
         rarity = self.determine_rarity(character)
-        
         # Only keep essential columns for the database
         processed = {
-            "mal_id": character.get("mal_id", ""),
+            "waifu_id": character.get("mal_id", ""),
             "name": character.get("name", ""),
             "series": series_name,
             "genre": "Anime" if character.get("series_type") == "anime" else "Manga",
@@ -134,7 +131,6 @@ class CharacterEditor:
             "image_url": character.get("image_url", ""),
             "favorites": character.get("favorites", "0"),
         }
-        
         return processed
 
     def determine_rarity(self, character: Dict[str, Any]) -> int:
@@ -157,7 +153,7 @@ class CharacterEditor:
             return
 
         fieldnames = [
-            "mal_id", "name", "series", "genre", "rarity", "image_url", "favorites"
+            "waifu_id", "name", "series", "genre", "rarity", "image_url", "favorites"
         ]
 
         try:
@@ -235,7 +231,7 @@ if __name__ == "__main__":
     print("="*60)
     print("Processed characters from data/characters_mal.csv")
     print("Output: data/character_sql.csv with essential columns:")
-    print("  - mal_id, name, series, genre, rarity, image_url, favorites")
+    print("  - waifu_id, name, series, genre, rarity, image_url, favorites")
     print("")
     print("Features:")
     print("  ✅ Drops useless columns (nicknames, about, etc.)")

@@ -11,6 +11,43 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+    async def add_waifus_to_user_batch(self, discord_id: str, waifu_ids: List[int]) -> List[Dict[str, Any]]:
+        """Batch add multiple waifus to a user's collection, skipping already-owned waifus. Returns full waifu+user_waifu data for all added."""
+        if not waifu_ids:
+            return []
+        async with self.connection_pool.acquire() as conn:
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                raise ValueError(f"User {discord_id} not found")
+            user_id = user_row["id"]
+            # Find already-owned waifus
+            owned_rows = await conn.fetch(
+                "SELECT waifu_id FROM user_waifus WHERE user_id = $1 AND waifu_id = ANY($2::int[])",
+                user_id, waifu_ids
+            )
+            owned_ids = {row["waifu_id"] for row in owned_rows}
+            to_add = [wid for wid in waifu_ids if wid not in owned_ids]
+            results = []
+            if to_add:
+                # Batch insert new waifus
+                now = datetime.now()
+                values = [(user_id, wid, now) for wid in to_add]
+                await conn.executemany(
+                    "INSERT INTO user_waifus (user_id, waifu_id, obtained_at) VALUES ($1, $2, $3)",
+                    values
+                )
+            # Fetch all user_waifu+waifu data for the requested waifu_ids
+            all_ids = list(set(waifu_ids))
+            rows = await conn.fetch(
+                """
+                SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id
+                FROM user_waifus uw
+                JOIN waifus w ON uw.waifu_id = w.waifu_id
+                WHERE uw.user_id = $1 AND uw.waifu_id = ANY($2::int[])
+                """,
+                user_id, all_ids
+            )
+            return [dict(row) for row in rows]
     """Service for managing the Waifu Academy database with PostgreSQL only."""
 
     def __init__(self, config: "Config"):
@@ -71,18 +108,17 @@ class DatabaseService:
             """
         )
 
-        # Waifus table
+        # Waifus table (waifu_id is now the primary key)
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS waifus (
-                id SERIAL PRIMARY KEY,
+                waifu_id INTEGER PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 series VARCHAR(255) NOT NULL,
                 genre VARCHAR(100) NOT NULL,
                 element VARCHAR(50),
                 rarity INTEGER NOT NULL CHECK (rarity >= 1 AND rarity <= 3),
                 image_url TEXT,
-                mal_id INTEGER,
                 base_stats TEXT,
                 birthday DATE,
                 favorite_gifts TEXT,
@@ -94,13 +130,13 @@ class DatabaseService:
             """
         )
 
-        # User waifus table (collection) - Updated for new star system
+        # User waifus table (collection) - Updated for new star system, references waifu_id
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS user_waifus (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                waifu_id INTEGER NOT NULL REFERENCES waifus(id) ON DELETE CASCADE,
+                waifu_id INTEGER NOT NULL REFERENCES waifus(waifu_id) ON DELETE CASCADE,
                 bond_level INTEGER DEFAULT 1,
                 constellation_level INTEGER DEFAULT 0,
                 current_star_level INTEGER DEFAULT NULL,
@@ -124,13 +160,13 @@ class DatabaseService:
             CREATE TABLE IF NOT EXISTS conversations (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                waifu_id INTEGER NOT NULL REFERENCES waifus(id) ON DELETE CASCADE,
+                waifu_id INTEGER NOT NULL REFERENCES waifus(waifu_id) ON DELETE CASCADE,
                 user_message TEXT NOT NULL,
                 waifu_response TEXT NOT NULL,
                 mood_change INTEGER DEFAULT 0,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
-            CREATE INDEX IF NOT EXISTS idx_user_waifu ON conversations(user_id, waifu_id);
+            CREATE INDEX IF NOT EXISTS idx_user_waifu_id ON conversations(user_id, waifu_id);
             """
         )
 
@@ -282,10 +318,10 @@ class DatabaseService:
             row = await conn.fetchrow(
                 """
                 INSERT INTO waifus (
-                    name, series, genre, element, rarity, image_url, mal_id,
+                    name, series, genre, element, rarity, image_url, waifu_id,
                     base_stats, birthday, favorite_gifts, special_dialogue
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                RETURNING id
+                RETURNING waifu_id
                 """,
                 waifu_data["name"],
                 waifu_data["series"],
@@ -293,18 +329,18 @@ class DatabaseService:
                 waifu_data.get("element"),
                 waifu_data["rarity"],
                 waifu_data.get("image_url"),
-                waifu_data.get("mal_id"),
+                waifu_data.get("waifu_id"),
                 json.dumps(waifu_data.get("base_stats", {})),
                 waifu_data.get("birthday"),
                 json.dumps(waifu_data.get("favorite_gifts", [])),
                 json.dumps(waifu_data.get("special_dialogue", {})),
             )
-            return row["id"] if row else 0
+            return row["waifu_id"] if row else 0
 
-    async def get_waifu_by_mal_id(self, mal_id: int) -> Optional[Dict[str, Any]]:
-        """Get a waifu by MAL ID."""
+    async def get_waifu_by_waifu_id(self, waifu_id: int) -> Optional[Dict[str, Any]]:
+        """Get a waifu by waifu_id."""
         async with self.connection_pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM waifus WHERE mal_id = $1", mal_id)
+            row = await conn.fetchrow("SELECT * FROM waifus WHERE waifu_id = $1", waifu_id)
             if row:
                 return dict(row)
             return None
@@ -328,13 +364,13 @@ class DatabaseService:
             return [dict(row) for row in rows]
 
     async def get_user_collection(self, discord_id: str) -> List[Dict[str, Any]]:
-        """Get all waifus in a user's collection (PostgreSQL)."""
+        """Get all waifus in a user's collection (PostgreSQL), using waifu_id as identifier."""
         async with self.connection_pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT uw.*, w.name, w.series, w.rarity, w.image_url, u.discord_id
+                SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id, u.discord_id
                 FROM user_waifus uw
-                JOIN waifus w ON uw.waifu_id = w.id
+                JOIN waifus w ON uw.waifu_id = w.waifu_id
                 JOIN users u ON uw.user_id = u.id
                 WHERE u.discord_id = $1
                 ORDER BY uw.obtained_at DESC
@@ -344,7 +380,7 @@ class DatabaseService:
             return [dict(row) for row in rows]
 
     async def add_waifu_to_user(self, discord_id: str, waifu_id: int) -> Dict[str, Any]:
-        """Add a waifu to a user's collection, handling constellation system (PostgreSQL)."""
+        """Add a waifu to a user's collection, handling constellation system (PostgreSQL), using waifu_id as identifier."""
         async with self.connection_pool.acquire() as conn:
             user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
             if not user_row:
@@ -357,9 +393,9 @@ class DatabaseService:
             if existing:
                 row = await conn.fetchrow(
                     """
-                    SELECT uw.*, w.name, w.series, w.rarity, w.image_url
+                    SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id
                     FROM user_waifus uw
-                    JOIN waifus w ON uw.waifu_id = w.id
+                    JOIN waifus w ON uw.waifu_id = w.waifu_id
                     WHERE uw.id = $1
                     """,
                     existing["id"]
@@ -377,9 +413,9 @@ class DatabaseService:
                 new_id = new_id_row["id"] if new_id_row else None
                 row = await conn.fetchrow(
                     """
-                    SELECT uw.*, w.name, w.series, w.rarity, w.image_url
+                    SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id
                     FROM user_waifus uw
-                    JOIN waifus w ON uw.waifu_id = w.id
+                    JOIN waifus w ON uw.waifu_id = w.waifu_id
                     WHERE uw.id = $1
                     """,
                     new_id

@@ -630,7 +630,7 @@ class WaifuSummonCog(BaseCommand):
 
             # Check if user owns this waifu
             collection = await self.services.database.get_user_collection(str(ctx.author.id))
-            user_waifu = next((w for w in collection if w["waifu_id"] == waifu["id"]), None)
+            user_waifu = next((w for w in collection if w["waifu_id"] == waifu["waifu_id"]), None)
 
             # Create profile embed with updated star system colors
             rarity_colors = {
@@ -667,7 +667,7 @@ class WaifuSummonCog(BaseCommand):
                 current_star = user_waifu.get("current_star_level", waifu["rarity"])
                 
                 # Get shards from WaifuService (not database field)
-                shards = await self.services.waifu_service.get_character_shards(str(ctx.author.id), waifu["id"])
+                shards = await self.services.waifu_service.get_character_shards(str(ctx.author.id), waifu["waifu_id"])
                 
                 is_max_star = current_star >= 5  # Max 5★ system
 
@@ -750,9 +750,9 @@ class WaifuSummonCog(BaseCommand):
 
             # Updated footer with more relevant commands
             if user_waifu:
-                footer_text = f"ID: {waifu['id']} • Auto upgrades with shards • /nwnl_collection to view all"
+                footer_text = f"ID: {waifu['waifu_id']} • Auto upgrades with shards • /nwnl_collection to view all"
             else:
-                footer_text = f"ID: {waifu['id']} • Use /nwnl_summon to try collecting • /nwnl_collection to view owned"
+                footer_text = f"ID: {waifu['waifu_id']} • Use /nwnl_summon to try collecting • /nwnl_collection to view owned"
             
             embed.set_footer(text=footer_text)
 

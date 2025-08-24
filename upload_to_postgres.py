@@ -6,7 +6,7 @@ import csv
 import json
 import sys
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import logging
 
 # Add current directory to path
@@ -67,29 +67,33 @@ class PostgresUploader:
         
         return characters
 
-    def process_character_for_database(self, character: Dict[str, Any]) -> Dict[str, Any]:
+    def process_character_for_database(self, character: Dict[str, Any]) -> 'Optional[Dict[str, Any]]':
         """Process character data for database insertion."""
-        
-        # The character_edit.py now provides clean data, we just need to add some database-specific fields
-        # Ensure mal_id is an int or None
-        mal_id_raw = character.get("mal_id", "")
+        waifu_id_raw = character.get("waifu_id", "")
         try:
-            mal_id = int(mal_id_raw) if mal_id_raw else None
+            waifu_id = int(waifu_id_raw) if waifu_id_raw else None
         except (ValueError, TypeError):
-            mal_id = None
+            waifu_id = None
+        if not waifu_id:
+            logger.warning(f"Skipping character with missing or invalid waifu_id: {character.get('name', 'Unknown')}")
+            return None
+        try:
+            rarity = int(character.get("rarity", 1))
+        except (ValueError, TypeError):
+            rarity = 1
         char_data = {
             "name": character.get("name", ""),
             "series": character.get("series", "Unknown Series"),
             "genre": character.get("genre", "Anime"),
             "element": self.determine_element(character),
-            "rarity": int(character.get("rarity", 1)),  # Use rarity from character_edit.py
+            "rarity": rarity,
             "image_url": character.get("image_url", ""),
-            "mal_id": mal_id,
+            "waifu_id": waifu_id,
             "base_stats": self.generate_base_stats(character),
             "birthday": None,  # Use None for SQL NULL in DATE column
-            "favorite_gifts": [],  # Placeholder - can be enhanced later
+            "favorite_gifts": self.generate_favorite_gifts(character),
+            "special_dialogue": {},
         }
-        
         return char_data
 
     def determine_element(self, character: Dict[str, Any]) -> str:
@@ -141,7 +145,7 @@ class PostgresUploader:
             "attack": base + popularity_bonus + (hash(character.get("name", "")) % 21 - 10),
             "defense": base + popularity_bonus + (hash(character.get("name", "")[::-1]) % 21 - 10),
             "speed": base + popularity_bonus + (hash(character.get("about", "")[:10]) % 21 - 10),
-            "hp": base + popularity_bonus + (hash(character.get("mal_id", "0")) % 21 - 10)
+            "hp": base + popularity_bonus + (hash(character.get("waifu_id", "0")) % 21 - 10)
         }
 
     def generate_favorite_gifts(self, character: Dict[str, Any]) -> List[str]:
@@ -198,25 +202,31 @@ class PostgresUploader:
             failed_uploads = 0
 
             for i, character in enumerate(characters, 1):
+                char_name = character.get("name", "Unknown")
                 try:
-                    char_name = character.get("name", "Unknown")
                     logger.info(f"Uploading character {i}/{len(characters)}: {char_name}")
-
-                    # Check if character already exists
-                    mal_id = int(character.get("mal_id", 0))
-                    if mal_id:
-                        existing = await self.db_service.get_waifu_by_mal_id(mal_id)
-                        if existing:
-                            logger.info(f"  Character {char_name} already exists in database (MAL ID: {mal_id})")
-                            continue
 
                     # Prepare character data for database
                     char_data = self.process_character_for_database(character)
+                    if not char_data:
+                        failed_uploads += 1
+                        continue
+
+                    waifu_id = char_data["waifu_id"]
+                    # Check db_service is initialized
+                    if not self.db_service:
+                        logger.error("Database service is not initialized!")
+                        failed_uploads += 1
+                        continue
+                    # Check if character already exists
+                    existing = await self.db_service.get_waifu_by_waifu_id(waifu_id)
+                    if existing:
+                        logger.info(f"  Character {char_name} already exists in database (WAIFU ID: {waifu_id})")
+                        continue
 
                     # Add to database
                     await self.db_service.add_waifu(char_data)
                     successful_uploads += 1
-                    
                     logger.info(f"  ✅ Successfully uploaded {char_name}")
 
                 except Exception as e:

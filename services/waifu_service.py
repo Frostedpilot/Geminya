@@ -13,6 +13,7 @@ from services.database import DatabaseService
 
 
 class WaifuService:
+    # ... existing code ...
     """Service for managing waifu gacha system with star upgrades."""
 
     # NEW GACHA RATES (1-3 stars only)
@@ -52,16 +53,55 @@ class WaifuService:
     def __init__(self, database: DatabaseService):
         self.db = database
         self.logger = logging.getLogger(__name__)
+        self._waifu_list = []  # In-memory waifu list from CSV
+
+    def _load_waifus_from_csv(self, csv_path: str):
+        import csv
+        waifus = []
+        try:
+            with open(csv_path, encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Convert numeric fields
+                    valid = True
+                    # Only waifu_id is required as unique identifier
+                    if 'waifu_id' in row and row['waifu_id'] != '':
+                        try:
+                            row['waifu_id'] = int(row['waifu_id'])
+                        except Exception:
+                            row['waifu_id'] = None
+                            valid = False
+                    else:
+                        row['waifu_id'] = None
+                        valid = False
+                    # Parse rarity if present
+                    if 'rarity' in row and row['rarity'] != '':
+                        try:
+                            row['rarity'] = int(row['rarity'])
+                        except Exception:
+                            row['rarity'] = None
+                    else:
+                        row['rarity'] = None
+                    # Only add waifu if waifu_id is valid
+                    if valid and row['waifu_id'] is not None:
+                        waifus.append(row)
+                    else:
+                        self.logger.info("Skipping invalid waifu row (missing or invalid waifu_id): %s", row)
+        except Exception as e:
+            self.logger.error("Failed to load waifus from CSV: %s", e)
+        return waifus
 
     async def initialize(self):
-        """Initialize the waifu service."""
+        """Initialize the waifu service and load waifus from CSV."""
         await self.db.initialize()
-        self.logger.info("Waifu service initialized with new star system")
+        self._waifu_list = self._load_waifus_from_csv('data/character_final.csv')
+        self.logger.info("Waifu service initialized with new star system. Loaded %d waifus from CSV.", len(self._waifu_list))
 
     async def close(self):
-        """Close the waifu service and its database connection."""
+        """Close the waifu service and its database connection. Release waifu list."""
         await self.db.close()
-        self.logger.info("Waifu service closed")
+        self._waifu_list = []
+        self.logger.info("Waifu service closed and waifu list released.")
 
     async def _check_and_perform_auto_upgrades(self, discord_id: str, waifu_id: int, current_shards: int, current_star: int) -> Dict[str, Any]:
         """
@@ -79,27 +119,24 @@ class WaifuService:
             required_shards = self.UPGRADE_COSTS.get(target_star_level)
             if required_shards is None or remaining_shards < required_shards:
                 break
-                
             # Perform the upgrade
             remaining_shards -= required_shards
             final_star_level += 1
-            
             # Log the upgrade
             upgrades_performed.append({
                 "from_star": final_star_level - 1,
                 "to_star": final_star_level,
                 "shards_used": required_shards
             })
-            
             self.logger.info(f"Auto-upgraded character {waifu_id} from {final_star_level - 1}* to {final_star_level}* for user {discord_id}")
-        
         # If character reached max star level, convert excess shards to quartz
         if final_star_level >= self.MAX_STAR_LEVEL and remaining_shards > 0:
             total_quartz_gained = await self.convert_excess_shards_to_quartz(discord_id, waifu_id, remaining_shards)
             remaining_shards = 0  # All excess shards converted
-        
         # Update database with final values
         user = await self.db.get_or_create_user(discord_id)
+        if not self.db.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
         async with self.db.connection_pool.acquire() as conn:
             await conn.execute(
                 """
@@ -109,7 +146,6 @@ class WaifuService:
                 """,
                 final_star_level, remaining_shards, user["id"], waifu_id
             )
-        
         return {
             "final_star_level": final_star_level,
             "remaining_shards": remaining_shards,
@@ -124,6 +160,8 @@ class WaifuService:
         try:
             user = await self.db.get_or_create_user(discord_id)
             
+            if not self.db.connection_pool:
+                raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
             async with self.db.connection_pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
@@ -144,6 +182,8 @@ class WaifuService:
         try:
             user = await self.db.get_or_create_user(discord_id)
             
+            if not self.db.connection_pool:
+                raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
             async with self.db.connection_pool.acquire() as conn:
                 await conn.execute(
                     """
@@ -171,12 +211,14 @@ class WaifuService:
     async def get_character_star_level(self, discord_id: str, waifu_id: int) -> int:
         """Get current star level of a character in user's collection."""
         try:
+            if not self.db.connection_pool:
+                raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
             async with self.db.connection_pool.acquire() as conn:
                 row = await conn.fetchrow(
                     """
                     SELECT uw.current_star_level, w.rarity as base_rarity
                     FROM user_waifus uw
-                    JOIN waifus w ON uw.waifu_id = w.id
+                    JOIN waifus w ON uw.waifu_id = w.waifu_id
                     JOIN users u ON uw.user_id = u.id
                     WHERE u.discord_id = $1 AND uw.waifu_id = $2
                     LIMIT 1
@@ -185,7 +227,7 @@ class WaifuService:
                 )
                 if row:
                     return row["current_star_level"] if row["current_star_level"] is not None else row["base_rarity"]
-                waifu_row = await conn.fetchrow("SELECT rarity FROM waifus WHERE id = $1", waifu_id)
+                waifu_row = await conn.fetchrow("SELECT rarity FROM waifus WHERE waifu_id = $1", waifu_id)
                 return waifu_row["rarity"] if waifu_row else 1
                     
         except Exception as e:
@@ -226,7 +268,8 @@ class WaifuService:
             
             # Perform upgrade
             user = await self.db.get_or_create_user(discord_id)
-            
+            if not self.db.connection_pool:
+                raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
             async with self.db.connection_pool.acquire() as conn:
                 await conn.execute(
                     """
@@ -236,7 +279,7 @@ class WaifuService:
                     """,
                     next_star, required_shards, user["id"], waifu_id
                 )
-                waifu_data = await conn.fetchrow("SELECT name, series FROM waifus WHERE id = $1", waifu_id)
+                waifu_data = await conn.fetchrow("SELECT name, series FROM waifus WHERE waifu_id = $1", waifu_id)
                 remaining_shards = current_shards - required_shards
                 return {
                     "success": True,
@@ -287,8 +330,9 @@ class WaifuService:
         # Determine rarity using new gacha rates
         rarity = await self._determine_summon_rarity(user)
 
-        # Get available waifus of that rarity (only 1-3 stars available in gacha)
-        available_waifus = await self.db.get_waifus_by_rarity(rarity, 50)
+
+        # Get available waifus of that rarity from in-memory list
+        available_waifus = [w for w in self._waifu_list if w.get('rarity') == rarity]
 
         if not available_waifus:
             return {
@@ -326,22 +370,20 @@ class WaifuService:
 
     async def _handle_summon_result(self, discord_id: str, waifu: Dict[str, Any], pulled_rarity: int) -> Dict[str, Any]:
         """Handle summon result with new shard system and automatic upgrades."""
-        waifu_id = waifu["id"]
-        
+        if not self.db.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
+        waifu_id = waifu["waifu_id"]
         # Check if user already owns this character
         user_collection = await self.db.get_user_collection(discord_id)
         existing_waifu = next((w for w in user_collection if w["waifu_id"] == waifu_id), None)
-        
         if existing_waifu:
             # DUPLICATE: Give shards based on pulled rarity (not current star level)
             current_star = existing_waifu.get("current_star_level") or pulled_rarity
             shard_reward = self.SHARD_REWARDS.get(pulled_rarity, 5)  # Based on pulled rarity
-            
             # Check if character is already at max star level
             if current_star >= self.MAX_STAR_LEVEL:
                 # Character is already 5⭐, convert all shards directly to quartz
                 quartz_gained = await self.convert_excess_shards_to_quartz(discord_id, waifu_id, shard_reward)
-                
                 return {
                     "is_new": False,
                     "is_duplicate": True,
@@ -356,10 +398,8 @@ class WaifuService:
                 current_shards = await self.get_character_shards(discord_id, waifu_id)
                 new_shard_total = current_shards + shard_reward
                 await self.add_character_shards(discord_id, waifu_id, shard_reward)
-                
                 # Perform automatic upgrades after adding shards
                 upgrade_result = await self._check_and_perform_auto_upgrades(discord_id, waifu_id, new_shard_total, current_star)
-                
                 return {
                     "is_new": False,
                     "is_duplicate": True,
@@ -372,7 +412,6 @@ class WaifuService:
         else:
             # NEW CHARACTER: Add to collection
             await self.db.add_waifu_to_user(discord_id, waifu_id)
-            
             # Set initial star level to pulled rarity
             user = await self.db.get_or_create_user(discord_id)
             async with self.db.connection_pool.acquire() as conn:
@@ -384,7 +423,6 @@ class WaifuService:
                     """,
                     pulled_rarity, user["id"], waifu_id
                 )
-            
             return {
                 "is_new": True,
                 "is_duplicate": False,
@@ -443,74 +481,121 @@ class WaifuService:
         # Deduct the total cost upfront
         await self.db.update_user_crystals(discord_id, -total_cost)
 
-        # Perform individual summons
+        # Perform all summons, collect waifu/rarity pairs
         results = []
         rarity_counts = {1: 0, 2: 0, 3: 0}
-        new_waifus = []
-        shard_summary = {}
-        upgrade_summary = []
-
+        waifu_rarity_pairs = []
         for i in range(count):
-            # Get fresh user data for each summon (for pity system)
             current_user = await self.db.get_or_create_user(discord_id)
-
-            # Special logic for 10th roll - guarantee 2* minimum
-            if i == 9:  # 10th roll (0-indexed)
-                # Check if we already got a 2* or 3* in this multi-summon
+            if i == 9:
                 has_2_star_or_higher = any(r["rarity"] >= 2 for r in results)
                 if not has_2_star_or_higher:
-                    # Force 2* minimum on 10th roll
                     rarity = max(2, await self._determine_summon_rarity(current_user))
                 else:
                     rarity = await self._determine_summon_rarity(current_user)
             else:
-                # Normal rarity determination
                 rarity = await self._determine_summon_rarity(current_user)
-
-            # Get available waifus of that rarity
-            available_waifus = await self.db.get_waifus_by_rarity(rarity, 50)
-
+            available_waifus = [w for w in self._waifu_list if w.get('rarity') == rarity]
             if not available_waifus:
-                # Skip this summon if no waifus available
                 continue
-
-            # Select random waifu
             selected_waifu = random.choice(available_waifus)
+            waifu_rarity_pairs.append((selected_waifu, rarity))
+            rarity_counts[rarity] += 1
 
-            # Handle summon result with new shard system
-            summon_result = await self._handle_summon_result(discord_id, selected_waifu, rarity)
+        # Determine which waifus are new for the user
+        waifu_ids = [w[0]["waifu_id"] for w in waifu_rarity_pairs]
+        user_collection = await self.db.get_user_collection(discord_id)
+        owned_ids = {w["waifu_id"] for w in user_collection}
+        new_waifu_ids = [wid for wid in waifu_ids if wid not in owned_ids]
 
-            # Update pity counter (no crystal deduction here since it's done upfront)
+        # Batch add new waifus
+        if new_waifu_ids:
+            await self.db.add_waifus_to_user_batch(discord_id, new_waifu_ids)
+
+        # Set initial star level for all new waifus in one query
+        if new_waifu_ids:
+            user = await self.db.get_or_create_user(discord_id)
+            async with self.db.connection_pool.acquire() as conn:
+                for (waifu, rarity) in waifu_rarity_pairs:
+                    if waifu["waifu_id"] in new_waifu_ids:
+                        await conn.execute(
+                            """
+                            UPDATE user_waifus 
+                            SET current_star_level = $1 
+                            WHERE user_id = $2 AND waifu_id = $3
+                            """,
+                            rarity, user["id"], waifu["waifu_id"]
+                        )
+
+        # Now, handle the rest of the summon result logic (shards, upgrades, etc)
+        shard_summary = {}
+        upgrade_summary = []
+        for (waifu, rarity) in waifu_rarity_pairs:
+            # Use the same logic as _handle_summon_result, but skip add_waifu_to_user
+            waifu_id = waifu["waifu_id"]
+            if waifu_id in owned_ids:
+                # DUPLICATE: Give shards based on pulled rarity (not current star level)
+                user_collection_entry = next((w for w in user_collection if w["waifu_id"] == waifu_id), None)
+                current_star = user_collection_entry.get("current_star_level") or rarity
+                shard_reward = self.SHARD_REWARDS.get(rarity, 5)
+                if current_star >= self.MAX_STAR_LEVEL:
+                    quartz_gained = await self.convert_excess_shards_to_quartz(discord_id, waifu_id, shard_reward)
+                    summon_result = {
+                        "is_new": False,
+                        "is_duplicate": True,
+                        "current_star_level": current_star,
+                        "shards_gained": 0,
+                        "total_shards": 0,
+                        "quartz_gained": quartz_gained,
+                        "upgrades_performed": []
+                    }
+                else:
+                    current_shards = await self.get_character_shards(discord_id, waifu_id)
+                    new_shard_total = current_shards + shard_reward
+                    await self.add_character_shards(discord_id, waifu_id, shard_reward)
+                    upgrade_result = await self._check_and_perform_auto_upgrades(discord_id, waifu_id, new_shard_total, current_star)
+                    summon_result = {
+                        "is_new": False,
+                        "is_duplicate": True,
+                        "current_star_level": upgrade_result["final_star_level"],
+                        "shards_gained": shard_reward,
+                        "total_shards": upgrade_result["remaining_shards"],
+                        "quartz_gained": upgrade_result["quartz_gained"],
+                        "upgrades_performed": upgrade_result["upgrades_performed"]
+                    }
+            else:
+                # NEW: Already added above, just set up result
+                summon_result = {
+                    "is_new": True,
+                    "is_duplicate": False,
+                    "current_star_level": rarity,
+                    "shards_gained": 0,
+                    "total_shards": 0,
+                    "quartz_gained": 0,
+                    "upgrades_performed": []
+                }
+            # Update pity counter
             if rarity >= 3:
                 await self.db.update_pity_counter(discord_id, reset=True)
             else:
                 await self.db.update_pity_counter(discord_id)
-
-            # Track results
-            rarity_counts[rarity] += 1
-
-            if summon_result["is_new"]:
-                new_waifus.append(selected_waifu)
-
             # Track shard gains and upgrades
             if summon_result["shards_gained"] > 0:
-                char_name = selected_waifu["name"]
+                char_name = waifu["name"]
                 if char_name not in shard_summary:
                     shard_summary[char_name] = 0
                 shard_summary[char_name] += summon_result["shards_gained"]
-
-            # Track upgrades performed
             if summon_result.get("upgrades_performed"):
                 for upgrade in summon_result["upgrades_performed"]:
-                    char_name = selected_waifu["name"]
+                    char_name = waifu["name"]
                     upgrade_info = f"{char_name}: {upgrade['from_star']}★ → {upgrade['to_star']}★"
                     upgrade_summary.append(upgrade_info)
-
             results.append({
-                "waifu": selected_waifu,
+                "waifu": waifu,
                 "rarity": rarity,
                 **summon_result
             })
+        new_waifus = [w for (w, _) in waifu_rarity_pairs if w["waifu_id"] in new_waifu_ids]
 
         # Get final user state
         final_user = await self.db.get_or_create_user(discord_id)
@@ -546,11 +631,9 @@ class WaifuService:
                 waifu_id = waifu["waifu_id"]
                 current_star = waifu.get("current_star_level") or waifu["rarity"]
                 shards = await self.get_character_shards(discord_id, waifu_id)
-                
                 # Calculate upgrade info
                 next_star = current_star + 1 if current_star < self.MAX_STAR_LEVEL else None
                 shards_needed = self.UPGRADE_COSTS.get(next_star, 0) if next_star else 0
-                
                 enhanced_waifu = {
                     **waifu,
                     "current_star_level": current_star,
