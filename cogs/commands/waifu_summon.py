@@ -8,6 +8,17 @@ from services.container import ServiceContainer
 
 
 class WaifuSummonCog(BaseCommand):
+
+    async def display_mode_autocomplete(self, interaction: discord.Interaction, current: str):
+        modes = [
+            ("Full (show all info cards)", "full"),
+            ("Simple (hide 2★ info cards)", "simple"),
+            ("Minimal (summary only)", "minimal"),
+        ]
+        return [
+            discord.app_commands.Choice(name=label, value=val)
+            for label, val in modes if current.lower() in val or current.lower() in label.lower()
+        ]
     def __init__(self, bot: commands.Bot, services: ServiceContainer):
         super().__init__(bot, services)
 
@@ -171,14 +182,139 @@ class WaifuSummonCog(BaseCommand):
         name="nwnl_multi_summon",
         description="🎰🎊 Perform 10 summons with NEW star system! (100 crystals total)",
     )
-    async def nwnl_multi_summon(self, ctx: commands.Context):
+    @discord.app_commands.describe(display_mode="How much detail to show for each pull (full, simple, minimal)")
+    @discord.app_commands.autocomplete(display_mode=display_mode_autocomplete)
+    async def nwnl_multi_summon(self, ctx: commands.Context, display_mode: str = "full"):
         """Perform 10 waifu summons with the new star upgrade system."""
         await ctx.defer()
 
-        try:
-            # Perform the multi-summon (always 10 rolls)
-            result = await self.services.waifu_service.perform_multi_summon(str(ctx.author.id))
+        # Perform the multi-summon (always 10 rolls)
+        result = await self.services.waifu_service.perform_multi_summon(str(ctx.author.id))
+        result["display_mode"] = display_mode
 
+        # Rarity colors and emojis (3★ = old 5★ Legendary, 2★ = old 4★ Epic, 1★ = old 1★ Basic)
+        rarity_config = {
+            3: {"color": 0xFFD700, "emoji": "⭐⭐⭐", "name": "Legendary"},
+            2: {"color": 0x9932CC, "emoji": "⭐⭐", "name": "Epic"},
+            1: {"color": 0x808080, "emoji": "⭐", "name": "Basic"},
+        }
+
+        # If minimal mode, show only the Other Summons Summary and the final summary embed
+        if display_mode == "minimal":
+            if not result["success"]:
+                embed = discord.Embed(
+                    title="❌ Multi-Summon Failed",
+                    description=result["message"],
+                    color=0xFF6B6B,
+                )
+                await ctx.send(embed=embed)
+                return
+
+            # Build low-rarity pulls summary (all pulls, no individual cards)
+            low_rarity_pulls = []
+            for i, summon_result in enumerate(result["results"]):
+                waifu = summon_result["waifu"]
+                rarity = summon_result["rarity"]
+                config = rarity_config[rarity]
+                if summon_result["is_new"]:
+                    status = "🆕 NEW"
+                elif summon_result.get("quartz_gained", 0) > 0 and summon_result.get("shards_gained", 0) == 0:
+                    status = f"💠 +{summon_result['quartz_gained']} quartz (maxed)"
+                else:
+                    status = f"💫 +{summon_result['shards_gained']} shards"
+                low_rarity_pulls.append(
+                    f"**#{i+1}** {config['emoji']} **{waifu['name']}** ({waifu.get('series', 'Unknown')}) - {status}"
+                )
+
+            embeds = []
+            if low_rarity_pulls:
+                summary_embed = discord.Embed(
+                    title="📋 Other Summons Summary",
+                    description="\n".join(low_rarity_pulls),
+                    color=0x95A5A6,
+                )
+                embeds.append(summary_embed)
+
+            rarity_counts = result["rarity_counts"]
+            rarity_text = []
+            for rarity in [3, 2, 1]:
+                count = rarity_counts.get(rarity, 0)
+                if count > 0:
+                    config = rarity_config[rarity]
+                    rarity_text.append(f"{config['emoji']} {config['name']}: {count}")
+
+            final_summary = discord.Embed(
+                title="📊 Multi-Summon Summary",
+                color=0x4A90E2,
+            )
+            final_summary.add_field(
+                name="📊 Rarity Breakdown",
+                value="\n".join(rarity_text) if rarity_text else "No results",
+                inline=True,
+            )
+
+            # New waifus summary
+            new_waifus = result.get("new_waifus", [])
+            if new_waifus:
+                new_names = [w["name"] for w in new_waifus[:5]]
+                if len(new_waifus) > 5:
+                    new_names.append(f"...and {len(new_waifus) - 5} more!")
+                final_summary.add_field(
+                    name=f"🆕 New Characters ({len(new_waifus)})",
+                    value="\n".join(new_names),
+                    inline=True,
+                )
+
+            # Shard summary
+            shard_summary = result.get("shard_summary", {})
+            if shard_summary:
+                shard_text = []
+                for char_name, shards in list(shard_summary.items())[:3]:
+                    shard_text.append(f"💫 {char_name}: +{shards}")
+                if len(shard_summary) > 3:
+                    shard_text.append(f"...and {len(shard_summary) - 3} more!")
+                final_summary.add_field(
+                    name="💫 Shard Gains",
+                    value="\n".join(shard_text),
+                    inline=True,
+                )
+
+            # Upgrade summary
+            upgrade_summary = result.get("upgrade_summary", [])
+            if upgrade_summary:
+                upgrade_text = upgrade_summary[:5]
+                if len(upgrade_summary) > 5:
+                    upgrade_text.append(f"...and {len(upgrade_summary) - 5} more!")
+                final_summary.add_field(
+                    name="⬆️ AUTO UPGRADES!",
+                    value="\n".join(upgrade_text),
+                    inline=False,
+                )
+
+            final_summary.add_field(
+                name="💎 Crystals Remaining",
+                value=f"{result['crystals_remaining']}",
+                inline=True,
+            )
+            final_summary.add_field(
+                name="💰 Total Cost",
+                value=f"{result['total_cost']} crystals",
+                inline=True,
+            )
+            final_summary.set_footer(
+                text=f"Multi-summon complete! Cost: {result['total_cost']} crystals • Remaining: {result['crystals_remaining']} crystals"
+            )
+            embeds.append(final_summary)
+            await ctx.send(embeds=embeds)
+            # Log the multi-summon results
+            self.logger.info(
+                f"User {ctx.author} performed x{result['count']} multi-summon (minimal): "
+                f"3★:{rarity_counts.get(3,0)}, 2★:{rarity_counts.get(2,0)}, "
+                f"1★:{rarity_counts.get(1,0)}"
+            )
+            return
+
+        try:
             if not result["success"]:
                 embed = discord.Embed(
                     title="❌ Multi-Summon Failed",
@@ -190,9 +326,9 @@ class WaifuSummonCog(BaseCommand):
 
             # Rarity colors and emojis (3★ = old 5★ Legendary, 2★ = old 4★ Epic, 1★ = old 1★ Basic)
             rarity_config = {
-                3: {"color": 0xFFD700, "emoji": "⭐⭐⭐", "name": "Legendary"},  # Gold like old 5★
-                2: {"color": 0x9932CC, "emoji": "⭐⭐", "name": "Epic"},        # Purple like old 4★
-                1: {"color": 0x808080, "emoji": "⭐", "name": "Basic"},         # Gray like old 1★
+                3: {"color": 0xFFD700, "emoji": "⭐⭐⭐", "name": "Legendary"},
+                2: {"color": 0x9932CC, "emoji": "⭐⭐", "name": "Epic"},
+                1: {"color": 0x808080, "emoji": "⭐", "name": "Basic"},
             }
 
             # Separate high-rarity (2★+) and low-rarity (1★) pulls like the old system
@@ -206,15 +342,19 @@ class WaifuSummonCog(BaseCommand):
                 rarity = summon_result["rarity"]
                 config = rarity_config[rarity]
 
-                if rarity >= 2:  # 2★+ gets full embed (like old 4★+ system)
+                # Display logic based on display_mode
+                show_card = True
+                if result["display_mode"] == "simple" and rarity == 2:
+                    show_card = False
+                elif result["display_mode"] == "minimal":
+                    show_card = False
+
+                if rarity >= 2 and show_card:
                     high_rarity_count += 1
-                    # Create individual summon embed
                     embed = discord.Embed(
                         title=f"🎊 Summon #{i+1} - {config['name']} Pull! 🎊",
                         color=config["color"],
                     )
-
-                    # Add NEW or DUPLICATE indicator with star info
                     if summon_result["is_new"]:
                         embed.add_field(
                             name="🆕 NEW WAIFU!",
@@ -222,35 +362,27 @@ class WaifuSummonCog(BaseCommand):
                             inline=False,
                         )
                     else:
-                        # Different message based on whether character is maxed or not
                         if summon_result.get("quartz_gained", 0) > 0 and summon_result.get("shards_gained", 0) == 0:
-                            # Character is already maxed (5⭐), shards converted to quartz
                             embed.add_field(
                                 name="🌟 Max Level Duplicate!",
                                 value=f"**{waifu['name']}** is already 5⭐! Converted to {summon_result['quartz_gained']} quartz!",
                                 inline=False,
                             )
                         else:
-                            # Normal duplicate with shards
                             embed.add_field(
                                 name="🌟 Duplicate Summon!",
                                 value=f"**{waifu['name']}** gained {summon_result['shards_gained']} shards!",
                                 inline=False,
                             )
-
-                    # Show automatic upgrades if any occurred
                     if summon_result.get("upgrades_performed"):
                         upgrade_text = []
                         for upgrade in summon_result["upgrades_performed"]:
                             upgrade_text.append(f"🔥 {upgrade['from_star']}★ → {upgrade['to_star']}★")
-                        
                         embed.add_field(
                             name="⬆️ AUTOMATIC UPGRADES!",
                             value="\n".join(upgrade_text),
                             inline=False,
                         )
-
-                    # Character details
                     embed.add_field(
                         name="Character", value=f"**{waifu['name']}**", inline=True
                     )
@@ -270,21 +402,16 @@ class WaifuSummonCog(BaseCommand):
                         value=f"{config['emoji']} {config['name']}",
                         inline=True,
                     )
-
-                    # Add image if available (for 2★ and above like old system)
                     if waifu.get("image_url"):
                         embed.set_image(url=waifu["image_url"])
-
                     embeds.append(embed)
-
-                    # Collect special messages for high rarity pulls like old system
-                    if rarity == 3:  # 3★ = old 5★ Legendary
+                    if rarity == 3:
                         special_content_parts.append(
                             f"🌟💫✨ **LEGENDARY PULL!** ✨💫🌟\n"
                             f"🎆🎇 **{waifu['name']}** 🎇🎆\n"
                             f"💎 The stars have aligned! A legendary waifu graces your academy! 💎"
                         )
-                    elif rarity == 2:  # 2★ = old 4★ Epic
+                    elif rarity == 2:
                         special_content_parts.append(
                             f"✨🎆 **EPIC PULL!** 🎆✨\n"
                             f"🌟 **{waifu['name']}** 🌟\n"

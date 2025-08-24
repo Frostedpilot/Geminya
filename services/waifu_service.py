@@ -481,20 +481,35 @@ class WaifuService:
         # Deduct the total cost upfront
         await self.db.update_user_crystals(discord_id, -total_cost)
 
-        # Perform all summons, collect waifu/rarity pairs
+        # --- Improved Pity logic: pity is consumed as soon as a 3★ is pulled (naturally or via pity) ---
+        pity_count = user.get("pity_counter", 0)
+        pity_active = pity_count >= self.PITY_3_STAR
+        pity_consumed = False
         results = []
         rarity_counts = {1: 0, 2: 0, 3: 0}
         waifu_rarity_pairs = []
         for i in range(count):
             current_user = await self.db.get_or_create_user(discord_id)
-            if i == 9:
-                has_2_star_or_higher = any(r["rarity"] >= 2 for r in results)
-                if not has_2_star_or_higher:
-                    rarity = max(2, await self._determine_summon_rarity(current_user))
+            # Determine rarity
+            if pity_active and not pity_consumed:
+                natural_rarity = await self._determine_summon_rarity(current_user)
+                if natural_rarity == 3:
+                    rarity = 3
+                    pity_consumed = True
+                    # Reset pity immediately
+                    await self.db.update_pity_counter(discord_id, reset=True)
+                elif i == count - 1 or (i < count - 1 and (count - i) == (self.PITY_3_STAR - pity_count)):
+                    # If this is the last roll, or if the remaining rolls exactly match the pity threshold, force pity
+                    rarity = 3
+                    pity_consumed = True
+                    await self.db.update_pity_counter(discord_id, reset=True)
                 else:
-                    rarity = await self._determine_summon_rarity(current_user)
+                    rarity = natural_rarity
             else:
                 rarity = await self._determine_summon_rarity(current_user)
+                if rarity == 3 and pity_active and not pity_consumed:
+                    pity_consumed = True
+                    await self.db.update_pity_counter(discord_id, reset=True)
             available_waifus = [w for w in self._waifu_list if w.get('rarity') == rarity]
             if not available_waifus:
                 continue
