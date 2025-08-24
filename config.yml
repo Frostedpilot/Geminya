@@ -7,23 +7,8 @@ language: "en"
 
 # Database Configuration
 database:
-  # Database type: "sqlite" or "mysql"
-  type: "mysql"  # Change to "sqlite" for local development
-  
-  # SQLite configuration (used when type is "sqlite")
-  sqlite:
-    path: "data/waifu_academy.db"
-  
-  # MySQL configuration (used when type is "mysql")
-  # Values will be loaded from secrets.json or environment variables
-  mysql:
-    host: "${MYSQL_HOST}"
-    port: "${MYSQL_PORT:3306}"
-    user: "${MYSQL_USER}"
-    password: "${MYSQL_PASSWORD}"
-    database: "${MYSQL_DATABASE}"
-    charset: "utf8mb4"
-    autocommit: true
+  # Database type: "postgres"
+  type: "postgres"
 
 # Bot behavior
 max_history_length: 7

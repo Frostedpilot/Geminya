@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Script to upload character data from data/character_final.csv to MySQL database."""
+"""Script to upload character data from data/character_final.csv to PostgreSQL database."""
 
 import asyncio
 import csv
@@ -22,9 +22,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-
-class MySQLUploader:
-    """Service to upload character data to MySQL database."""
+class PostgresUploader:
+    """Service to upload character data to PostgreSQL database."""
 
     def __init__(self, config: Config):
         self.config = config
@@ -72,6 +71,12 @@ class MySQLUploader:
         """Process character data for database insertion."""
         
         # The character_edit.py now provides clean data, we just need to add some database-specific fields
+        # Ensure mal_id is an int or None
+        mal_id_raw = character.get("mal_id", "")
+        try:
+            mal_id = int(mal_id_raw) if mal_id_raw else None
+        except (ValueError, TypeError):
+            mal_id = None
         char_data = {
             "name": character.get("name", ""),
             "series": character.get("series", "Unknown Series"),
@@ -79,9 +84,9 @@ class MySQLUploader:
             "element": self.determine_element(character),
             "rarity": int(character.get("rarity", 1)),  # Use rarity from character_edit.py
             "image_url": character.get("image_url", ""),
-            "mal_id": character.get("mal_id", ""),
+            "mal_id": mal_id,
             "base_stats": self.generate_base_stats(character),
-            "birthday": "",  # Placeholder - can be enhanced later
+            "birthday": None,  # Use None for SQL NULL in DATE column
             "favorite_gifts": [],  # Placeholder - can be enhanced later
         }
         
@@ -171,9 +176,9 @@ class MySQLUploader:
         return favorite_gifts[:5]
 
     async def upload_characters(self):
-        """Main function to upload characters to MySQL database."""
+        """Main function to upload characters to PostgreSQL database."""
         try:
-            logger.info("💾 Starting character upload to MySQL...")
+            logger.info("💾 Starting character upload to PostgreSQL...")
 
             # Load character data
             characters = self.load_characters()
@@ -241,7 +246,7 @@ async def main():
     try:
         config = Config.create()
 
-        async with MySQLUploader(config) as uploader:
+        async with PostgresUploader(config) as uploader:
             success = await uploader.upload_characters()
 
         return success

@@ -403,10 +403,10 @@ class ShopCog(BaseCommand):
 
             for purchase in history:
                 currency_symbol = "💠" if purchase.get('currency_type') == "quartzs" else "💎"
-                
+                price = purchase.get('total_cost', 'N/A')
                 embed.add_field(
                     name=f"{purchase['name']} x{purchase['quantity']}",
-                    value=f"Price: {currency_symbol}{format_number(purchase['total_price'])}\nDate: {purchase.get('purchase_date', 'Unknown')}\nStatus: {purchase.get('transaction_status', 'Unknown')}",
+                    value=f"Price: {currency_symbol}{format_number(price)}\nDate: {purchase.get('purchase_date', 'Unknown')}\nStatus: {purchase.get('transaction_status', 'Unknown')}",
                     inline=True
                 )
 

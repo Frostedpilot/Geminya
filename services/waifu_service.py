@@ -101,13 +101,14 @@ class WaifuService:
         # Update database with final values
         user = await self.db.get_or_create_user(discord_id)
         async with self.db.connection_pool.acquire() as conn:
-            async with conn.cursor() as cursor:
-                await cursor.execute("""
-                    UPDATE user_waifus 
-                    SET current_star_level = %s, star_shards = %s 
-                    WHERE user_id = %s AND waifu_id = %s
-                """, (final_star_level, remaining_shards, user["id"], waifu_id))
-                await conn.commit()
+            await conn.execute(
+                """
+                UPDATE user_waifus 
+                SET current_star_level = $1, star_shards = $2 
+                WHERE user_id = $3 AND waifu_id = $4
+                """,
+                final_star_level, remaining_shards, user["id"], waifu_id
+            )
         
         return {
             "final_star_level": final_star_level,
@@ -124,15 +125,15 @@ class WaifuService:
             user = await self.db.get_or_create_user(discord_id)
             
             async with self.db.connection_pool.acquire() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute("""
-                        SELECT star_shards 
-                        FROM user_waifus 
-                        WHERE user_id = %s AND waifu_id = %s
-                    """, (user["id"], waifu_id))
-                    
-                    result = await cursor.fetchone()
-                    return result[0] if result else 0
+                row = await conn.fetchrow(
+                    """
+                    SELECT star_shards 
+                    FROM user_waifus 
+                    WHERE user_id = $1 AND waifu_id = $2
+                    """,
+                    user["id"], waifu_id
+                )
+                return row["star_shards"] if row else 0
                     
         except Exception as e:
             self.logger.error(f"Error getting character shards: {e}")
@@ -144,26 +145,24 @@ class WaifuService:
             user = await self.db.get_or_create_user(discord_id)
             
             async with self.db.connection_pool.acquire() as conn:
-                async with conn.cursor() as cursor:
-                    # Update shards in user_waifus table
-                    await cursor.execute("""
-                        UPDATE user_waifus 
-                        SET star_shards = star_shards + %s 
-                        WHERE user_id = %s AND waifu_id = %s
-                    """, (amount, user["id"], waifu_id))
-                    
-                    # Get new total
-                    await cursor.execute("""
-                        SELECT star_shards 
-                        FROM user_waifus 
-                        WHERE user_id = %s AND waifu_id = %s
-                    """, (user["id"], waifu_id))
-                    
-                    result = await cursor.fetchone()
-                    new_total = result[0] if result else 0
-                    
-                    await conn.commit()
-                    return new_total
+                await conn.execute(
+                    """
+                    UPDATE user_waifus 
+                    SET star_shards = star_shards + $1 
+                    WHERE user_id = $2 AND waifu_id = $3
+                    """,
+                    amount, user["id"], waifu_id
+                )
+                row = await conn.fetchrow(
+                    """
+                    SELECT star_shards 
+                    FROM user_waifus 
+                    WHERE user_id = $1 AND waifu_id = $2
+                    """,
+                    user["id"], waifu_id
+                )
+                new_total = row["star_shards"] if row else 0
+                return new_total
                     
         except Exception as e:
             self.logger.error(f"Error adding character shards: {e}")
@@ -173,25 +172,21 @@ class WaifuService:
         """Get current star level of a character in user's collection."""
         try:
             async with self.db.connection_pool.acquire() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute("""
-                        SELECT uw.current_star_level, w.rarity as base_rarity
-                        FROM user_waifus uw
-                        JOIN waifus w ON uw.waifu_id = w.id
-                        JOIN users u ON uw.user_id = u.id
-                        WHERE u.discord_id = %s AND uw.waifu_id = %s
-                        LIMIT 1
-                    """, (discord_id, waifu_id))
-                    
-                    result = await cursor.fetchone()
-                    if result:
-                        # Use current_star_level if set, otherwise fall back to base rarity
-                        return result[0] if result[0] is not None else result[1]
-                    
-                    # Character not owned, return base rarity
-                    await cursor.execute("SELECT rarity FROM waifus WHERE id = %s", (waifu_id,))
-                    waifu_result = await cursor.fetchone()
-                    return waifu_result[0] if waifu_result else 1
+                row = await conn.fetchrow(
+                    """
+                    SELECT uw.current_star_level, w.rarity as base_rarity
+                    FROM user_waifus uw
+                    JOIN waifus w ON uw.waifu_id = w.id
+                    JOIN users u ON uw.user_id = u.id
+                    WHERE u.discord_id = $1 AND uw.waifu_id = $2
+                    LIMIT 1
+                    """,
+                    discord_id, waifu_id
+                )
+                if row:
+                    return row["current_star_level"] if row["current_star_level"] is not None else row["base_rarity"]
+                waifu_row = await conn.fetchrow("SELECT rarity FROM waifus WHERE id = $1", waifu_id)
+                return waifu_row["rarity"] if waifu_row else 1
                     
         except Exception as e:
             self.logger.error(f"Error getting character star level: {e}")
@@ -233,31 +228,25 @@ class WaifuService:
             user = await self.db.get_or_create_user(discord_id)
             
             async with self.db.connection_pool.acquire() as conn:
-                async with conn.cursor() as cursor:
-                    # Update star level and deduct shards in user_waifus table
-                    await cursor.execute("""
-                        UPDATE user_waifus 
-                        SET current_star_level = %s, star_shards = star_shards - %s 
-                        WHERE user_id = %s AND waifu_id = %s
-                    """, (next_star, required_shards, user["id"], waifu_id))
-                    
-                    await conn.commit()
-                    
-                    # Get character name for response
-                    await cursor.execute("SELECT name, series FROM waifus WHERE id = %s", (waifu_id,))
-                    waifu_data = await cursor.fetchone()
-                    
-                    remaining_shards = current_shards - required_shards
-                    
-                    return {
-                        "success": True,
-                        "character_name": waifu_data[0] if waifu_data else "Unknown",
-                        "character_series": waifu_data[1] if waifu_data else "Unknown",
-                        "from_star": current_star,
-                        "to_star": next_star,
-                        "shards_used": required_shards,
-                        "remaining_shards": remaining_shards
-                    }
+                await conn.execute(
+                    """
+                    UPDATE user_waifus 
+                    SET current_star_level = $1, star_shards = star_shards - $2 
+                    WHERE user_id = $3 AND waifu_id = $4
+                    """,
+                    next_star, required_shards, user["id"], waifu_id
+                )
+                waifu_data = await conn.fetchrow("SELECT name, series FROM waifus WHERE id = $1", waifu_id)
+                remaining_shards = current_shards - required_shards
+                return {
+                    "success": True,
+                    "character_name": waifu_data["name"] if waifu_data else "Unknown",
+                    "character_series": waifu_data["series"] if waifu_data else "Unknown",
+                    "from_star": current_star,
+                    "to_star": next_star,
+                    "shards_used": required_shards,
+                    "remaining_shards": remaining_shards
+                }
                     
         except Exception as e:
             self.logger.error(f"Error upgrading character star: {e}")
@@ -387,13 +376,14 @@ class WaifuService:
             # Set initial star level to pulled rarity
             user = await self.db.get_or_create_user(discord_id)
             async with self.db.connection_pool.acquire() as conn:
-                async with conn.cursor() as cursor:
-                    await cursor.execute("""
-                        UPDATE user_waifus 
-                        SET current_star_level = %s 
-                        WHERE user_id = %s AND waifu_id = %s
-                    """, (pulled_rarity, user["id"], waifu_id))
-                    await conn.commit()
+                await conn.execute(
+                    """
+                    UPDATE user_waifus 
+                    SET current_star_level = $1 
+                    WHERE user_id = $2 AND waifu_id = $3
+                    """,
+                    pulled_rarity, user["id"], waifu_id
+                )
             
             return {
                 "is_new": True,

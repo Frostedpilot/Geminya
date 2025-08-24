@@ -74,28 +74,20 @@ async def run_database_reset():
 async def drop_all_tables(db):
     """Drop all tables from the database."""
     async with db.connection_pool.acquire() as conn:
-        async with conn.cursor() as cursor:
-            # Disable foreign key checks temporarily
-            await cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
-            
-            # Get all tables
-            await cursor.execute("SHOW TABLES")
-            tables = await cursor.fetchall()
-            
-            dropped_count = 0
-            for (table_name,) in tables:
-                try:
-                    await cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
-                    logger.info(f"✅ Dropped table: {table_name}")
-                    dropped_count += 1
-                except Exception as e:
-                    logger.error(f"❌ Error dropping table {table_name}: {e}")
-            
-            # Re-enable foreign key checks
-            await cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
-            await conn.commit()
-    
-    print(f"✅ Dropped {dropped_count} tables")
+        # Get all user tables in the public schema
+        rows = await conn.fetch("""
+            SELECT tablename FROM pg_tables WHERE schemaname = 'public';
+        """)
+        tables = [row['tablename'] for row in rows]
+        dropped_count = 0
+        for table_name in tables:
+            try:
+                await conn.execute(f'DROP TABLE IF EXISTS "{table_name}" CASCADE;')
+                logger.info(f"✅ Dropped table: {table_name}")
+                dropped_count += 1
+            except Exception as e:
+                logger.error(f"❌ Error dropping table {table_name}: {e}")
+        print(f"✅ Dropped {dropped_count} tables")
 
 
 async def recreate_schema(db):
