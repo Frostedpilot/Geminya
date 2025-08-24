@@ -114,7 +114,7 @@ class WaifuSummonCog(BaseCommand):
 
             embed.add_field(
                 name="Crystals Left",
-                value=f"💎 {result['crystals_remaining']}",
+                value=f"💎 {result.get('crystals_remaining', result.get('crystals', 'N/A'))}",
                 inline=True,
             )
 
