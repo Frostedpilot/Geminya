@@ -464,7 +464,7 @@ class WaifuService:
     # ==================== MULTI-SUMMON WITH NEW SYSTEM ====================
 
     async def perform_multi_summon(self, discord_id: str) -> Dict[str, Any]:
-        """Perform multiple waifu summons with new star system - always 10 rolls."""
+        """Perform multiple waifu summons with new star system - always 10 rolls. Guarantees at least one 2★ or higher per multi."""
         count = 10  # Fixed to always be 10 rolls
         user = await self.db.get_or_create_user(discord_id)
 
@@ -516,6 +516,19 @@ class WaifuService:
             selected_waifu = random.choice(available_waifus)
             waifu_rarity_pairs.append((selected_waifu, rarity))
             rarity_counts[rarity] += 1
+
+        # --- 2★ Guarantee: If no 2★ or 3★ was pulled, upgrade a random 1★ to 2★ ---
+        if rarity_counts[2] == 0 and rarity_counts[3] == 0:
+            one_star_indices = [i for i, (_, rarity) in enumerate(waifu_rarity_pairs) if rarity == 1]
+            if one_star_indices:
+                idx_to_upgrade = random.choice(one_star_indices)
+                waifu, _ = waifu_rarity_pairs[idx_to_upgrade]
+                # Pick a random 2★ waifu (if available)
+                two_star_waifus = [w for w in self._waifu_list if w.get('rarity') == 2]
+                if two_star_waifus:
+                    waifu_rarity_pairs[idx_to_upgrade] = (random.choice(two_star_waifus), 2)
+                    rarity_counts[1] -= 1
+                    rarity_counts[2] += 1
 
         # Determine which waifus are new for the user
         waifu_ids = [w[0]["waifu_id"] for w in waifu_rarity_pairs]

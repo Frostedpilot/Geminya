@@ -230,6 +230,13 @@ GACHA_RATES = {
 }
 ```
 
+### **Multi-Summon Guarantees**
+- **2★ Guarantee:** Every 10x multi-summon (including those performed via `/nwnl_super_multiple_summon`) always guarantees at least one 2★ or higher. If all 10 rolls would be 1★, one is upgraded to 2★ automatically.
+- **3★ Pity:** Every 50 pulls (across all summons), a 3★ is guaranteed. The pity counter resets as soon as a 3★ is pulled (naturally or via pity).
+
+> **Technical Note:**
+> The 2★ guarantee is enforced in the service layer (`WaifuService.perform_multi_summon`). This means all multi-summon commands, including super multi, always benefit from this guarantee. No additional logic is needed in command handlers.
+
 ### **Pity System**
 ```python
 PITY_3_STAR = 50   # Guaranteed 3-star every 50 pulls
@@ -417,11 +424,22 @@ When used from inventory:
 - **Cost:** 100 Sakura Crystals (10 pulls)
 - **Implementation:** `WaifuSummonCog.nwnl_multi_summon()`
 - **Features:**
-  - Guaranteed 2★+ on 10th pull
+  - **2★ Guarantee:** Always at least one 2★ or higher per 10x multi-summon
+  - 3★ pity system (see above)
   - Batch processing of 10 summons
   - Summary statistics
   - Individual high-rarity embeds
   - Aggregated low-rarity summary
+
+#### `/nwnl_super_multiple_summon` - Super Multi Summon
+- **Cost:** 100 Sakura Crystals per multi (1-10 multis)
+- **Implementation:** `WaifuSummonCog.nwnl_super_multiple_summon()`
+- **Features:**
+  - Performs multiple 10x multi-summons in a single command
+  - Each multi-summon always guarantees at least one 2★ or higher
+  - 3★ pity system applies across all pulls
+  - Results are aggregated and summarized
+  - Per-multi breakdown and legendary (3★) card info always shown
 
 #### `/nwnl_collection [user]` - View Collection
 - **Parameters:** Optional user mention
@@ -583,9 +601,10 @@ class WaifuService:
 - **Process:**
   1. Validate 100 crystal cost
   2. Process 10 individual summons
-  3. Apply 10th-pull guarantee
-  4. Aggregate results and statistics
-  5. Return batch summary
+  3. **2★ Guarantee:** If all 10 rolls are 1★, one is upgraded to 2★ (guaranteed)
+  4. 3★ pity logic (see above)
+  5. Aggregate results and statistics
+  6. Return batch summary
 
 ##### `_handle_summon_result(discord_id: str, waifu: Dict, pulled_rarity: int) -> Dict[str, Any]`
 - **Purpose:** Process individual summon result
