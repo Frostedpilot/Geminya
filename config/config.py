@@ -48,9 +48,15 @@ class Config:
     google_console_api_key: str
     google_search_engine_id: str
 
+    # Spotify credentials
+    spotify_username: str = ""
+    spotify_password: str = ""
+    spotify_client_id: str = ""
+    spotify_client_secret: str = ""
+
     # MyAnimeList API credentials
-    mal_client_id: str
-    mal_client_secret: str
+    mal_client_id: str = ""
+    mal_client_secret: str = ""
 
     # Database configuration (MySQL only)
     mysql_host: str = ""
@@ -298,6 +304,10 @@ class Config:
             google_search_engine_id=google_search_engine_id,
             mal_client_id=os.getenv("MAL_CLIENT_ID", ""),
             mal_client_secret=os.getenv("MAL_CLIENT_SECRET", ""),
+            spotify_username=os.getenv("SPOTIFY_USERNAME", ""),
+            spotify_password=os.getenv("SPOTIFY_PASSWORD", ""),
+            spotify_client_id=os.getenv("SPOTIFY_CLIENT_ID", ""),
+            spotify_client_secret=os.getenv("SPOTIFY_CLIENT_SECRET", ""),
             language=os.getenv("LANGUAGE", "en"),
             max_history_length=int(os.getenv("MAX_HISTORY_LENGTH", "7")),
             debug=os.getenv("DEBUG", "false").lower() == "true",
@@ -366,6 +376,12 @@ class Config:
         mal_client_id = secrets.get("MAL_CLIENT_ID", "")
         mal_client_secret = secrets.get("MAL_CLIENT_SECRET", "")
 
+        # Spotify credentials
+        spotify_username = secrets.get("SPOTIFY_USERNAME", "")
+        spotify_password = secrets.get("SPOTIFY_PASSWORD", "")
+        spotify_client_id = secrets.get("SPOTIFY_CLIENT_ID", "")
+        spotify_client_secret = secrets.get("SPOTIFY_CLIENT_SECRET", "")
+
         # Database credentials from secrets
         mysql_host = secrets.get("MYSQL_HOST", "")
         mysql_port = secrets.get("MYSQL_PORT", 3306)
@@ -411,6 +427,10 @@ class Config:
             google_search_engine_id=google_search_engine_id,
             mal_client_id=mal_client_id,
             mal_client_secret=mal_client_secret,
+            spotify_username=spotify_username,
+            spotify_password=spotify_password,
+            spotify_client_id=spotify_client_id,
+            spotify_client_secret=spotify_client_secret,
             language=config_data.get("language", "en"),
             max_history_length=config_data.get("max_history_length", 7),
             debug=config_data.get("debug", False),
