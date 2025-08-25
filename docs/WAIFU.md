@@ -114,9 +114,22 @@ CREATE TABLE IF NOT EXISTS users (
     quartzs INTEGER DEFAULT 0,
     pity_counter INTEGER DEFAULT 0,
     last_daily_reset BIGINT DEFAULT 0,
+  selected_banner_id INTEGER DEFAULT NULL, -- User's selected banner (NEW)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_discord_id ON users(discord_id);
+```
+
+#### `banners` - Gacha Banners (NEW)
+```sql
+CREATE TABLE IF NOT EXISTS banners (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_banner_active ON banners(is_active);
 ```
 
 #### `waifus` - Character Database
@@ -134,10 +147,12 @@ CREATE TABLE IF NOT EXISTS waifus (
     birthday DATE,
     favorite_gifts TEXT,
     special_dialogue TEXT,
+  banner_id INTEGER REFERENCES banners(id) ON DELETE SET NULL, -- Banner association (NEW)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_rarity ON waifus(rarity);
 CREATE INDEX IF NOT EXISTS idx_name ON waifus(name);
+CREATE INDEX IF NOT EXISTS idx_banner_id ON waifus(banner_id);
 ```
 
 #### `user_waifus` - User Collections
@@ -221,18 +236,31 @@ CREATE INDEX IF NOT EXISTS idx_active ON user_inventory(is_active);
 
 ## ⭐ **Star System & Gacha Mechanics**
 
-### **Gacha Rates (1★-3★ Only)**
+### **Banner System & Gacha Rates (1★-3★ Only, per banner)**
+
+- **Banner System:** Users can select a banner (anime/series) to summon from. Each banner has its own pool of waifus, with rate-up logic for featured characters. Banner selection is user-dependent and persists per user.
+- **Gacha Rates:**
+  - **Rate-up waifus:**
+  - 3★: 3.5% (rate-up), 1.5% (rest)
+  - 2★: 10% (rate-up), 10% (rest)
+  - 1★: 35% (rate-up), 30% (rest)
+  - **Total per rarity:**
+  - 3★: 5%
+  - 2★: 20%
+  - 1★: 75%
+- **Banner selection and rates are enforced in all summon commands.**
+
 ```python
 GACHA_RATES = {
-    3: 5.0,   # 3-star: 5%
-    2: 20.0,  # 2-star: 20% 
-    1: 75.0,  # 1-star: 75%
+  3: {"rate_up": 3.5, "rest": 1.5},
+  2: {"rate_up": 10.0, "rest": 10.0},
+  1: {"rate_up": 35.0, "rest": 30.0},
 }
 ```
 
 ### **Multi-Summon Guarantees**
 - **2★ Guarantee:** Every 10x multi-summon (including those performed via `/nwnl_super_multiple_summon`) always guarantees at least one 2★ or higher. If all 10 rolls would be 1★, one is upgraded to 2★ automatically.
-- **3★ Pity:** Every 50 pulls (across all summons), a 3★ is guaranteed. The pity counter resets as soon as a 3★ is pulled (naturally or via pity).
+- **3★ Pity:** Every 50 pulls (across all banners), a 3★ is guaranteed. The pity counter resets as soon as a 3★ is pulled (naturally or via pity).
 
 > **Technical Note:**
 > The 2★ guarantee is enforced in the service layer (`WaifuService.perform_multi_summon`). This means all multi-summon commands, including super multi, always benefit from this guarantee. No additional logic is needed in command handlers.
@@ -242,22 +270,26 @@ GACHA_RATES = {
 PITY_3_STAR = 50   # Guaranteed 3-star every 50 pulls
 ```
 
+### **Banner Selection**
+- Users can select their active banner using `/nwnl_banner_select` and view banners with `/nwnl_banner_list`.
+- Summons always use the user's selected banner.
+
 ### **Shard Rewards (From Duplicates)**
 ```python
 SHARD_REWARDS = {
-    3: 90,  # 3-star dupe = 90 shards
-    2: 20,  # 2-star dupe = 20 shards
-    1: 5,   # 1-star dupe = 5 shards
+  3: 90,  # 3-star dupe = 90 shards
+  2: 20,  # 2-star dupe = 20 shards
+  1: 5,   # 1-star dupe = 5 shards
 }
 ```
 
 ### **Upgrade Costs (Automatic)**
 ```python
 UPGRADE_COSTS = {
-    2: 50,   # 1→2 star: 50 shards
-    3: 100,  # 2→3 star: 100 shards
-    4: 150,  # 3→4 star: 150 shards
-    5: 200,  # 4→5 star: 200 shards
+  2: 50,   # 1→2 star: 50 shards
+  3: 100,  # 2→3 star: 100 shards
+  4: 150,  # 3→4 star: 150 shards
+  5: 200,  # 4→5 star: 200 shards
 }
 ```
 
@@ -273,15 +305,15 @@ UPGRADE_COSTS = {
 Each character contributes to user power based on current star level:
 ```python
 if current_star == 1:
-    power = 100
+  power = 100
 elif current_star == 2:
-    power = 250
+  power = 250
 elif current_star == 3:
-    power = 500
+  power = 500
 elif current_star == 4:
-    power = 1000
+  power = 1000
 elif current_star >= 5:
-    power = 2000 * (2 ** (current_star - 5))
+  power = 2000 * (2 ** (current_star - 5))
 ```
 
 ---
@@ -564,24 +596,28 @@ When used from inventory:
 #### **Core Constants**
 ```python
 class WaifuService:
-    # Gacha rates for 1-3 star pulls
-    GACHA_RATES = {3: 5.0, 2: 20.0, 1: 75.0}
-    
-    # Pity system
-    PITY_3_STAR = 50
-    
-    # Shard rewards from duplicates
-    SHARD_REWARDS = {3: 90, 2: 20, 1: 5}
-    
-    # Upgrade costs
-    UPGRADE_COSTS = {2: 50, 3: 100, 4: 150, 5: 200}
-    
-    # Maximum star level
-    MAX_STAR_LEVEL = 5
-    
-    # Cost per summon
-    SUMMON_COST = 10
+  # Banner-based gacha rates for 1-3 star pulls
+  GACHA_RATES = {
+    3: {"rate_up": 3.5, "rest": 1.5},
+    2: {"rate_up": 10.0, "rest": 10.0},
+    1: {"rate_up": 35.0, "rest": 30.0},
+  }
+  # Pity system
+  PITY_3_STAR = 50
+  # Shard rewards from duplicates
+  SHARD_REWARDS = {3: 90, 2: 20, 1: 5}
+  # Upgrade costs
+  UPGRADE_COSTS = {2: 50, 3: 100, 4: 150, 5: 200}
+  # Maximum star level
+  MAX_STAR_LEVEL = 5
+  # Cost per summon
+  SUMMON_COST = 10
 ```
+
+#### **Banner Logic**
+- All summon methods use the user's selected banner (from `users.selected_banner_id`).
+- Banner pool and rate-up logic are enforced for every summon.
+- If no banner is selected, summon commands return an error.
 
 #### **Key Methods**
 
@@ -665,6 +701,23 @@ async def purchase_item(self, user_id: str, item_id: int, quantity: int = 1) -> 
 
 #### **Key Methods**
 
+##### `get_all_banners() -> List[Dict[str, Any]]`
+- **Purpose:** Retrieve all banners (active/inactive)
+- **Features:** Returns banner metadata and status
+
+##### `get_banner_by_id(banner_id: int) -> Dict[str, Any]`
+- **Purpose:** Retrieve a specific banner by ID
+
+##### `set_user_selected_banner(discord_id: str, banner_id: int) -> None`
+- **Purpose:** Set the user's selected banner
+- **Features:** Persists selection in `users.selected_banner_id`
+
+##### `get_user_selected_banner(discord_id: str) -> Optional[int]`
+- **Purpose:** Get the user's currently selected banner
+
+##### `get_waifus_for_banner(banner_id: int) -> List[Dict[str, Any]]`
+- **Purpose:** Get all waifus featured in a given banner
+
 ##### `get_or_create_user(discord_id: str) -> Dict[str, Any]`
 - **Purpose:** Retrieve user or create with defaults
 - **Default values:** 2000 crystals, rank 1, empty academy name
@@ -685,38 +738,48 @@ async def purchase_item(self, user_id: str, item_id: int, quantity: int = 1) -> 
 ```python
 class CommandQueueService:
     """Ensures sequential command execution per user."""
+#### `/nwnl_banner_list` - List Available Banners
+- **Implementation:** `BannerCog.nwnl_banner_list()`
+- **Features:**
+  - Shows all available banners (anime/series)
+  - Indicates which banners are active
+  - Shows waifus featured in each banner
     
+#### `/nwnl_banner_select <banner_id>` - Select Active Banner
+- **Parameters:** Banner ID (with autocomplete)
+- **Implementation:** `BannerCog.nwnl_banner_select()`
+- **Features:**
+  - Sets the user's active banner for all summons
+  - Persists selection in the database
+  - Confirmation and error handling
     async def enqueue_command(self, user_id: str, command_impl, ctx, *args, **kwargs):
         """Queue command for sequential execution."""
-        # Prevents race conditions in currency operations
-        # Ensures data consistency for users
-```
-
----
-## 🔄 Data Pipeline & Root-Level Scripts
-
-**These scripts are essential for managing the NWNL system's data and database:**
+  - Single character pull from the user's selected banner
+  - Banner rate-up logic applies
+  - Automatic star upgrades
+  - Shard calculation
+  - Embed result display
+  - Error handling for insufficient currency
+  - Error if no banner is selected
 
 - **pull_from_mal.py**: Pulls character and anime data from MyAnimeList, outputs to characters_mal.csv and anime_mal.csv.
-- **character_edit.py**: Cleans and filters character data, outputs `character_sql.csv`.
-- **process_character_final.py**: Processes the manually edited Excel file (`characters_cleaned.xlsx`) and outputs `character_final.csv` for database upload.
-- **upload_to_postgres.py**: Uploads processed character data from `character_final.csv` to the PostgreSQL database.
-- **initialize_shop.py**: Populates the shop with default items (guarantee tickets) in the database.
-- **reset_database_star_system.py**: Purges all data and recreates the schema for a fresh start (use with caution).
-- **reset_users_to_2000_gems.py**: Resets all user accounts to the base state (2000 sakura crystals), preserving accounts.
-- **base.py**: Main bot entrypoint, sets up the Discord bot, loads config, initializes all services, and starts the event loop.
-
-**Other files:**
+  - **2★ Guarantee:** Always at least one 2★ or higher per 10x multi-summon
+  - 3★ pity system (see above)
+  - Batch processing of 10 summons from the user's selected banner
+  - Banner rate-up logic applies
+  - Summary statistics
+  - Individual high-rarity embeds
+  - Aggregated low-rarity summary
+  - Error if no banner is selected
 - config.yml: Main configuration file for database and system settings.
 - secrets.json: Stores sensitive database credentials.
-- requirements.txt: Python dependencies for the project.
-
----
-## 🔧 **Development Guide**
-
-### **Adding New Commands**
-
-1. **Create command method in appropriate cog**
+  - Performs multiple 10x multi-summons in a single command, all from the user's selected banner
+  - Each multi-summon always guarantees at least one 2★ or higher
+  - 3★ pity system applies across all pulls
+  - Banner rate-up logic applies
+  - Results are aggregated and summarized
+  - Per-multi breakdown and legendary (3★) card info always shown
+  - Error if no banner is selected
 2. **Use `@commands.hybrid_command` decorator**
 3. **Implement through `queue_command` for user safety**
 4. **Follow error handling patterns**
@@ -741,10 +804,13 @@ async def _new_command_impl(self, ctx: commands.Context):
 ### **Database Modifications**
 
 1. **Update schema in `_create_tables_postgres()`**
-2. **Add migration logic for existing data**
+2. **Add migration SQL for existing data:**
+  - For new columns (e.g., `selected_banner_id`), write a migration script to add the column if it does not exist.
+  - For new tables (e.g., `banners`), write a migration script to create the table if it does not exist.
+  - Always test migrations on a development database before production.
 3. **Update relevant service methods**
 4. **Test with development database**
-5. **Document schema changes**
+5. **Document schema changes in both code and documentation**
 
 ### **Service Extensions**
 
