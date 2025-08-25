@@ -23,52 +23,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class PostgresUploader:
-    def load_banners(self) -> list:
-        """Load banners (anime) from anime_mal.csv."""
-        banners = []
-        try:
-            with open(os.path.join("data", "anime_mal.csv"), 'r', encoding='utf-8', newline='') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    banners.append({
-                        "mal_id": int(row["mal_id"]),
-                        "title": row["title"],
-                        "title_english": row.get("title_english", None),
-                        "image_url": row.get("image_url", None)
-                    })
-        except Exception as e:
-            logger.error(f"Error loading banners: {e}")
-        return banners
-
-    async def upload_banners(self):
-        """Upload banners to the banners table."""
-        banners = self.load_banners()
-        if not banners:
-            logger.warning("No banners to upload.")
-            return {}
-        banner_id_map = {}
-        for banner in banners:
-            try:
-                # Check if banner already exists by mal_id
-                async with self.db_service.connection_pool.acquire() as conn:
-                    row = await conn.fetchrow("SELECT id FROM banners WHERE mal_id = $1", banner["mal_id"])
-                    if row:
-                        banner_id = row["id"]
-                    else:
-                        result = await conn.fetchrow(
-                            """
-                            INSERT INTO banners (mal_id, title, title_english, image_url)
-                            VALUES ($1, $2, $3, $4)
-                            RETURNING id
-                            """,
-                            banner["mal_id"], banner["title"], banner["title_english"], banner["image_url"]
-                        )
-                        banner_id = result["id"] if result else None
-                    if banner_id:
-                        banner_id_map[banner["mal_id"]] = banner_id
-            except Exception as e:
-                logger.error(f"Error uploading banner {banner['title']}: {e}")
-        return banner_id_map
     """Service to upload character data to PostgreSQL database."""
 
     def __init__(self, config: Config):
@@ -243,9 +197,6 @@ class PostgresUploader:
 
             logger.info("✅ Database connection successful!")
 
-            # Upload banners first and get mal_id to banner_id mapping
-            banner_id_map = await self.upload_banners()
-
             # Process and upload each character
             successful_uploads = 0
             failed_uploads = 0
@@ -260,15 +211,6 @@ class PostgresUploader:
                     if not char_data:
                         failed_uploads += 1
                         continue
-
-                    # Set banner_id from series_id (mal_id)
-                    series_id = character.get("series_id")
-                    if series_id:
-                        try:
-                            series_id_int = int(series_id)
-                            char_data["banner_id"] = banner_id_map.get(series_id_int)
-                        except Exception:
-                            char_data["banner_id"] = None
 
                     waifu_id = char_data["waifu_id"]
                     # Check db_service is initialized

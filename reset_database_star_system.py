@@ -42,34 +42,21 @@ async def run_database_reset():
     
     print("\n🔄 Starting database reset...")
     try:
-        import psycopg2
-        print("\n📊 Nuking all tables in the database (PostgreSQL)...")
+        # Initialize database service directly
+        print("\n📊 Initializing database connection...")
         config = Config.create()
         config.set_mode("DEV")
-        pg = config.get_postgres_config()
-        conn = psycopg2.connect(
-            host=pg["host"],
-            port=pg["port"],
-            user=pg["user"],
-            password=pg["password"],
-            dbname=pg["database"]
-        )
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute("SELECT tablename FROM pg_tables WHERE schemaname = 'public';")
-        tables = [row[0] for row in cur.fetchall()]
-        for table in tables:
-            try:
-                cur.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE;')
-                logger.info(f"Dropped table: {table}")
-            except Exception as e:
-                logger.error(f"Error dropping table {table}: {e}")
-        cur.close()
-        conn.close()
-        print("\n✅ All tables dropped. Now recreating schema...")
-        # Now re-initialize schema using DatabaseService
         db = DatabaseService(config)
         await db.initialize()
+        # Drop and recreate all tables
+        print("\n🗑️ Dropping all database tables...")
+        await drop_all_tables(db)
+        # Close and re-initialize the database connection to clear any lingering state
+        await db.close()
+        db = DatabaseService(config)
+        await db.initialize()
+        print("\n🔧 Recreating database schema...")
+        await recreate_schema(db)
         await db.close()
         print("\n✅ Database reset complete!")
         print("🔧 Schema has been recreated and is ready for use.")
@@ -90,23 +77,12 @@ async def drop_all_tables(db):
         tables = [row['tablename'] for row in rows]
         dropped_count = 0
         for table_name in tables:
-            # Double-check if table still exists before dropping (handles schema drift)
-            exists_row = await conn.fetchrow(
-                """
-                SELECT EXISTS (
-                    SELECT 1 FROM information_schema.tables 
-                    WHERE table_schema = 'public' AND table_name = $1
-                ) AS exists;
-                """, table_name)
-            if exists_row and exists_row['exists']:
-                try:
-                    await conn.execute(f'DROP TABLE IF EXISTS "{table_name}" CASCADE;')
-                    logger.info(f"✅ Dropped table: {table_name}")
-                    dropped_count += 1
-                except Exception as e:
-                    logger.error(f"❌ Error dropping table {table_name}: {e}")
-            else:
-                logger.info(f"Table {table_name} does not exist, skipping.")
+            try:
+                await conn.execute(f'DROP TABLE IF EXISTS "{table_name}" CASCADE;')
+                logger.info(f"✅ Dropped table: {table_name}")
+                dropped_count += 1
+            except Exception as e:
+                logger.error(f"❌ Error dropping table {table_name}: {e}")
         print(f"✅ Dropped {dropped_count} tables")
 
 
