@@ -11,33 +11,6 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
-    # Banner methods
-    async def get_all_banners(self) -> List[Dict[str, Any]]:
-        """Get all banners from the banners table."""
-        async with self.connection_pool.acquire() as conn:
-            rows = await conn.fetch("SELECT * FROM banners ORDER BY id")
-            return [dict(row) for row in rows]
-
-    async def get_banner_by_id(self, banner_id: int) -> Optional[Dict[str, Any]]:
-        """Get a banner by its ID."""
-        async with self.connection_pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM banners WHERE id = $1", banner_id)
-            return dict(row) if row else None
-
-    async def set_user_selected_banner(self, discord_id: str, banner_id: int) -> bool:
-        """Set the user's selected banner (stores in users table as selected_banner_id)."""
-        async with self.connection_pool.acquire() as conn:
-            result = await conn.execute(
-                "UPDATE users SET selected_banner_id = $1 WHERE discord_id = $2",
-                banner_id, discord_id
-            )
-            return result[-1] != '0'
-
-    async def get_user_selected_banner(self, discord_id: str) -> Optional[int]:
-        """Get the user's selected banner ID (from users table)."""
-        async with self.connection_pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT selected_banner_id FROM users WHERE discord_id = $1", discord_id)
-            return row["selected_banner_id"] if row and row["selected_banner_id"] is not None else None
     async def add_waifus_to_user_batch(self, discord_id: str, waifu_ids: List[int]) -> List[Dict[str, Any]]:
         """Batch add multiple waifus to a user's collection, skipping already-owned waifus. Returns full waifu+user_waifu data for all added."""
         if not waifu_ids:
@@ -142,7 +115,6 @@ class DatabaseService:
                 quartzs INTEGER DEFAULT 0,
                 pity_counter INTEGER DEFAULT 0,
                 last_daily_reset BIGINT DEFAULT 0,
-                selected_banner_id INTEGER REFERENCES banners(id) ON DELETE SET NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_discord_id ON users(discord_id);
