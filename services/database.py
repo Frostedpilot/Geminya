@@ -90,6 +90,19 @@ class DatabaseService:
 
     async def _create_tables_postgres(self, conn):
         """Create all required tables for PostgreSQL."""
+        # Banners table
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS banners (
+                id SERIAL PRIMARY KEY,
+                mal_id INTEGER,
+                title VARCHAR(255) NOT NULL,
+                title_english VARCHAR(255),
+                image_url TEXT
+            );
+            """
+        )
+
         # Users table
         await conn.execute(
             """
@@ -108,13 +121,14 @@ class DatabaseService:
             """
         )
 
-        # Waifus table (waifu_id is now the primary key)
+        # Waifus table (waifu_id is now the primary key, linked to banners)
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS waifus (
                 waifu_id INTEGER PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 series VARCHAR(255) NOT NULL,
+                banner_id INTEGER REFERENCES banners(id) ON DELETE SET NULL,
                 genre VARCHAR(100) NOT NULL,
                 element VARCHAR(50),
                 rarity INTEGER NOT NULL CHECK (rarity >= 1 AND rarity <= 3),
@@ -127,6 +141,7 @@ class DatabaseService:
             );
             CREATE INDEX IF NOT EXISTS idx_rarity ON waifus(rarity);
             CREATE INDEX IF NOT EXISTS idx_name ON waifus(name);
+            CREATE INDEX IF NOT EXISTS idx_banner_id ON waifus(banner_id);
             """
         )
 
@@ -311,20 +326,23 @@ class DatabaseService:
 
     # Waifu-related methods
     async def add_waifu(self, waifu_data: Dict[str, Any]) -> int:
-        """Add a new waifu to the database (PostgreSQL)."""
+        """Add a new waifu to the database (PostgreSQL), now supporting banner_id."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         async with self.connection_pool.acquire() as conn:
+            # Default banner_id to None if not provided, for backward compatibility
+            banner_id = waifu_data.get("banner_id", None)
             row = await conn.fetchrow(
                 """
                 INSERT INTO waifus (
-                    name, series, genre, element, rarity, image_url, waifu_id,
+                    name, series, banner_id, genre, element, rarity, image_url, waifu_id,
                     base_stats, birthday, favorite_gifts, special_dialogue
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING waifu_id
                 """,
                 waifu_data["name"],
                 waifu_data["series"],
+                banner_id,
                 waifu_data.get("genre", "Unknown"),
                 waifu_data.get("element"),
                 waifu_data["rarity"],

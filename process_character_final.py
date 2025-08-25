@@ -15,6 +15,21 @@ logger = logging.getLogger(__name__)
 
 
 class CharacterFinalProcessor:
+    def load_anime_mal(self) -> dict:
+        """Load anime_mal.csv and return a mapping from series title to mal_id and banner info."""
+        anime_map = {}
+        try:
+            df = pd.read_csv(os.path.join("data", "anime_mal.csv"))
+            for _, row in df.iterrows():
+                anime_map[str(row["title"]).strip().lower()] = {
+                    "mal_id": int(row["mal_id"]),
+                    "title": row["title"],
+                    "title_english": row.get("title_english", None),
+                    "image_url": row.get("image_url", None)
+                }
+        except Exception as e:
+            logger.error(f"❌ Error loading anime_mal.csv: {e}")
+        return anime_map
     """Process cleaned Excel file for the new star system."""
 
     def __init__(self):
@@ -56,6 +71,12 @@ class CharacterFinalProcessor:
             return pd.DataFrame()
         # Select only the required columns
         df_clean = df[required_columns].copy()
+        # Add series_id (mal_id) by mapping series to anime_mal.csv
+        anime_map = self.load_anime_mal()
+        def get_series_id(series):
+            key = str(series).strip().lower()
+            return anime_map[key]["mal_id"] if key in anime_map else None
+        df_clean["series_id"] = df_clean["series"].apply(get_series_id)
         # Clean and validate data
         # Remove rows with missing essential data
         df_clean = df_clean.dropna(subset=['waifu_id', 'name', 'rarity'])
@@ -145,8 +166,8 @@ class CharacterFinalProcessor:
         try:
             logger.info(f"💾 Saving final data to {self.output_file}")
             
-            # Ensure columns are in the expected order for upload_to_mysql.py
-            column_order = ['waifu_id', 'name', 'series', 'genre', 'rarity', 'image_url', 'favorites']
+            # Ensure columns are in the expected order for upload_to_postgres.py
+            column_order = ['waifu_id', 'name', 'series', 'series_id', 'genre', 'rarity', 'image_url', 'favorites']
             df_final = df[column_order]
             
             # Save to CSV
@@ -213,7 +234,7 @@ def main():
     print("  ✅ Compatible with upload_to_mysql.py")
     print("")
     print("Required Excel columns:")
-    print("  - waifu_id, name, series, genre, rarity, image_url, favorites")
+    print("  - waifu_id, name, series, series_id, genre, rarity, image_url, favorites")
     print("="*70)
     
     if success:
