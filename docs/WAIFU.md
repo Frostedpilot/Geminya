@@ -103,6 +103,17 @@ class BaseCommand(commands.Cog):
 
 ### **Core Tables (PostgreSQL)**
 
+#### `banners` - Gacha Banners
+```sql
+CREATE TABLE IF NOT EXISTS banners (
+    id SERIAL PRIMARY KEY,
+    mal_id INTEGER,
+    title VARCHAR(255) NOT NULL,
+    title_english VARCHAR(255),
+    image_url TEXT
+);
+```
+
 #### `users` - User Accounts
 ```sql
 CREATE TABLE IF NOT EXISTS users (
@@ -114,40 +125,27 @@ CREATE TABLE IF NOT EXISTS users (
     quartzs INTEGER DEFAULT 0,
     pity_counter INTEGER DEFAULT 0,
     last_daily_reset BIGINT DEFAULT 0,
-  selected_banner_id INTEGER DEFAULT NULL, -- User's selected banner (NEW)
+    selected_banner_id INTEGER REFERENCES banners(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_discord_id ON users(discord_id);
 ```
 
-#### `banners` - Gacha Banners (NEW)
-```sql
-CREATE TABLE IF NOT EXISTS banners (
-  id SERIAL PRIMARY KEY,
-  name VARCHAR(255) NOT NULL,
-  description TEXT,
-  is_active BOOLEAN DEFAULT TRUE,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_banner_active ON banners(is_active);
-```
-
 #### `waifus` - Character Database
 ```sql
 CREATE TABLE IF NOT EXISTS waifus (
-    id SERIAL PRIMARY KEY,
+    waifu_id INTEGER PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     series VARCHAR(255) NOT NULL,
+    banner_id INTEGER REFERENCES banners(id) ON DELETE SET NULL,
     genre VARCHAR(100) NOT NULL,
     element VARCHAR(50),
     rarity INTEGER NOT NULL CHECK (rarity >= 1 AND rarity <= 3),
     image_url TEXT,
-    mal_id INTEGER,
     base_stats TEXT,
     birthday DATE,
     favorite_gifts TEXT,
     special_dialogue TEXT,
-  banner_id INTEGER REFERENCES banners(id) ON DELETE SET NULL, -- Banner association (NEW)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_rarity ON waifus(rarity);
@@ -160,7 +158,7 @@ CREATE INDEX IF NOT EXISTS idx_banner_id ON waifus(banner_id);
 CREATE TABLE IF NOT EXISTS user_waifus (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    waifu_id INTEGER NOT NULL REFERENCES waifus(id) ON DELETE CASCADE,
+    waifu_id INTEGER NOT NULL REFERENCES waifus(waifu_id) ON DELETE CASCADE,
     bond_level INTEGER DEFAULT 1,
     constellation_level INTEGER DEFAULT 0,
     current_star_level INTEGER DEFAULT NULL,
@@ -176,6 +174,63 @@ CREATE TABLE IF NOT EXISTS user_waifus (
 );
 CREATE INDEX IF NOT EXISTS idx_user_id ON user_waifus(user_id);
 CREATE INDEX IF NOT EXISTS idx_waifu_id ON user_waifus(waifu_id);
+```
+
+#### `conversations` - Conversation Logs
+```sql
+CREATE TABLE IF NOT EXISTS conversations (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    waifu_id INTEGER NOT NULL REFERENCES waifus(waifu_id) ON DELETE CASCADE,
+    user_message TEXT NOT NULL,
+    waifu_response TEXT NOT NULL,
+    mood_change INTEGER DEFAULT 0,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_user_waifu_id ON conversations(user_id, waifu_id);
+```
+
+#### `daily_missions` - Daily Missions
+```sql
+CREATE TABLE IF NOT EXISTS daily_missions (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    type VARCHAR(50) NOT NULL,
+    target_count INTEGER NOT NULL,
+    reward_type VARCHAR(50) NOT NULL,
+    reward_amount INTEGER NOT NULL,
+    difficulty VARCHAR(20) DEFAULT 'easy',
+    is_active BOOLEAN DEFAULT TRUE
+);
+```
+
+#### `user_mission_progress` - User Mission Progress
+```sql
+CREATE TABLE IF NOT EXISTS user_mission_progress (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mission_id INTEGER NOT NULL REFERENCES daily_missions(id) ON DELETE CASCADE,
+    current_progress INTEGER DEFAULT 0,
+    completed BOOLEAN DEFAULT FALSE,
+    claimed BOOLEAN DEFAULT FALSE,
+    date DATE,
+    UNIQUE (user_id, mission_id, date)
+);
+```
+
+#### `events` - Events Table
+```sql
+CREATE TABLE IF NOT EXISTS events (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    start_date TIMESTAMP NOT NULL,
+    end_date TIMESTAMP NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    bonus_conditions TEXT,
+    is_active BOOLEAN DEFAULT TRUE
+);
 ```
 
 #### `shop_items` - Shop Inventory
@@ -234,27 +289,53 @@ CREATE INDEX IF NOT EXISTS idx_active ON user_inventory(is_active);
 
 ---
 
+
 ## ⭐ **Star System & Gacha Mechanics**
 
-### **Banner System & Gacha Rates (1★-3★ Only, per banner)**
+### **Banner System (Server-Driven, In-Memory)**
 
-- **Banner System:** Users can select a banner (anime/series) to summon from. Each banner has its own pool of waifus, with rate-up logic for featured characters. Banner selection is user-dependent and persists per user.
-- **Gacha Rates:**
-  - **Rate-up waifus:**
+**Banner System:**
+
+All banners are managed server-side in memory by the `BannerManager` service. Banners are no longer stored in the database. Instead, the server defines and manages all available banners and their waifu pools at runtime.
+
+**Banner Types:**
+
+- **Series Banner:** The waifu pool is constructed from all characters belonging to a specific anime/series (using `series_id`).
+- **Character-List Banner:** The waifu pool is a custom list of specific waifu IDs, allowing for special or event banners.
+
+**Banner Selection:**
+
+Each user can select their active banner (persisted in `users.selected_banner_id`). All summons use the waifu pool from the user's selected banner.
+
+**Waifu Pools:**
+
+- For **series banners**, the pool is dynamically built from all waifus with the matching `series_id`.
+- For **character-list banners**, the pool is the explicit list of waifu IDs defined for that banner.
+- All banner logic, including rate-up and pool management, is handled in memory by the server.
+
+**BannerManager:**
+
+- Responsible for defining, updating, and providing waifu pools for all banners.
+- Supports both banner types and exposes APIs for listing banners, retrieving waifu pools, and handling rate-up logic.
+- No banner data is stored in the database; only series, waifus, and user-selected banner IDs are persisted.
+
+**Gacha Rates:**
+
+- **Rate-up waifus:**
   - 3★: 3.5% (rate-up), 1.5% (rest)
   - 2★: 10% (rate-up), 10% (rest)
   - 1★: 35% (rate-up), 30% (rest)
-  - **Total per rarity:**
+- **Total per rarity:**
   - 3★: 5%
   - 2★: 20%
   - 1★: 75%
-- **Banner selection and rates are enforced in all summon commands.**
+- Banner selection and rates are enforced in all summon commands via the BannerManager and WaifuService.
 
 ```python
 GACHA_RATES = {
-  3: {"rate_up": 3.5, "rest": 1.5},
-  2: {"rate_up": 10.0, "rest": 10.0},
-  1: {"rate_up": 35.0, "rest": 30.0},
+    3: {"rate_up": 3.5, "rest": 1.5},
+    2: {"rate_up": 10.0, "rest": 10.0},
+    1: {"rate_up": 35.0, "rest": 30.0},
 }
 ```
 
@@ -270,9 +351,15 @@ GACHA_RATES = {
 PITY_3_STAR = 50   # Guaranteed 3-star every 50 pulls
 ```
 
-### **Banner Selection**
-- Users can select their active banner using `/nwnl_banner_select` and view banners with `/nwnl_banner_list`.
-- Summons always use the user's selected banner.
+
+### **Banner Selection & Waifu Pools**
+
+- Users can select their active banner using `/nwnl_banner_select` and view all available banners with `/nwnl_banner_list`.
+- All banners are managed by the server in memory (see BannerManager). No banner data is stored in the database.
+- Each banner defines its waifu pool:
+  - **Series banner:** Pool is all waifus with the matching `series_id`.
+  - **Character-list banner:** Pool is the explicit list of waifu IDs defined for the banner.
+- Summons always use the waifu pool from the user's selected banner, with all rate-up and rarity logic enforced by the BannerManager and WaifuService.
 
 ### **Shard Rewards (From Duplicates)**
 ```python
@@ -591,6 +678,37 @@ When used from inventory:
 
 ## 🔧 **Service Layer Documentation**
 
+
+### **BannerManager** (`services/banner_manager.py`)
+
+#### **Overview**
+The `BannerManager` is responsible for all banner logic, waifu pool management, and rate-up handling. It operates entirely in memory and is the single source of truth for all banners in the system.
+
+#### **Banner Types**
+- **Series Banner:** Pool is all waifus with a given `series_id`.
+- **Character-List Banner:** Pool is a custom list of waifu IDs.
+
+#### **Key Responsibilities**
+- Define and manage all banners (no DB storage)
+- Provide APIs to list banners, retrieve waifu pools, and handle rate-up logic
+- Support dynamic updates and event banners
+
+#### **Key Methods**
+
+##### `get_all_banners() -> List[Dict]`
+- Returns all banners (series and character-list types) with metadata
+
+##### `get_banner_waifu_pool(banner_id: int) -> List[Dict]`
+- Returns the waifu pool for a given banner, including rate-up info
+
+##### `get_banner_by_id(banner_id: int) -> Dict`
+- Returns metadata for a specific banner
+
+##### `is_valid_banner(banner_id: int) -> bool`
+- Checks if a banner is currently available
+
+---
+
 ### **WaifuService** (`services/waifu_service.py`)
 
 #### **Core Constants**
@@ -616,31 +734,35 @@ class WaifuService:
 
 #### **Banner Logic**
 - All summon methods use the user's selected banner (from `users.selected_banner_id`).
-- Banner pool and rate-up logic are enforced for every summon.
+- The waifu pool and rate-up logic are provided by the BannerManager for every summon.
 - If no banner is selected, summon commands return an error.
 
 #### **Key Methods**
+
 
 ##### `perform_summon(discord_id: str) -> Dict[str, Any]`
 - **Purpose:** Execute single character summon
 - **Process:**
   1. Validate user currency
   2. Deduct summon cost
-  3. Determine pull rarity (including pity)
-  4. Select random character
-  5. Process duplicate/new logic
-  6. Apply automatic upgrades
-  7. Return comprehensive result
+  3. Retrieve waifu pool from BannerManager for user's selected banner
+  4. Determine pull rarity (including pity)
+  5. Select random character from pool (with rate-up logic)
+  6. Process duplicate/new logic
+  7. Apply automatic upgrades
+  8. Return comprehensive result
+
 
 ##### `perform_multi_summon(discord_id: str) -> Dict[str, Any]`
 - **Purpose:** Execute 10-character summon with guarantees
 - **Process:**
   1. Validate 100 crystal cost
-  2. Process 10 individual summons
-  3. **2★ Guarantee:** If all 10 rolls are 1★, one is upgraded to 2★ (guaranteed)
-  4. 3★ pity logic (see above)
-  5. Aggregate results and statistics
-  6. Return batch summary
+  2. Retrieve waifu pool from BannerManager for user's selected banner
+  3. Process 10 individual summons using the pool
+  4. **2★ Guarantee:** If all 10 rolls are 1★, one is upgraded to 2★ (guaranteed)
+  5. 3★ pity logic (see above)
+  6. Aggregate results and statistics
+  7. Return batch summary
 
 ##### `_handle_summon_result(discord_id: str, waifu: Dict, pulled_rarity: int) -> Dict[str, Any]`
 - **Purpose:** Process individual summon result
@@ -669,44 +791,38 @@ class WaifuService:
   4. Update database if rank increased
   5. Return current rank
 
+
 ### **DatabaseService** (`services/database.py`)
 
 #### **Connection Management**
 ```python
 class DatabaseService:
-    def __init__(self, config: Config):
-        self.config = config
-        self.connection_pool = None
-        self.logger = logging.getLogger(__name__)
+  def __init__(self, config: Config):
+    self.config = config
+    self.connection_pool = None
+    self.logger = logging.getLogger(__name__)
     
-    async def initialize(self):
-        """Initialize PostgreSQL connection pool."""
-        self.connection_pool = await asyncpg.create_pool(
-            self.config.database.url,
-            min_size=1,
-            max_size=10
-        )
+  async def initialize(self):
+    """Initialize PostgreSQL connection pool."""
+    self.connection_pool = await asyncpg.create_pool(
+      self.config.database.url,
+      min_size=1,
+      max_size=10
+    )
 ```
 
 #### **Transaction Safety**
 All critical operations use transactions:
 ```python
 async def purchase_item(self, user_id: str, item_id: int, quantity: int = 1) -> bool:
-    async with self.connection_pool.acquire() as conn:
-        async with conn.transaction():
-            # All database operations here
-            # Automatic rollback on error
-            # Automatic commit on success
+  async with self.connection_pool.acquire() as conn:
+    async with conn.transaction():
+      # All database operations here
+      # Automatic rollback on error
+      # Automatic commit on success
 ```
 
 #### **Key Methods**
-
-##### `get_all_banners() -> List[Dict[str, Any]]`
-- **Purpose:** Retrieve all banners (active/inactive)
-- **Features:** Returns banner metadata and status
-
-##### `get_banner_by_id(banner_id: int) -> Dict[str, Any]`
-- **Purpose:** Retrieve a specific banner by ID
 
 ##### `set_user_selected_banner(discord_id: str, banner_id: int) -> None`
 - **Purpose:** Set the user's selected banner
@@ -714,9 +830,6 @@ async def purchase_item(self, user_id: str, item_id: int, quantity: int = 1) -> 
 
 ##### `get_user_selected_banner(discord_id: str) -> Optional[int]`
 - **Purpose:** Get the user's currently selected banner
-
-##### `get_waifus_for_banner(banner_id: int) -> List[Dict[str, Any]]`
-- **Purpose:** Get all waifus featured in a given banner
 
 ##### `get_or_create_user(discord_id: str) -> Dict[str, Any]`
 - **Purpose:** Retrieve user or create with defaults
@@ -738,28 +851,22 @@ async def purchase_item(self, user_id: str, item_id: int, quantity: int = 1) -> 
 ```python
 class CommandQueueService:
     """Ensures sequential command execution per user."""
+
 #### `/nwnl_banner_list` - List Available Banners
 - **Implementation:** `BannerCog.nwnl_banner_list()`
 - **Features:**
-  - Shows all available banners (anime/series)
-  - Indicates which banners are active
-  - Shows waifus featured in each banner
-    
+  - Lists all banners defined in the server's BannerManager (series and character-list types)
+  - Shows banner type, featured waifus, and any rate-up details
+  - Indicates which banners are currently available/active
+
 #### `/nwnl_banner_select <banner_id>` - Select Active Banner
 - **Parameters:** Banner ID (with autocomplete)
 - **Implementation:** `BannerCog.nwnl_banner_select()`
 - **Features:**
-  - Sets the user's active banner for all summons
-  - Persists selection in the database
-  - Confirmation and error handling
-    async def enqueue_command(self, user_id: str, command_impl, ctx, *args, **kwargs):
-        """Queue command for sequential execution."""
-  - Single character pull from the user's selected banner
-  - Banner rate-up logic applies
-  - Automatic star upgrades
-  - Shard calculation
-  - Embed result display
-  - Error handling for insufficient currency
+  - Sets the user's active banner for all summons (persisted in `users.selected_banner_id`)
+  - Only banners defined in the BannerManager can be selected
+  - Confirmation and error handling if the banner is not available
+  - All summons will use the waifu pool and rate-up logic from the selected banner
   - Error if no banner is selected
 
 - **pull_from_mal.py**: Pulls character and anime data from MyAnimeList, outputs to characters_mal.csv and anime_mal.csv.
@@ -801,12 +908,13 @@ async def _new_command_impl(self, ctx: commands.Context):
         # Error response
 ```
 
+
 ### **Database Modifications**
 
 1. **Update schema in `_create_tables_postgres()`**
 2. **Add migration SQL for existing data:**
   - For new columns (e.g., `selected_banner_id`), write a migration script to add the column if it does not exist.
-  - For new tables (e.g., `banners`), write a migration script to create the table if it does not exist.
+  - **Note:** Banners are no longer stored in the database. Only series, waifus, and user-selected banner IDs are persisted.
   - Always test migrations on a development database before production.
 3. **Update relevant service methods**
 4. **Test with development database**

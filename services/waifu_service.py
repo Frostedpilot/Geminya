@@ -6,10 +6,12 @@ This service manages the waifu gacha system where:
 - Duplicate pulls give shards which auto-upgrade characters when enough are collected
 """
 
+
 import random
 import logging
 from typing import Dict, List, Any, Optional
 from services.database import DatabaseService
+from services.banner_manager import BannerManager
 
 
 class WaifuService:
@@ -54,6 +56,7 @@ class WaifuService:
         self.db = database
         self.logger = logging.getLogger(__name__)
         self._waifu_list = []  # In-memory waifu list from CSV
+        self.banner_manager = BannerManager()
 
     def _load_waifus_from_csv(self, csv_path: str):
         import csv
@@ -62,27 +65,25 @@ class WaifuService:
             with open(csv_path, encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    # Convert numeric fields
                     valid = True
-                    # Only waifu_id is required as unique identifier
                     if 'waifu_id' in row and row['waifu_id'] != '':
                         try:
                             row['waifu_id'] = int(row['waifu_id'])
-                        except Exception:
+                        except Exception as e:
                             row['waifu_id'] = None
                             valid = False
+                            self.logger.warning("Invalid waifu_id in row: %s", row)
                     else:
                         row['waifu_id'] = None
                         valid = False
-                    # Parse rarity if present
                     if 'rarity' in row and row['rarity'] != '':
                         try:
                             row['rarity'] = int(row['rarity'])
-                        except Exception:
+                        except Exception as e:
                             row['rarity'] = None
+                            self.logger.warning("Invalid rarity in row: %s", row)
                     else:
                         row['rarity'] = None
-                    # Only add waifu if waifu_id is valid
                     if valid and row['waifu_id'] is not None:
                         waifus.append(row)
                     else:
@@ -128,7 +129,7 @@ class WaifuService:
                 "to_star": final_star_level,
                 "shards_used": required_shards
             })
-            self.logger.info(f"Auto-upgraded character {waifu_id} from {final_star_level - 1}* to {final_star_level}* for user {discord_id}")
+            self.logger.info("Auto-upgraded character %s from %d* to %d* for user %s", waifu_id, final_star_level - 1, final_star_level, discord_id)
         # If character reached max star level, convert excess shards to quartz
         if final_star_level >= self.MAX_STAR_LEVEL and remaining_shards > 0:
             total_quartz_gained = await self.convert_excess_shards_to_quartz(discord_id, waifu_id, remaining_shards)
@@ -174,7 +175,7 @@ class WaifuService:
                 return row["star_shards"] if row else 0
                     
         except Exception as e:
-            self.logger.error(f"Error getting character shards: {e}")
+            self.logger.error("Error getting character shards: %s", e)
             return 0
 
     async def add_character_shards(self, discord_id: str, waifu_id: int, amount: int) -> int:
@@ -205,7 +206,7 @@ class WaifuService:
                 return new_total
                     
         except Exception as e:
-            self.logger.error(f"Error adding character shards: {e}")
+            self.logger.error("Error adding character shards: %s", e)
             return 0
 
     async def get_character_star_level(self, discord_id: str, waifu_id: int) -> int:
@@ -231,7 +232,7 @@ class WaifuService:
                 return waifu_row["rarity"] if waifu_row else 1
                     
         except Exception as e:
-            self.logger.error(f"Error getting character star level: {e}")
+            self.logger.error("Error getting character star level: %s", e)
             return 1
 
     async def upgrade_character_star(self, discord_id: str, waifu_id: int) -> Dict[str, Any]:
@@ -292,7 +293,7 @@ class WaifuService:
                 }
                     
         except Exception as e:
-            self.logger.error(f"Error upgrading character star: {e}")
+            self.logger.error("Error upgrading character star: %s", e)
             return {
                 "success": False,
                 "message": f"Upgrade failed: {str(e)}"
@@ -311,13 +312,13 @@ class WaifuService:
             return excess_shards
             
         except Exception as e:
-            self.logger.error(f"Error converting excess shards to quartz: {e}")
+            self.logger.error("Error converting excess shards to quartz: %s", e)
             return 0
 
     # ==================== UPDATED GACHA METHODS ====================
 
     async def perform_summon(self, discord_id: str) -> Dict[str, Any]:
-        """Perform a waifu summon with banner rate-up system."""
+        """Perform a waifu summon using server-side banner/waifu pool logic."""
         user = await self.db.get_or_create_user(discord_id)
         if user["sakura_crystals"] < self.SUMMON_COST:
             return {
@@ -326,25 +327,18 @@ class WaifuService:
             }
         # Get user's selected banner (or fallback to default)
         selected_banner_id = await self.db.get_user_selected_banner(discord_id)
-        if selected_banner_id is None:
-            banners = await self.db.get_all_banners()
+        if not isinstance(selected_banner_id, int):
+            banners = self.banner_manager.get_all_banners()
             selected_banner_id = banners[0]["id"] if banners else None
+        banner = self.banner_manager.get_banner_by_id(selected_banner_id) if selected_banner_id is not None else None
+        if not banner:
+            return {"success": False, "message": "Selected banner not found."}
         rarity = await self._determine_summon_rarity(user)
-        rateup_table = {1: (30, 35), 2: (10, 10), 3: (1.5, 3.5)}
-        waifus_of_rarity = [w for w in self._waifu_list if w.get('rarity') == rarity]
+        waifu_ids = self.banner_manager.get_waifu_ids_for_banner(banner)
+        waifus_of_rarity = [w for w in self._waifu_list if w.get('rarity') == rarity and w.get('waifu_id') in waifu_ids]
         if not waifus_of_rarity:
-            return {"success": False, "message": f"No waifus available for rarity {rarity}. Please contact an administrator."}
-        rateup_waifus = [w for w in waifus_of_rarity if w.get('banner_id') == selected_banner_id]
-        rest_waifus = [w for w in waifus_of_rarity if w.get('banner_id') != selected_banner_id]
-        rateup_rate, rest_rate = rateup_table[rarity]
-        pool = []
-        if rateup_waifus:
-            pool.extend(rateup_waifus * int(rateup_rate * 10))
-        if rest_waifus:
-            pool.extend(rest_waifus * int(rest_rate * 10))
-        if not pool:
-            pool = waifus_of_rarity
-        selected_waifu = random.choice(pool)
+            return {"success": False, "message": f"No waifus available for rarity {rarity} in this banner. Please contact an administrator."}
+        selected_waifu = random.choice(waifus_of_rarity)
         summon_result = await self._handle_summon_result(discord_id, selected_waifu, rarity)
         await self.db.update_user_crystals(discord_id, -self.SUMMON_COST)
         if rarity >= 3:
@@ -451,24 +445,27 @@ class WaifuService:
     # ==================== MULTI-SUMMON WITH NEW SYSTEM ====================
 
     async def perform_multi_summon(self, discord_id: str) -> Dict[str, Any]:
-        """Perform multiple waifu summons with banner rate-up system - always 10 rolls."""
+        """Perform multiple waifu summons using server-side banner/waifu pool logic - always 10 rolls."""
         count = 10
         user = await self.db.get_or_create_user(discord_id)
         total_cost = self.SUMMON_COST * count
         if user["sakura_crystals"] < total_cost:
-            return {"success": False, "message": f"Not enough Sakura Crystals! You need {total_cost} but have {user['sakura_crystals']}."}
+            return {"success": False, "message": f"Not enough Sakura Crystals! You need {total_cost} but have {user['sakura_crystals']}.",}
         await self.db.update_user_crystals(discord_id, -total_cost)
         selected_banner_id = await self.db.get_user_selected_banner(discord_id)
-        if selected_banner_id is None:
-            banners = await self.db.get_all_banners()
+        if not isinstance(selected_banner_id, int):
+            banners = self.banner_manager.get_all_banners()
             selected_banner_id = banners[0]["id"] if banners else None
-        rateup_table = {1: (30, 35), 2: (10, 10), 3: (1.5, 3.5)}
+        banner = self.banner_manager.get_banner_by_id(selected_banner_id) if selected_banner_id is not None else None
+        if not banner:
+            return {"success": False, "message": "Selected banner not found."}
         pity_count = user.get("pity_counter", 0)
         pity_active = pity_count >= self.PITY_3_STAR
         pity_consumed = False
         results = []
         rarity_counts = {1: 0, 2: 0, 3: 0}
-        for i in range(count):
+        waifu_ids = self.banner_manager.get_waifu_ids_for_banner(banner)
+        for _ in range(count):
             current_user = await self.db.get_or_create_user(discord_id)
             if pity_active and not pity_consumed:
                 natural_rarity = await self._determine_summon_rarity(current_user)
@@ -480,20 +477,10 @@ class WaifuService:
                     rarity = natural_rarity
             else:
                 rarity = await self._determine_summon_rarity(current_user)
-            waifus_of_rarity = [w for w in self._waifu_list if w.get('rarity') == rarity]
+            waifus_of_rarity = [w for w in self._waifu_list if w.get('rarity') == rarity and w.get('waifu_id') in waifu_ids]
             if not waifus_of_rarity:
                 continue
-            rateup_waifus = [w for w in waifus_of_rarity if w.get('banner_id') == selected_banner_id]
-            rest_waifus = [w for w in waifus_of_rarity if w.get('banner_id') != selected_banner_id]
-            rateup_rate, rest_rate = rateup_table[rarity]
-            pool = []
-            if rateup_waifus:
-                pool.extend(rateup_waifus * int(rateup_rate * 10))
-            if rest_waifus:
-                pool.extend(rest_waifus * int(rest_rate * 10))
-            if not pool:
-                pool = waifus_of_rarity
-            selected_waifu = random.choice(pool)
+            selected_waifu = random.choice(waifus_of_rarity)
             summon_result = await self._handle_summon_result(discord_id, selected_waifu, rarity)
             results.append({"waifu": selected_waifu, "rarity": rarity, **summon_result})
             rarity_counts[rarity] += 1
@@ -531,7 +518,7 @@ class WaifuService:
             return enhanced_collection
             
         except Exception as e:
-            self.logger.error(f"Error getting enhanced collection: {e}")
+            self.logger.error("Error getting enhanced collection: %s", e)
             return []
 
     async def get_user_stats(self, discord_id: str) -> Dict[str, Any]:
@@ -539,27 +526,21 @@ class WaifuService:
         try:
             # Get user data
             user = await self.db.get_or_create_user(discord_id)
-            
             # Get user's collection
             collection = await self.db.get_user_collection(discord_id)
-            
             # Calculate stats
             total_waifus = len(collection)
             unique_waifus = len(set(waifu['waifu_id'] for waifu in collection))
-            
             # Calculate collection power and star distribution
             collection_power = 0
             star_distribution = {}
-            
             for waifu in collection:
                 waifu_id = waifu['waifu_id']
                 # Get current star level for this waifu
                 star_level = await self.get_character_star_level(discord_id, waifu_id)
-                
                 # Ensure minimum star level is 1
                 if star_level == 0:
                     star_level = 1
-                
                 # Calculate power based on star level (exponential growth)
                 # 1* = 100, 2* = 250, 3* = 500, 4* = 1000, 5* = 2000, etc.
                 if star_level == 1:
@@ -570,30 +551,21 @@ class WaifuService:
                     power = 500
                 elif star_level == 4:
                     power = 1000
-                elif star_level >= 5:
-                    # Exponential growth for 5+ stars
-                    power = 2000 * (2 ** (star_level - 5))
+                elif star_level == 5:
+                    power = 2000
                 else:
-                    power = 100
-                    
+                    power = 0
                 collection_power += power
-                
-                # Count star distribution
-                if star_level in star_distribution:
-                    star_distribution[star_level] += 1
-                else:
-                    star_distribution[star_level] = 1
-            
+                star_distribution[star_level] = star_distribution.get(star_level, 0) + 1
             return {
                 "user": user,
                 "total_waifus": total_waifus,
                 "unique_waifus": unique_waifus,
                 "collection_power": collection_power,
-                "rarity_distribution": star_distribution  # Renamed for clarity
+                "rarity_distribution": star_distribution
             }
-            
         except Exception as e:
-            self.logger.error(f"Error getting user stats: {e}")
+            self.logger.error("Error getting user stats: %s", e)
             # Return default stats structure
             user = await self.db.get_or_create_user(discord_id)
             return {
@@ -614,42 +586,34 @@ class WaifuService:
             current_rank = user["collector_rank"]
             current_power = stats["collection_power"]
             current_waifus = stats["total_waifus"]
-            
             # Calculate what rank the user should actually be based on their power
             # Rank 1: 0 power, Rank 2: 2000 power, Rank 3: 6000 power (2000+4000), etc.
             actual_rank_by_power = 1
             total_power_needed = 0
-            
             # Keep checking if user has enough power for next rank
             while True:
                 next_rank = actual_rank_by_power + 1
                 power_needed_for_next_rank = 1000 * (2 ** actual_rank_by_power)  # 2000, 4000, 8000, etc.
-                
                 if current_power >= total_power_needed + power_needed_for_next_rank:
                     total_power_needed += power_needed_for_next_rank
                     actual_rank_by_power = next_rank
                 else:
                     break
-            
             # Calculate what rank by waifus (5 waifus per rank: rank 1 = 0-4 waifus, rank 2 = 5-9, etc.)
             actual_rank_by_waifus = (current_waifus // 5) + 1
-            
             # True rank should be minimum of both (both requirements must be met)
             suggested_rank = min(actual_rank_by_power, actual_rank_by_waifus)
-            
             # If user should be higher rank, update their rank
             if suggested_rank > current_rank:
                 await self.db.update_user_rank(discord_id, suggested_rank)
-                self.logger.info(f"Auto-ranked up user {discord_id} from {current_rank} to {suggested_rank}")
+                self.logger.info("Auto-ranked up user %s from %d to %d", discord_id, current_rank, suggested_rank)
                 return suggested_rank
             else:
                 # Debug logging to see why no rank up occurred
-                self.logger.info(f"No rank up for {discord_id}: Current={current_rank}, Power rank={actual_rank_by_power} (power={current_power}), Waifu rank={actual_rank_by_waifus} (waifus={current_waifus}), Suggested={suggested_rank}")
-            
+                self.logger.info("No rank up for %s: Current=%d, Power rank=%d (power=%d), Waifu rank=%d (waifus=%d), Suggested=%d", discord_id, current_rank, actual_rank_by_power, current_power, actual_rank_by_waifus, current_waifus, suggested_rank)
             return current_rank
-            
         except Exception as e:
-            self.logger.error(f"Error checking/updating rank for {discord_id}: {e}")
+            self.logger.error("Error checking/updating rank for %s: %s", discord_id, e)
             # Return current rank as fallback
             user = await self.db.get_or_create_user(discord_id)
             return user["collector_rank"]
