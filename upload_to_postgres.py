@@ -24,10 +24,10 @@ logger = logging.getLogger(__name__)
 
 class PostgresUploader:
     def load_banners(self) -> list:
-        """Load banners (anime) from anime_final.csv."""
+        """Load banners (anime) from anime_mal.csv."""
         banners = []
         try:
-            with open(os.path.join("data", "anime_final.csv"), 'r', encoding='utf-8', newline='') as f:
+            with open(os.path.join("data", "anime_mal.csv"), 'r', encoding='utf-8', newline='') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     banners.append({

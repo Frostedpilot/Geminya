@@ -15,26 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 class CharacterFinalProcessor:
-    def save_anime_final_csv(self, anime_map: dict) -> bool:
-        """Save the anime/banner info to anime_final.csv."""
-        try:
-            import pandas as pd
-            anime_list = []
-            for key, info in anime_map.items():
-                anime_list.append({
-                    "mal_id": info["mal_id"],
-                    "title": info["title"],
-                    "title_english": info.get("title_english", None),
-                    "image_url": info.get("image_url", None)
-                })
-            df_anime = pd.DataFrame(anime_list)
-            output_path = os.path.join("data", "anime_final.csv")
-            df_anime.to_csv(output_path, index=False, encoding='utf-8')
-            logger.info(f"✅ Saved {len(df_anime)} anime banners to {output_path}")
-            return True
-        except Exception as e:
-            logger.error(f"❌ Error saving anime_final.csv: {e}")
-            return False
     def load_anime_mal(self) -> dict:
         """Load anime_mal.csv and return a mapping from series title to mal_id and banner info."""
         anime_map = {}
@@ -206,30 +186,30 @@ class CharacterFinalProcessor:
         """Main processing function."""
         try:
             logger.info("🚀 Starting character final processing for new star system...")
+            
             # Load Excel data
             df = self.load_excel_data()
             if df is None:
                 return False
+            
             # Validate and clean data
             df_clean = self.validate_and_clean_data(df)
             if df_clean.empty:
                 logger.error("❌ No valid data after cleaning!")
                 return False
+            
             # Analyze star system impact
             self.analyze_star_system_impact(df_clean)
+            
             # Save final CSV
             success = self.save_final_csv(df_clean)
-            # Save anime_final.csv
-            anime_map = self.load_anime_mal()
-            anime_success = self.save_anime_final_csv(anime_map)
-            if success and anime_success:
-                logger.info("🎉 Character and anime final processing completed successfully!")
+            
+            if success:
+                logger.info("🎉 Character final processing completed successfully!")
                 logger.info(f"📤 Output ready for upload_to_mysql.py: {self.output_file}")
-            elif success:
-                logger.warning("Character data saved, but anime_final.csv failed!")
-            elif anime_success:
-                logger.warning("Anime data saved, but character_final.csv failed!")
-            return success and anime_success
+            
+            return success
+            
         except Exception as e:
             logger.error(f"❌ Fatal error during processing: {e}")
             return False
@@ -245,7 +225,6 @@ def main():
     print("="*70)
     print("📥 Input:  character_cleaned.xlsx (your manually edited file)")
     print("📤 Output: data/character_final.csv (ready for upload_to_mysql.py)")
-    print("📤 Output: data/anime_final.csv (banner/anime info for gacha system)")
     print("")
     print("🎯 New Star System Features:")
     print("  ⭐ 1-3★: Available through direct gacha")
@@ -259,10 +238,11 @@ def main():
     print("="*70)
     
     if success:
-        print("✅ SUCCESS: character_final.csv and anime_final.csv are ready!")
+        print("✅ SUCCESS: character_final.csv is ready!")
         print("🚀 Next step: Run upload_to_mysql.py to import to database")
     else:
         print("❌ FAILED: Check the logs above for errors")
+    
     return 0 if success else 1
 
 
