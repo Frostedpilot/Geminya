@@ -1,4 +1,4 @@
-# Spotify Integration Setup Guide
+# Spotify Integration Documentation
 
 This guide explains how to set up and use the Spotify integration in Geminya bot using librespot-python for direct streaming.
 
@@ -71,22 +71,113 @@ Ensure your Discord bot has the following permissions:
 
 - `/spotify_join` - Make the bot join your voice channel for Spotify playback
 - `/spotify_leave` - Make the bot leave the voice channel and stop Spotify playback
-- `/spotify_search <query>` - Search for tracks and select from results
+- `/spotify_search <query>` - **Search for tracks with paginated results (up to 50 tracks, 5 per page)**
 - `/spotify_play <query>` - Search and play the first result immediately
-- `/spotify_playlist <query>` - Search and queue an entire Spotify playlist
+- `/spotify_playlist <query>` - **Search playlists with paginated results and track previews (up to 30 playlists, 3 per page)**
 
 ### Playback Controls
 
 - `/spotify_pause` - Pause the current track
 - `/spotify_resume` - Resume paused playback
 - `/spotify_skip` - Skip the current track
+- `/spotify_skip_to <position>` - **Skip to a specific track in the queue**
 - `/spotify_stop` - Stop playback and clear the queue
 - `/spotify_volume <0-100>` - Set playback volume
 
 ### Queue Management
 
-- `/spotify_queue` - Show the current music queue
+- `/spotify_queue` - **Show the current music queue with pagination (10 tracks per page)**
 - `/spotify_now` - Show currently playing track information
+
+## 🔍 New Paginated Interface Features
+
+### Enhanced Track Search (`/spotify_search`)
+
+**Features:**
+
+- **Up to 50 results** instead of just 10
+- **5 tracks per page** for easy browsing
+- **Navigation buttons**: ◀️ Previous | Page X/Y | Next ▶️
+- **Clear track info**: Artist, album, duration for each track
+- **Easy selection**: Click numbered buttons (1-50) to select any track
+
+**Example Usage:**
+
+```
+/spotify_search query:anime opening
+```
+
+Shows 50 anime opening tracks across 10 pages, with navigation controls.
+
+### Enhanced Playlist Search (`/spotify_playlist`)
+
+**Features:**
+
+- **Up to 30 playlists** instead of just 1
+- **3 playlists per page** with detailed previews
+- **Track previews**: See first 3 songs from each playlist
+- **Track counts**: Shows total tracks (e.g., "...and 47 more tracks")
+- **Playlist info**: Creator name and track listing
+- **Navigation**: Same page system as track search
+
+**Example Usage:**
+
+```
+/spotify_playlist query:chill vibes
+```
+
+Shows multiple "chill vibes" playlists with track previews, letting you pick the perfect one.
+
+### Enhanced Queue Display (`/spotify_queue`)
+
+**Features:**
+
+- **Paginated queue**: 10 tracks per page for large queues
+- **Live refresh**: 🔄 Refresh button to update queue status
+- **Current track info**: Shows now playing with requester
+- **Navigation**: Previous/Next page controls for long queues
+- **Queue settings**: Shows mode (Normal/Repeat/Shuffle) and volume
+- **Real-time updates**: Refresh to see latest queue changes
+
+**Example:**
+
+```
+🎵 Music Queue (Page 1/3)
+
+🎶 Now Playing
+• Song Name - Artist
+  Requested by: @Username
+
+📋 Queue (25 tracks)
+1. Track 1 - Artist 1
+2. Track 2 - Artist 2
+...
+10. Track 10 - Artist 10
+
+⚙️ Settings
+Mode: Normal | Volume: 50%
+
+[◀️ Previous] [Page 1/3] [Next ▶️] [🔄 Refresh]
+```
+
+### Navigation Controls
+
+All paginated commands now include:
+
+- **◀️ Previous**: Go to previous page
+- **Page X/Y**: Current page indicator
+- **Next ▶️**: Go to next page
+- **🔄 Refresh**: Update queue data (queue command only)
+- **Numbered buttons**: Select any item by its number (search commands)
+- **❌ Cancel**: Cancel the selection (search commands)
+
+### Benefits
+
+- **Better discovery**: See more options before choosing
+- **Informed decisions**: Preview tracks before adding playlists
+- **Efficient browsing**: Navigate large result sets and queues easily
+- **Live updates**: Refresh queue to see real-time changes
+- **No more guessing**: See exactly what you're getting
 
 ## 🎯 How It Works
 

@@ -22,6 +22,7 @@ from services.spotify_service import (
     SpotifyQuality,
 )
 from services.music_service import MusicService, QueueItem, QueueMode
+from services.spotify_cache import spotify_cache
 
 
 class SpotifyView(discord.ui.View):
@@ -68,6 +69,727 @@ class SpotifyView(discord.ui.View):
             content="❌ Selection cancelled.", view=None
         )
         self.stop()
+
+
+class SpotifyPlaylistView(discord.ui.View):
+    """View for Spotify playlist search results with selection buttons."""
+
+    def __init__(
+        self,
+        playlists: List[SpotifyPlaylist],
+        playlist_previews: dict,
+        timeout: int = 60,
+    ):
+        super().__init__(timeout=timeout)
+        self.playlists = playlists
+        self.playlist_previews = (
+            playlist_previews  # Dict of playlist_id -> List[SpotifyTrack]
+        )
+        self.selected_playlist: Optional[SpotifyPlaylist] = None
+
+        # Add selection buttons (max 10 playlists)
+        for i, playlist in enumerate(playlists[:10]):
+            button = discord.ui.Button(
+                label=f"{i+1}",
+                style=discord.ButtonStyle.primary,
+                custom_id=f"playlist_{i}",
+            )
+            button.callback = self.make_callback(i)
+            self.add_item(button)
+
+        # Add cancel button
+        cancel_button = discord.ui.Button(
+            label="Cancel", style=discord.ButtonStyle.secondary, custom_id="cancel"
+        )
+        cancel_button.callback = self.cancel_callback
+        self.add_item(cancel_button)
+
+    def make_callback(self, index: int):
+        """Create callback for playlist selection button."""
+
+        async def callback(interaction: discord.Interaction):
+            self.selected_playlist = self.playlists[index]
+            await interaction.response.edit_message(
+                content=f"✅ Selected: **{self.selected_playlist.name}** by {self.selected_playlist.owner}",
+                view=None,
+            )
+            self.stop()
+
+        return callback
+
+    async def cancel_callback(self, interaction: discord.Interaction):
+        """Handle cancel button."""
+        await interaction.response.edit_message(
+            content="❌ Selection cancelled.", view=None
+        )
+        self.stop()
+
+
+class LazyLoadedSpotifyView(discord.ui.View):
+    """Lazy-loaded paginated view for Spotify search results."""
+
+    def __init__(
+        self, search_type: str, query: str, spotify_service, timeout: int = 60
+    ):
+        super().__init__(timeout=timeout)
+        self.search_type = search_type  # "tracks" or "playlists"
+        self.query = query
+        self.spotify_service = spotify_service
+        self.current_page = 0
+        self.items_per_page = 5 if search_type == "tracks" else 3
+        self.max_items = 50 if search_type == "tracks" else 30
+        self.max_pages = (self.max_items - 1) // self.items_per_page + 1
+        self.selected_item = None
+
+        # Cache for loaded pages
+        self.page_cache = {}
+        self.playlist_tracks_cache = {}  # For playlist track previews
+
+        # Update buttons for current page
+        self._update_buttons()
+
+    def _get_cache_key(self, page: int) -> str:
+        """Generate cache key for a specific page."""
+        return f"{self.search_type}:{self.query}:page_{page}"
+
+    async def _load_page_data(self, page: int) -> List:
+        """Load data for a specific page with caching."""
+        cache_key = self._get_cache_key(page)
+
+        # Check cache first
+        cached_data = spotify_cache.get(cache_key)
+        if cached_data is not None:
+            return cached_data
+
+        # Calculate offset for this page
+        offset = page * self.items_per_page
+
+        # Load data from Spotify API
+        if self.search_type == "tracks":
+            # For tracks, we can use offset parameter
+            data = self.spotify_service.search_tracks(
+                self.query, limit=self.items_per_page, offset=offset
+            )
+        else:
+            # For playlists, we need to load more and slice
+            # (Spotify playlist search doesn't support offset well)
+            all_data = self.spotify_service.search_playlists(
+                self.query, limit=min(30, offset + self.items_per_page)
+            )
+            data = all_data[offset : offset + self.items_per_page]
+
+            # Load track previews for playlists
+            for playlist in data:
+                preview_key = f"playlist_tracks:{playlist.id}"
+                if spotify_cache.get(preview_key) is None:
+                    try:
+                        tracks = self.spotify_service.get_playlist_tracks(playlist.id)
+                        # Cache the full track list for playlist command use
+                        spotify_cache.set(
+                            preview_key, tracks, ttl=600
+                        )  # 10 minutes for playlist data
+                    except Exception as e:
+                        logging.warning(
+                            f"Failed to load playlist tracks for {playlist.id}: {e}"
+                        )
+
+        # Cache the page data
+        spotify_cache.set(cache_key, data, ttl=300)  # 5 minutes for search results
+        return data
+
+    def _update_buttons(self):
+        """Update buttons based on current page."""
+        self.clear_items()
+
+        # We don't know exact item count yet, so show navigation based on theoretical max
+        start_idx = self.current_page * self.items_per_page
+
+        # Add selection buttons placeholder (will be updated when data loads)
+        for i in range(self.items_per_page):
+            global_index = start_idx + i
+            if global_index < self.max_items:
+                button = discord.ui.Button(
+                    label=f"{global_index + 1}",
+                    style=discord.ButtonStyle.primary,
+                    custom_id=f"select_{global_index}",
+                    row=0 if i < 3 else 1,
+                    disabled=True,  # Will be enabled when data loads
+                )
+                button.callback = self.make_select_callback(global_index)
+                self.add_item(button)
+
+        # Navigation buttons (row 2)
+        if self.max_pages > 1:
+            # Previous page button
+            prev_button = discord.ui.Button(
+                label="◀️ Previous",
+                style=discord.ButtonStyle.secondary,
+                disabled=self.current_page == 0,
+                row=2,
+            )
+            prev_button.callback = self.previous_page
+            self.add_item(prev_button)
+
+            # Page indicator
+            page_button = discord.ui.Button(
+                label=f"Page {self.current_page + 1}/{self.max_pages}",
+                style=discord.ButtonStyle.secondary,
+                disabled=True,
+                row=2,
+            )
+            self.add_item(page_button)
+
+            # Next page button
+            next_button = discord.ui.Button(
+                label="Next ▶️",
+                style=discord.ButtonStyle.secondary,
+                disabled=self.current_page >= self.max_pages - 1,
+                row=2,
+            )
+            next_button.callback = self.next_page
+            self.add_item(next_button)
+
+        # Cancel button (row 3)
+        cancel_button = discord.ui.Button(
+            label="❌ Cancel", style=discord.ButtonStyle.danger, row=3
+        )
+        cancel_button.callback = self.cancel_callback
+        self.add_item(cancel_button)
+
+    async def _enable_selection_buttons(self, page_data: List):
+        """Enable selection buttons based on loaded data."""
+        start_idx = self.current_page * self.items_per_page
+
+        # Enable buttons for available items
+        for item in self.children:
+            if (
+                hasattr(item, "custom_id")
+                and item.custom_id
+                and item.custom_id.startswith("select_")
+            ):
+                global_index = int(item.custom_id.split("_")[1])
+                local_index = global_index - start_idx
+                item.disabled = local_index >= len(page_data)
+
+    def make_select_callback(self, index: int):
+        """Create callback for item selection."""
+
+        async def callback(interaction: discord.Interaction):
+            # Load current page data to get the item
+            page_data = await self._load_page_data(self.current_page)
+            start_idx = self.current_page * self.items_per_page
+            local_index = index - start_idx
+
+            if local_index < len(page_data):
+                self.selected_item = page_data[local_index]
+                item_name = getattr(
+                    self.selected_item, "display_name", None
+                ) or getattr(self.selected_item, "name", "Unknown")
+                await interaction.response.edit_message(
+                    content=f"✅ Selected: **{item_name}**",
+                    view=None,
+                )
+                self.stop()
+            else:
+                await interaction.response.defer()
+
+        return callback
+
+    async def previous_page(self, interaction: discord.Interaction):
+        """Go to previous page."""
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._update_buttons()
+
+            # Load and show new page
+            embed = await self._create_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+
+    async def next_page(self, interaction: discord.Interaction):
+        """Go to next page."""
+        if self.current_page < self.max_pages - 1:
+            self.current_page += 1
+            self._update_buttons()
+
+            # Load and show new page
+            embed = await self._create_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+
+    async def cancel_callback(self, interaction: discord.Interaction):
+        """Handle cancel button."""
+        await interaction.response.edit_message(
+            content="❌ Selection cancelled.", view=None
+        )
+        self.stop()
+
+    async def _create_embed(self):
+        """Create embed for current page with lazy loading."""
+        # Show loading message first
+        embed = discord.Embed(
+            title=f"🔍 Spotify {'Track' if self.search_type == 'tracks' else 'Playlist'} Search Results",
+            description=f"Loading page {self.current_page + 1}...",
+            color=0x1DB954,
+        )
+
+        try:
+            # Load page data
+            page_data = await self._load_page_data(self.current_page)
+
+            if not page_data:
+                embed.description = f"No {'tracks' if self.search_type == 'tracks' else 'playlists'} found on this page."
+                return embed
+
+            # Update embed with actual data
+            embed.description = f"Found results for: `{self.query}`\nPage {self.current_page + 1} of {self.max_pages}"
+
+            start_idx = self.current_page * self.items_per_page
+
+            if self.search_type == "tracks":
+                for i, track in enumerate(page_data):
+                    global_num = start_idx + i + 1
+                    embed.add_field(
+                        name=f"{global_num}. {track.name}",
+                        value=f"**Artist:** {track.artist}\n**Duration:** {track.duration_formatted}",
+                        inline=True,
+                    )
+            else:
+                for i, playlist in enumerate(page_data):
+                    global_num = start_idx + i + 1
+
+                    # Get cached playlist preview
+                    preview_key = f"playlist_tracks:{playlist.id}"
+                    preview_data = spotify_cache.get(preview_key)
+
+                    if preview_data and isinstance(preview_data, list):
+                        # preview_data is now the full track list
+                        tracks = preview_data
+                        preview_tracks = tracks[:3]  # Show first 3 tracks
+                        total_tracks = len(tracks)
+
+                        # Format track list
+                        if preview_tracks:
+                            track_list = "\n".join(
+                                [f"• {track.display_name}" for track in preview_tracks]
+                            )
+                            if total_tracks > 3:
+                                track_list += (
+                                    f"\n... and {total_tracks - 3} more tracks"
+                                )
+                        else:
+                            track_list = "No playable tracks found"
+                    else:
+                        track_list = "Loading track preview..."
+
+                    embed.add_field(
+                        name=f"{global_num}. {playlist.name}",
+                        value=f"**By:** {playlist.owner}\n**Tracks:**\n{track_list}",
+                        inline=False,
+                    )
+
+            # Enable selection buttons for loaded items
+            await self._enable_selection_buttons(page_data)
+
+        except Exception as e:
+            embed.description = f"Error loading page: {e}"
+            embed.color = 0xFF0000
+
+        return embed
+
+
+class PaginatedSpotifyView(discord.ui.View):
+    """Paginated view for Spotify search results with navigation."""
+
+    def __init__(self, items: List, items_per_page: int = 5, timeout: int = 60):
+        super().__init__(timeout=timeout)
+        self.items = items
+        self.items_per_page = items_per_page
+        self.current_page = 0
+        self.max_pages = (len(items) - 1) // items_per_page + 1
+        self.selected_item = None
+
+        # Update buttons for current page
+        self._update_buttons()
+
+    def _update_buttons(self):
+        """Update buttons based on current page."""
+        self.clear_items()
+
+        # Get items for current page
+        start_idx = self.current_page * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+        page_items = self.items[start_idx:end_idx]
+
+        # Add selection buttons for current page items
+        for i, item in enumerate(page_items):
+            global_index = start_idx + i
+            button = discord.ui.Button(
+                label=f"{global_index + 1}",
+                style=discord.ButtonStyle.primary,
+                custom_id=f"select_{global_index}",
+                row=0 if i < 3 else 1,
+            )
+            button.callback = self.make_select_callback(global_index)
+            self.add_item(button)
+
+        # Navigation buttons (row 2)
+        if self.max_pages > 1:
+            # Previous page button
+            prev_button = discord.ui.Button(
+                label="◀️ Previous",
+                style=discord.ButtonStyle.secondary,
+                disabled=self.current_page == 0,
+                row=2,
+            )
+            prev_button.callback = self.previous_page
+            self.add_item(prev_button)
+
+            # Page indicator
+            page_button = discord.ui.Button(
+                label=f"Page {self.current_page + 1}/{self.max_pages}",
+                style=discord.ButtonStyle.secondary,
+                disabled=True,
+                row=2,
+            )
+            self.add_item(page_button)
+
+            # Next page button
+            next_button = discord.ui.Button(
+                label="Next ▶️",
+                style=discord.ButtonStyle.secondary,
+                disabled=self.current_page >= self.max_pages - 1,
+                row=2,
+            )
+            next_button.callback = self.next_page
+            self.add_item(next_button)
+
+        # Cancel button (row 3)
+        cancel_button = discord.ui.Button(
+            label="❌ Cancel", style=discord.ButtonStyle.danger, row=3
+        )
+        cancel_button.callback = self.cancel_callback
+        self.add_item(cancel_button)
+
+    def make_select_callback(self, index: int):
+        """Create callback for item selection."""
+
+        async def callback(interaction: discord.Interaction):
+            self.selected_item = self.items[index]
+            item_name = getattr(self.selected_item, "display_name", None) or getattr(
+                self.selected_item, "name", "Unknown"
+            )
+            await interaction.response.edit_message(
+                content=f"✅ Selected: **{item_name}**",
+                view=None,
+            )
+            self.stop()
+
+        return callback
+
+    async def previous_page(self, interaction: discord.Interaction):
+        """Go to previous page."""
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._update_buttons()
+
+            # Update the embed for new page
+            embed = await self._create_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+
+    async def next_page(self, interaction: discord.Interaction):
+        """Go to next page."""
+        if self.current_page < self.max_pages - 1:
+            self.current_page += 1
+            self._update_buttons()
+
+            # Update the embed for new page
+            embed = await self._create_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+
+    async def cancel_callback(self, interaction: discord.Interaction):
+        """Handle cancel button."""
+        await interaction.response.edit_message(
+            content="❌ Selection cancelled.", view=None
+        )
+        self.stop()
+
+    async def _create_embed(self):
+        """Create embed for current page - to be overridden by subclasses."""
+        return discord.Embed(title="Spotify Results", description="Select an item")
+
+
+class PaginatedTrackView(PaginatedSpotifyView):
+    """Paginated view specifically for track search results."""
+
+    def __init__(self, tracks: List[SpotifyTrack], query: str, timeout: int = 60):
+        self.query = query
+        super().__init__(tracks, items_per_page=5, timeout=timeout)
+
+    async def _create_embed(self):
+        """Create embed for track search results."""
+        start_idx = self.current_page * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+        page_tracks = self.items[start_idx:end_idx]
+
+        embed = discord.Embed(
+            title="🔍 Spotify Track Search Results",
+            description=f"Found **{len(self.items)}** track(s) for: `{self.query}`\nPage {self.current_page + 1} of {self.max_pages}",
+            color=0x1DB954,
+            timestamp=datetime.now(),
+        )
+
+        for i, track in enumerate(page_tracks):
+            global_num = start_idx + i + 1
+            embed.add_field(
+                name=f"{global_num}. {track.name}",
+                value=f"**Artist:** {track.artist}\n**Duration:** {track.duration_formatted}",
+                inline=True,
+            )
+
+        return embed
+
+
+class PaginatedPlaylistView(PaginatedSpotifyView):
+    """Paginated view specifically for playlist search results."""
+
+    def __init__(
+        self,
+        playlists: List[SpotifyPlaylist],
+        playlist_previews: dict,
+        playlist_full_tracks: dict,
+        query: str,
+        timeout: int = 60,
+    ):
+        self.query = query
+        self.playlist_previews = playlist_previews
+        self.playlist_full_tracks = playlist_full_tracks
+        super().__init__(
+            playlists, items_per_page=3, timeout=timeout
+        )  # Fewer per page due to track previews
+
+    async def _create_embed(self):
+        """Create embed for playlist search results."""
+        start_idx = self.current_page * self.items_per_page
+        end_idx = start_idx + self.items_per_page
+        page_playlists = self.items[start_idx:end_idx]
+
+        embed = discord.Embed(
+            title="🔍 Spotify Playlist Search Results",
+            description=f"Found **{len(self.items)}** playlist(s) for: `{self.query}`\nPage {self.current_page + 1} of {self.max_pages}",
+            color=0x1DB954,
+            timestamp=datetime.now(),
+        )
+
+        for i, playlist in enumerate(page_playlists):
+            global_num = start_idx + i + 1
+            preview_tracks = self.playlist_previews.get(playlist.id, [])
+
+            # Format track list
+            if preview_tracks:
+                track_list = "\n".join(
+                    [f"• {track.display_name}" for track in preview_tracks]
+                )
+                full_tracks = self.playlist_full_tracks.get(playlist.id, [])
+                if len(full_tracks) > 3:
+                    track_list += f"\n... and {len(full_tracks) - 3} more tracks"
+            else:
+                track_list = "No playable tracks found"
+
+            embed.add_field(
+                name=f"{global_num}. {playlist.name}",
+                value=f"**By:** {playlist.owner}\n**Tracks:**\n{track_list}",
+                inline=False,
+            )
+
+        return embed
+
+
+class PaginatedQueueView(discord.ui.View):
+    """Paginated view for the music queue."""
+
+    def __init__(
+        self,
+        queue_items: List,
+        current_track=None,
+        guild_id: int = None,
+        music_service=None,
+        timeout: int = 60,
+    ):
+        super().__init__(timeout=timeout)
+        self.queue_items = queue_items
+        self.current_track = current_track
+        self.guild_id = guild_id
+        self.music_service = music_service
+        self.items_per_page = 10
+        self.current_page = 0
+        self.max_pages = (
+            (len(queue_items) - 1) // self.items_per_page + 1 if queue_items else 1
+        )
+
+        # Update buttons for current page
+        self._update_buttons()
+
+    def _update_buttons(self):
+        """Update buttons based on current page."""
+        self.clear_items()
+
+        # Only add navigation if there are multiple pages
+        if self.max_pages > 1:
+            # Previous page button
+            prev_button = discord.ui.Button(
+                label="◀️ Previous",
+                style=discord.ButtonStyle.secondary,
+                disabled=self.current_page == 0,
+                row=0,
+            )
+            prev_button.callback = self.previous_page
+            self.add_item(prev_button)
+
+            # Page indicator
+            page_button = discord.ui.Button(
+                label=f"Page {self.current_page + 1}/{self.max_pages}",
+                style=discord.ButtonStyle.secondary,
+                disabled=True,
+                row=0,
+            )
+            self.add_item(page_button)
+
+            # Next page button
+            next_button = discord.ui.Button(
+                label="Next ▶️",
+                style=discord.ButtonStyle.secondary,
+                disabled=self.current_page >= self.max_pages - 1,
+                row=0,
+            )
+            next_button.callback = self.next_page
+            self.add_item(next_button)
+
+        # Add refresh button
+        refresh_button = discord.ui.Button(
+            label="🔄 Refresh", style=discord.ButtonStyle.primary, row=1
+        )
+        refresh_button.callback = self.refresh_queue
+        self.add_item(refresh_button)
+
+    async def previous_page(self, interaction: discord.Interaction):
+        """Go to previous page."""
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._update_buttons()
+
+            # Update the embed for new page
+            embed = self._create_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+
+    async def next_page(self, interaction: discord.Interaction):
+        """Go to next page."""
+        if self.current_page < self.max_pages - 1:
+            self.current_page += 1
+            self._update_buttons()
+
+            # Update the embed for new page
+            embed = self._create_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+
+    async def refresh_queue(self, interaction: discord.Interaction):
+        """Refresh the queue data."""
+        if self.music_service and self.guild_id:
+            # Get updated queue data
+            self.current_track = self.music_service.get_current_track(self.guild_id)
+            self.queue_items = self.music_service.get_queue(self.guild_id)
+            self.max_pages = (
+                (len(self.queue_items) - 1) // self.items_per_page + 1
+                if self.queue_items
+                else 1
+            )
+
+            # Reset to first page if current page is now invalid
+            if self.current_page >= self.max_pages:
+                self.current_page = 0
+
+            self._update_buttons()
+            embed = self._create_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+        else:
+            await interaction.response.defer()
+
+    def _create_embed(self):
+        """Create embed for current page."""
+        embed = discord.Embed(title="🎵 Music Queue", color=0x1DB954)
+
+        # Show currently playing track
+        if self.current_track:
+            embed.add_field(
+                name="🎶 Now Playing",
+                value=f"**{self.current_track.track.display_name}**\nRequested by: {self.current_track.requested_by.mention}",
+                inline=False,
+            )
+
+        # Show queue items for current page
+        if self.queue_items:
+            start_idx = self.current_page * self.items_per_page
+            end_idx = start_idx + self.items_per_page
+            page_items = self.queue_items[start_idx:end_idx]
+
+            queue_text = ""
+            for i, item in enumerate(page_items):
+                global_index = start_idx + i + 1
+
+                # Defensive check for item type
+                if isinstance(item, str):
+                    # Handle case where item is a string (shouldn't happen, but let's be safe)
+                    queue_text += f"{global_index}. **{item}** ⚠️ *Invalid queue item*\n"
+                    continue
+
+                # Check if item has track attribute
+                if not hasattr(item, "track"):
+                    queue_text += (
+                        f"{global_index}. **Unknown Track** ⚠️ *Invalid queue item*\n"
+                    )
+                    continue
+
+                # Check if track is unavailable
+                if hasattr(item.track, "is_playable") and not item.track.is_playable:
+                    queue_text += f"{global_index}. ~~**{item.track.display_name}**~~ ⚠️ *Unavailable*\n"
+                else:
+                    queue_text += f"{global_index}. **{item.track.display_name}**\n"
+
+            # Add pagination info if there are multiple pages
+            page_info = ""
+            if self.max_pages > 1:
+                page_info = f" (Page {self.current_page + 1}/{self.max_pages})"
+
+            embed.add_field(
+                name=f"📋 Queue ({len(self.queue_items)} tracks){page_info}",
+                value=queue_text,
+                inline=False,
+            )
+        else:
+            embed.add_field(name="📋 Queue", value="No tracks in queue", inline=False)
+
+        # Add queue info if we have access to the music service
+        if self.music_service and self.guild_id:
+            mode = self.music_service.get_queue_mode(self.guild_id)
+            volume = self.music_service.get_volume(self.guild_id)
+
+            embed.add_field(
+                name="⚙️ Settings",
+                value=f"Mode: **{mode.value.title()}**\nVolume: **{volume:.0%}**",
+                inline=True,
+            )
+
+        return embed
 
 
 class SpotifyMusicCog(BaseCommand):
@@ -138,37 +860,18 @@ class SpotifyMusicCog(BaseCommand):
         name="spotify_search", description="Search for music on Spotify"
     )
     async def search(self, interaction: discord.Interaction, query: str):
-        """Search for tracks on Spotify."""
+        """Search for tracks on Spotify with lazy loading."""
         await interaction.response.defer()
 
-        tracks = await self.spotify.search_tracks(query, limit=10)
-
-        if not tracks:
-            await interaction.followup.send(f"❌ No tracks found for: **{query}**")
-            return
-
-        # Create embed with search results
-        embed = discord.Embed(
-            title=f"🔍 Spotify Search Results",
-            description=f"Found {len(tracks)} tracks for: **{query}**",
-            color=0x1DB954,  # Spotify green
-        )
-
-        for i, track in enumerate(tracks):
-            embed.add_field(
-                name=f"{i+1}. {track.name}",
-                value=f"**Artist:** {track.artist}\n**Album:** {track.album}\n**Duration:** {track.duration_formatted}",
-                inline=False,
-            )
-
-        # Create view for selection
-        view = SpotifyView(tracks)
+        # Create lazy loading view for track selection
+        view = LazyLoadedSpotifyView("tracks", query, self.spotify)
+        embed = await view._create_embed()
         await interaction.followup.send(embed=embed, view=view)
 
         # Wait for selection
         await view.wait()
 
-        if view.selected_track:
+        if view.selected_item:
             # Add to queue and play
             if not interaction.user.voice:
                 await interaction.followup.send(
@@ -183,7 +886,7 @@ class SpotifyMusicCog(BaseCommand):
                 await self.music.join_voice_channel(interaction.user.voice.channel)
 
             # Add to queue
-            self.music.add_to_queue(guild_id, view.selected_track, interaction.user)
+            self.music.add_to_queue(guild_id, view.selected_item, interaction.user)
 
             # Start playing if nothing is playing
             if not self.music.is_playing(guild_id):
@@ -202,7 +905,7 @@ class SpotifyMusicCog(BaseCommand):
 
         await interaction.response.defer()
 
-        tracks = await self.spotify.search_tracks(query, limit=1)
+        tracks = self.spotify.search_tracks(query, limit=1)
 
         if not tracks:
             await interaction.followup.send(f"❌ No tracks found for: **{query}**")
@@ -232,7 +935,7 @@ class SpotifyMusicCog(BaseCommand):
         name="spotify_playlist", description="Search and queue a Spotify playlist"
     )
     async def playlist(self, interaction: discord.Interaction, query: str):
-        """Search and queue a playlist."""
+        """Search and select a playlist with lazy loading."""
         if not interaction.user.voice:
             await interaction.response.send_message(
                 "❌ You need to be in a voice channel!", ephemeral=True
@@ -241,18 +944,37 @@ class SpotifyMusicCog(BaseCommand):
 
         await interaction.response.defer()
 
-        playlists = await self.spotify.search_playlists(query, limit=1)
+        # Create lazy loading view for playlist selection
+        view = LazyLoadedSpotifyView("playlists", query, self.spotify)
+        embed = await view._create_embed()
+        await interaction.followup.send(embed=embed, view=view)
 
-        if not playlists:
-            await interaction.followup.send(f"❌ No playlists found for: **{query}**")
+        # Wait for user selection
+        await view.wait()
+
+        if view.selected_item is None:
             return
 
-        playlist = playlists[0]
-        tracks = await self.spotify.get_playlist_tracks(playlist.id)
+        # Get all tracks from selected playlist (from cache or load fresh)
+        selected_playlist = view.selected_item
+        cache_key = f"playlist_tracks:{selected_playlist.id}"
+        cached_data = spotify_cache.get(cache_key)
+
+        if cached_data and isinstance(cached_data, list):
+            tracks = cached_data
+            self.logger.info(f"Using cached playlist tracks: {len(tracks)} tracks")
+        else:
+            self.logger.info(
+                f"Loading fresh playlist tracks for {selected_playlist.id}"
+            )
+            tracks = self.spotify.get_playlist_tracks(selected_playlist.id)
+            # Cache the tracks for future use
+            if tracks:
+                spotify_cache.set(cache_key, tracks, ttl=600)  # 10 minutes
 
         if not tracks:
             await interaction.followup.send(
-                f"❌ Playlist **{playlist.name}** has no playable tracks!"
+                f"❌ Playlist **{selected_playlist.name}** has no playable tracks!"
             )
             return
 
@@ -263,59 +985,44 @@ class SpotifyMusicCog(BaseCommand):
             await self.music.join_voice_channel(interaction.user.voice.channel)
 
         # Add tracks to queue
-        self.music.add_playlist_to_queue(guild_id, tracks, interaction.user)
+        added_count, skipped_count = self.music.add_playlist_to_queue(
+            guild_id, tracks, interaction.user
+        )
 
         # Start playing if nothing is playing
         if not self.music.is_playing(guild_id):
             await self.music.play_next(guild_id)
 
-        await interaction.followup.send(
-            f"➕ Added **{len(tracks)}** tracks from playlist: **{playlist.name}**"
-        )
+        # Create response message with skip info
+        if skipped_count > 0:
+            await interaction.followup.send(
+                f"➕ Added **{added_count}** tracks from playlist: **{selected_playlist.name}**\n"
+                f"⚠️ Skipped **{skipped_count}** unavailable tracks"
+            )
+        else:
+            await interaction.followup.send(
+                f"➕ Added **{added_count}** tracks from playlist: **{selected_playlist.name}**"
+            )
 
     @app_commands.command(
         name="spotify_queue", description="Show the current Spotify queue"
     )
     async def queue(self, interaction: discord.Interaction):
-        """Show the current music queue."""
+        """Show the current music queue with pagination."""
         guild_id = interaction.guild_id
         current = self.music.get_current_track(guild_id)
         queue = self.music.get_queue(guild_id)
 
-        embed = discord.Embed(title="🎵 Music Queue", color=0x1DB954)
-
-        if current:
-            embed.add_field(
-                name="🎶 Now Playing",
-                value=f"**{current.track.display_name}**\nRequested by: {current.requested_by.mention}",
-                inline=False,
-            )
-
-        if queue:
-            queue_text = ""
-            for i, item in enumerate(queue[:10]):  # Show max 10 items
-                queue_text += f"{i+1}. **{item.track.display_name}**\n"
-
-            if len(queue) > 10:
-                queue_text += f"\n... and {len(queue) - 10} more tracks"
-
-            embed.add_field(
-                name=f"📋 Queue ({len(queue)} tracks)", value=queue_text, inline=False
-            )
-        else:
-            embed.add_field(name="📋 Queue", value="No tracks in queue", inline=False)
-
-        # Add queue info
-        mode = self.music.get_queue_mode(guild_id)
-        volume = self.music.get_volume(guild_id)
-
-        embed.add_field(
-            name="⚙️ Settings",
-            value=f"Mode: **{mode.value.title()}**\nVolume: **{volume:.0%}**",
-            inline=True,
+        # Create paginated view for the queue
+        view = PaginatedQueueView(
+            queue_items=queue,
+            current_track=current,
+            guild_id=guild_id,
+            music_service=self.music,
         )
 
-        await interaction.response.send_message(embed=embed)
+        embed = view._create_embed()
+        await interaction.response.send_message(embed=embed, view=view)
 
     @app_commands.command(
         name="spotify_skip", description="Skip the current Spotify track"

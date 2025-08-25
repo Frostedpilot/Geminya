@@ -166,14 +166,35 @@ class MusicService:
     def add_playlist_to_queue(
         self, guild_id: int, tracks: List[SpotifyTrack], requested_by: discord.Member
     ):
-        """Add multiple tracks to queue."""
+        """Add multiple tracks to queue, filtering out unavailable ones."""
         queue = self._get_guild_queue(guild_id)
 
+        # Filter out unavailable tracks
+        playable_tracks = []
+        skipped_count = 0
+
         for track in tracks:
+            if hasattr(track, "is_playable") and not track.is_playable:
+                skipped_count += 1
+                self.logger.debug(f"Skipping unavailable track: {track.display_name}")
+                continue
+            playable_tracks.append(track)
+
+        # Add playable tracks to queue
+        for track in playable_tracks:
             item = QueueItem(track=track, requested_by=requested_by)
             queue.append(item)
 
-        self.logger.info(f"Added {len(tracks)} tracks to queue in guild {guild_id}")
+        if skipped_count > 0:
+            self.logger.info(
+                f"Added {len(playable_tracks)} tracks to queue in guild {guild_id} (skipped {skipped_count} unavailable)"
+            )
+        else:
+            self.logger.info(
+                f"Added {len(playable_tracks)} tracks to queue in guild {guild_id}"
+            )
+
+        return len(playable_tracks), skipped_count
 
     async def play_next(self, guild_id: int) -> bool:
         """Play the next track in queue."""
@@ -188,92 +209,130 @@ class MusicService:
         if voice_client.is_playing():
             voice_client.stop()
 
-        # Get next track based on queue mode
-        next_item = self._get_next_track(guild_id)
-        if not next_item:
-            # Queue is empty
-            self._is_playing[guild_id] = False
-            self._current_tracks[guild_id] = None
+        # Try to get next playable track (may need to skip unavailable ones)
+        max_attempts = 5  # Prevent infinite loop if all tracks are unavailable
+        attempts = 0
 
-            if self._on_queue_empty:
-                if asyncio.iscoroutinefunction(self._on_queue_empty):
-                    task = asyncio.create_task(self._on_queue_empty(guild_id))
-                    # Store task reference to prevent garbage collection
-                    if not hasattr(self, "_background_tasks"):
-                        self._background_tasks = set()
-                    self._background_tasks.add(task)
-                    task.add_done_callback(self._background_tasks.discard)
-                else:
-                    self._on_queue_empty(guild_id)
+        while attempts < max_attempts:
+            # Get next track based on queue mode
+            next_item = self._get_next_track(guild_id)
+            if not next_item:
+                # Queue is empty
+                self._is_playing[guild_id] = False
+                self._current_tracks[guild_id] = None
 
-            # Start auto-disconnect timer
-            await self._start_auto_disconnect_timer(guild_id)
-            return False
+                if self._on_queue_empty:
+                    if asyncio.iscoroutinefunction(self._on_queue_empty):
+                        task = asyncio.create_task(self._on_queue_empty(guild_id))
+                        # Store task reference to prevent garbage collection
+                        if not hasattr(self, "_background_tasks"):
+                            self._background_tasks = set()
+                        self._background_tasks.add(task)
+                        task.add_done_callback(self._background_tasks.discard)
+                    else:
+                        self._on_queue_empty(guild_id)
 
-        try:
-            # Create audio source
-            audio_source = await self.spotify.create_audio_source(next_item.track)
-            if not audio_source:
-                self.logger.error(
-                    f"Failed to create audio source for {next_item.track.display_name}"
-                )
+                # Start auto-disconnect timer
+                await self._start_auto_disconnect_timer(guild_id)
                 return False
 
-            # Apply volume
-            volume = self._volumes[guild_id]
-            audio_source = discord.PCMVolumeTransformer(audio_source, volume=volume)
+            # Check if track is marked as unplayable
+            if (
+                hasattr(next_item.track, "is_playable")
+                and not next_item.track.is_playable
+            ):
+                self.logger.warning(
+                    f"Skipping unavailable track: {next_item.track.display_name}"
+                )
+                attempts += 1
+                continue
 
-            # Create a thread-safe callback for when the track finishes
-            def track_finished_callback(error):
-                if error:
-                    self.logger.error(f"Player error: {error}")
-
-                # Schedule the async callback safely using the stored main loop
-                if self._main_loop and not self._main_loop.is_closed():
-                    try:
-                        asyncio.run_coroutine_threadsafe(
-                            self._on_track_finished(guild_id, next_item, error),
-                            self._main_loop,
-                        )
-                    except Exception as e:
-                        self.logger.error(
-                            f"Error scheduling track finished callback: {e}"
-                        )
-                else:
-                    self.logger.warning("No main event loop available for callback")
-
-            # Play track
-            voice_client.play(audio_source, after=track_finished_callback)
-
-            # Update state
-            self._current_tracks[guild_id] = next_item
-            self._is_playing[guild_id] = True
-            self._is_paused[guild_id] = False
-
-            # Trigger callback (make it async-safe)
-            if self._on_track_start:
-                if asyncio.iscoroutinefunction(self._on_track_start):
-                    task = asyncio.create_task(
-                        self._on_track_start(guild_id, next_item)
+            try:
+                # Create audio source
+                audio_source = await self.spotify.create_audio_source(next_item.track)
+                if not audio_source:
+                    self.logger.warning(
+                        f"Failed to create audio source for {next_item.track.display_name}, skipping..."
                     )
-                    # Store task reference to prevent garbage collection
-                    if not hasattr(self, "_background_tasks"):
-                        self._background_tasks = set()
-                    self._background_tasks.add(task)
-                    task.add_done_callback(self._background_tasks.discard)
-                else:
-                    self._on_track_start(guild_id, next_item)
+                    attempts += 1
+                    continue
 
-            self.logger.info(
-                f"Started playing {next_item.track.display_name} in guild {guild_id}"
-            )
-            return True
+                # Apply volume
+                volume = self._volumes[guild_id]
+                audio_source = discord.PCMVolumeTransformer(audio_source, volume=volume)
 
-        except Exception as e:
-            self.logger.error(
-                f"Error playing track {next_item.track.display_name}: {e}"
-            )
-            return False
+                # Create a thread-safe callback for when the track finishes
+                def track_finished_callback(error, track_item=next_item):
+                    if error:
+                        self.logger.error(f"Player error: {error}")
+
+                    # Schedule the async callback safely using the stored main loop
+                    if self._main_loop and not self._main_loop.is_closed():
+                        try:
+                            asyncio.run_coroutine_threadsafe(
+                                self._on_track_finished(guild_id, track_item, error),
+                                self._main_loop,
+                            )
+                        except Exception as e:
+                            self.logger.error(
+                                f"Error scheduling track finished callback: {e}"
+                            )
+                    else:
+                        self.logger.warning("No main event loop available for callback")
+
+                # Play track
+                voice_client.play(audio_source, after=track_finished_callback)
+
+                # Update state
+                self._current_tracks[guild_id] = next_item
+                self._is_playing[guild_id] = True
+                self._is_paused[guild_id] = False
+
+                # Trigger callback (make it async-safe)
+                if self._on_track_start:
+                    if asyncio.iscoroutinefunction(self._on_track_start):
+                        task = asyncio.create_task(
+                            self._on_track_start(guild_id, next_item)
+                        )
+                        # Store task reference to prevent garbage collection
+                        if not hasattr(self, "_background_tasks"):
+                            self._background_tasks = set()
+                        self._background_tasks.add(task)
+                        task.add_done_callback(self._background_tasks.discard)
+                    else:
+                        self._on_track_start(guild_id, next_item)
+
+                self.logger.info(
+                    f"Started playing {next_item.track.display_name} in guild {guild_id}"
+                )
+                return True
+
+            except Exception as e:
+                self.logger.warning(
+                    f"Error playing track {next_item.track.display_name}: {e}, attempting next track..."
+                )
+                attempts += 1
+                continue
+
+        # If we get here, we couldn't find any playable tracks
+        self.logger.error(
+            f"Could not find any playable tracks in queue for guild {guild_id}"
+        )
+        self._is_playing[guild_id] = False
+        self._current_tracks[guild_id] = None
+
+        if self._on_queue_empty:
+            if asyncio.iscoroutinefunction(self._on_queue_empty):
+                task = asyncio.create_task(self._on_queue_empty(guild_id))
+                if not hasattr(self, "_background_tasks"):
+                    self._background_tasks = set()
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            else:
+                self._on_queue_empty(guild_id)
+
+        await self._start_auto_disconnect_timer(guild_id)
+        return False
 
     def _get_next_track(self, guild_id: int) -> Optional[QueueItem]:
         """Get next track based on queue mode."""

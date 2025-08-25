@@ -45,6 +45,7 @@ class SpotifyTrack:
     uri: str
     external_url: str
     preview_url: Optional[str] = None
+    is_playable: bool = True  # Whether the track can be played
 
     @property
     def display_name(self) -> str:
@@ -326,13 +327,37 @@ class SpotifyService:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, create_session)
 
-    async def search_tracks(self, query: str, limit: int = 10) -> List[SpotifyTrack]:
-        """Search for tracks on Spotify."""
+    def search_tracks(
+        self, query: str, limit: int = 10, offset: int = 0
+    ) -> List[SpotifyTrack]:
+        """Search for tracks on Spotify with pagination support."""
         try:
-            results = self._spotipy.search(q=query, type="track", limit=limit)
+            self.logger.info(
+                f"Searching for tracks with query: '{query}', limit: {limit}, offset: {offset}"
+            )
+            results = self._spotipy.search(
+                q=query, type="track", limit=limit, offset=offset
+            )
             tracks = []
 
             for item in results["tracks"]["items"]:
+                # Check if track is playable (not greyed out)
+                is_playable = item.get(
+                    "is_playable", True
+                )  # Default to True if not specified
+
+                # Skip tracks that are explicitly marked as not playable
+                if not is_playable:
+                    self.logger.debug(
+                        f"Skipping unplayable track: {item['name']} by {item['artists'][0]['name']}"
+                    )
+                    continue
+
+                # Also check for markets availability (region restrictions)
+                available_markets = item.get("available_markets", [])
+                # If available_markets is empty or None, assume it's available
+                # If it has markets but we're not in one, it might be restricted
+
                 track = SpotifyTrack(
                     id=item["id"],
                     name=item["name"],
@@ -342,49 +367,117 @@ class SpotifyService:
                     uri=item["uri"],
                     external_url=item["external_urls"]["spotify"],
                     preview_url=item.get("preview_url"),
+                    is_playable=is_playable,
                 )
                 tracks.append(track)
 
+            self.logger.info(f"Found {len(tracks)} playable tracks (offset: {offset})")
             return tracks
 
         except Exception as e:
             self.logger.error(f"Error searching tracks: {e}")
+            import traceback
+
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return []
 
-    async def search_playlists(
-        self, query: str, limit: int = 10
+    def search_playlists(
+        self, query: str, limit: int = 10, offset: int = 0
     ) -> List[SpotifyPlaylist]:
         """Search for playlists on Spotify."""
         try:
-            results = self._spotipy.search(q=query, type="playlist", limit=limit)
+            self.logger.info(
+                f"Searching for playlists with query: '{query}', limit: {limit}, offset: {offset}"
+            )
+            results = self._spotipy.search(
+                q=query, type="playlist", limit=limit, offset=offset
+            )
+            self.logger.info(f"Raw playlist search results keys: {results.keys()}")
+            self.logger.info(
+                f"Playlists section: {results.get('playlists', {}).keys()}"
+            )
+
             playlists = []
 
-            for item in results["playlists"]["items"]:
+            if "playlists" not in results or "items" not in results["playlists"]:
+                self.logger.error("Invalid search results structure")
+                return []
+
+            items = results["playlists"]["items"]
+            self.logger.info(f"Found {len(items)} playlist items")
+
+            for i, item in enumerate(items):
+                if item is None:
+                    self.logger.warning(f"Item {i} is None, skipping")
+                    continue
+
+                # Handle cases where owner might be None
+                owner_name = "Unknown"
+                if item.get("owner") and item["owner"].get("display_name"):
+                    owner_name = item["owner"]["display_name"]
+
+                self.logger.info(
+                    f"Processing playlist: {item.get('name', 'Unknown')} by {owner_name}"
+                )
+
+                # Validate required fields
+                if not item.get("id") or not item.get("name"):
+                    self.logger.warning(
+                        f"Playlist missing required fields, skipping: {item}"
+                    )
+                    continue
+
                 playlist = SpotifyPlaylist(
                     id=item["id"],
                     name=item["name"],
                     description=item.get("description", ""),
-                    tracks_total=item["tracks"]["total"],
-                    external_url=item["external_urls"]["spotify"],
-                    owner=item["owner"]["display_name"],
+                    tracks_total=item.get("tracks", {}).get("total", 0),
+                    external_url=item.get("external_urls", {}).get("spotify", ""),
+                    owner=owner_name,
                 )
                 playlists.append(playlist)
 
+            self.logger.info(f"Found {len(playlists)} playlists")
             return playlists
 
         except Exception as e:
             self.logger.error(f"Error searching playlists: {e}")
+            import traceback
+
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return []
 
-    async def get_playlist_tracks(self, playlist_id: str) -> List[SpotifyTrack]:
+    def get_playlist_tracks(self, playlist_id: str) -> List[SpotifyTrack]:
         """Get tracks from a playlist."""
         try:
+            self.logger.info(f"Getting tracks for playlist: {playlist_id}")
             results = self._spotipy.playlist_tracks(playlist_id)
             tracks = []
+            skipped_unavailable = 0
 
             for item in results["items"]:
                 if item["track"] and item["track"]["type"] == "track":
                     track_data = item["track"]
+
+                    # Check if track is playable (not greyed out)
+                    is_playable = track_data.get("is_playable", True)
+
+                    # Skip tracks that are explicitly marked as not playable
+                    if not is_playable:
+                        skipped_unavailable += 1
+                        self.logger.debug(
+                            f"Skipping unplayable track: {track_data['name']}"
+                        )
+                        continue
+
+                    # Additional check: if track ID is None, it's usually unavailable
+                    if not track_data.get("id"):
+                        skipped_unavailable += 1
+                        self.logger.debug(
+                            f"Skipping track with no ID: {track_data.get('name', 'Unknown')}"
+                        )
+                        continue
+
                     track = SpotifyTrack(
                         id=track_data["id"],
                         name=track_data["name"],
@@ -396,13 +489,20 @@ class SpotifyService:
                         uri=track_data["uri"],
                         external_url=track_data["external_urls"]["spotify"],
                         preview_url=track_data.get("preview_url"),
+                        is_playable=is_playable,
                     )
                     tracks.append(track)
 
+            self.logger.info(
+                f"Found {len(tracks)} playable tracks in playlist (skipped {skipped_unavailable} unavailable)"
+            )
             return tracks
 
         except Exception as e:
             self.logger.error(f"Error getting playlist tracks: {e}")
+            import traceback
+
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return []
 
     async def create_audio_source(
