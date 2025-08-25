@@ -214,3 +214,6 @@ secrets.json
 mcp_servers/
 
 data/
+
+# objects from librespot
+credentials.json
