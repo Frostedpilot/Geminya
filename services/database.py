@@ -11,8 +11,33 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
-    # Series methods (if needed, add here)
-    # All banner logic is now handled on the server, not in the database.
+    # Banner methods
+    async def get_all_banners(self) -> List[Dict[str, Any]]:
+        """Get all banners from the banners table."""
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM banners ORDER BY id")
+            return [dict(row) for row in rows]
+
+    async def get_banner_by_id(self, banner_id: int) -> Optional[Dict[str, Any]]:
+        """Get a banner by its ID."""
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM banners WHERE id = $1", banner_id)
+            return dict(row) if row else None
+
+    async def set_user_selected_banner(self, discord_id: str, banner_id: int) -> bool:
+        """Set the user's selected banner (stores in users table as selected_banner_id)."""
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE users SET selected_banner_id = $1 WHERE discord_id = $2",
+                banner_id, discord_id
+            )
+            return result[-1] != '0'
+
+    async def get_user_selected_banner(self, discord_id: str) -> Optional[int]:
+        """Get the user's selected banner ID (from users table)."""
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT selected_banner_id FROM users WHERE discord_id = $1", discord_id)
+            return row["selected_banner_id"] if row and row["selected_banner_id"] is not None else None
     async def add_waifus_to_user_batch(self, discord_id: str, waifu_ids: List[int]) -> List[Dict[str, Any]]:
         """Batch add multiple waifus to a user's collection, skipping already-owned waifus. Returns full waifu+user_waifu data for all added."""
         if not waifu_ids:
@@ -92,10 +117,10 @@ class DatabaseService:
 
     async def _create_tables_postgres(self, conn):
         """Create all required tables for PostgreSQL."""
-        # Series table (formerly banners)
+        # Banners table
         await conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS series (
+            CREATE TABLE IF NOT EXISTS banners (
                 id SERIAL PRIMARY KEY,
                 mal_id INTEGER,
                 title VARCHAR(255) NOT NULL,
@@ -105,7 +130,7 @@ class DatabaseService:
             """
         )
 
-        # Users table (selected_series_id is now used for banner selection, no FK constraint)
+        # Users table
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -117,21 +142,21 @@ class DatabaseService:
                 quartzs INTEGER DEFAULT 0,
                 pity_counter INTEGER DEFAULT 0,
                 last_daily_reset BIGINT DEFAULT 0,
-                selected_series_id INTEGER,
+                selected_banner_id INTEGER REFERENCES banners(id) ON DELETE SET NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_discord_id ON users(discord_id);
             """
         )
 
-        # Waifus table (waifu_id is now the primary key, linked to series)
+        # Waifus table (waifu_id is now the primary key, linked to banners)
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS waifus (
                 waifu_id INTEGER PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
                 series VARCHAR(255) NOT NULL,
-                series_id INTEGER REFERENCES series(id) ON DELETE SET NULL,
+                banner_id INTEGER REFERENCES banners(id) ON DELETE SET NULL,
                 genre VARCHAR(100) NOT NULL,
                 element VARCHAR(50),
                 rarity INTEGER NOT NULL CHECK (rarity >= 1 AND rarity <= 3),
@@ -144,7 +169,7 @@ class DatabaseService:
             );
             CREATE INDEX IF NOT EXISTS idx_rarity ON waifus(rarity);
             CREATE INDEX IF NOT EXISTS idx_name ON waifus(name);
-            CREATE INDEX IF NOT EXISTS idx_series_id ON waifus(series_id);
+            CREATE INDEX IF NOT EXISTS idx_banner_id ON waifus(banner_id);
             """
         )
 
@@ -329,23 +354,23 @@ class DatabaseService:
 
     # Waifu-related methods
     async def add_waifu(self, waifu_data: Dict[str, Any]) -> int:
-        """Add a new waifu to the database (PostgreSQL), now supporting series_id."""
+        """Add a new waifu to the database (PostgreSQL), now supporting banner_id."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         async with self.connection_pool.acquire() as conn:
-            # Default series_id to None if not provided, for backward compatibility
-            series_id = waifu_data.get("series_id", None)
+            # Default banner_id to None if not provided, for backward compatibility
+            banner_id = waifu_data.get("banner_id", None)
             row = await conn.fetchrow(
                 """
                 INSERT INTO waifus (
-                    name, series, series_id, genre, element, rarity, image_url, waifu_id,
+                    name, series, banner_id, genre, element, rarity, image_url, waifu_id,
                     base_stats, birthday, favorite_gifts, special_dialogue
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING waifu_id
                 """,
                 waifu_data["name"],
                 waifu_data["series"],
-                series_id,
+                banner_id,
                 waifu_data.get("genre", "Unknown"),
                 waifu_data.get("element"),
                 waifu_data["rarity"],
