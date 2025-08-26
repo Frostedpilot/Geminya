@@ -10,6 +10,97 @@ from services.container import ServiceContainer
 
 
 class WaifuSummonCog(BaseCommand):
+
+    @commands.hybrid_command(
+        name="nwnl_series",
+        description="📺 View detailed info about an anime series by name"
+    )
+    async def nwnl_series(self, ctx: commands.Context, *, series_name: str):
+        """Display detailed info about an anime series, including all characters in the series."""
+        await ctx.defer()
+        try:
+            # Search for the series (case-insensitive, partial match)
+            # Try exact match first
+            series = await self.services.database.get_series_by_name(series_name)
+            if not series:
+                # Try partial match if exact not found, matching both name and english_name
+                all_series = []
+                if hasattr(self.services.database, 'connection_pool'):
+                    async with self.services.database.connection_pool.acquire() as conn:
+                        rows = await conn.fetch("SELECT * FROM series")
+                        all_series = [dict(row) for row in rows]
+                # Build a matching queue: prioritize name, then english_name
+                matches = []
+                for s in all_series:
+                    if series_name.lower() in (s.get('name') or '').lower():
+                        matches.append(s)
+                for s in all_series:
+                    if series_name.lower() in (s.get('english_name') or '').lower() and s not in matches:
+                        matches.append(s)
+                series = matches[0] if matches else None
+            if not series:
+                embed = discord.Embed(
+                    title="❌ Series Not Found",
+                    description=f"No series found matching '{series_name}'. Try a different name or check spelling!",
+                    color=0xFF6B6B,
+                )
+                await ctx.send(embed=embed)
+                return
+
+            # Build embed with series info
+            embed = discord.Embed(
+                title=f"📺 {series.get('name', 'Unknown Series')}",
+                description=series.get('english_name', ''),
+                color=0x4A90E2,
+            )
+            # ID will be shown in the footer instead of as a field
+            if series.get('image_link'):
+                embed.set_image(url=series['image_link'])
+            # Add more fields if available
+            for key in ['genre', 'description']:
+                if key in series and series[key]:
+                    embed.add_field(name=key.capitalize(), value=series[key], inline=False)
+
+            # Fetch all waifus/characters in this series using the new method
+            try:
+                series_id = series.get('series_id')
+                characters = await self.services.database.get_waifus_by_series_id(series_id)
+            except Exception as ce:
+                self.logger.error(f"Error fetching characters for series {series_id}: {ce}")
+                characters = []
+
+            # Display up to 10 characters, summarize if more
+            if characters:
+                # Sort by rarity descending, then name
+                characters = sorted(characters, key=lambda w: (-w.get('rarity', 1), w.get('name', '')))
+                char_lines = []
+                for w in characters[:10]:
+                    stars = '⭐' * w.get('rarity', 1)
+                    char_lines.append(f"{stars} {w.get('name', 'Unknown')}")
+                if len(characters) > 10:
+                    char_lines.append(f"...and {len(characters) - 10} more!")
+                embed.add_field(
+                    name=f"Characters in this Series ({len(characters)})",
+                    value="\n".join(char_lines),
+                    inline=False
+                )
+            else:
+                embed.add_field(
+                    name="Characters in this Series",
+                    value="No characters found for this series.",
+                    inline=False
+                )
+
+            embed.set_footer(text=f"Series ID: {series.get('series_id', 'N/A')} • Use /nwnl_summon or /nwnl_profile for more info on characters from this series!")
+            await ctx.send(embed=embed)
+        except Exception as e:
+            self.logger.error(f"Error displaying series info: {e}")
+            embed = discord.Embed(
+                title="❌ Series Error",
+                description="Unable to display series info. Please try again later!",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
     async def display_mode_autocomplete(self, interaction: discord.Interaction, current: str):
         modes = [
             ("Full (show all info cards)", "full"),

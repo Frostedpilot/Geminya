@@ -11,6 +11,22 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+    async def get_waifus_by_series_id(self, series_id: int) -> List[Dict[str, Any]]:
+        """Get all waifus belonging to a given series_id, including series name as 'series'."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT w.*, s.name AS series
+                FROM waifus w
+                LEFT JOIN series s ON w.series_id = s.series_id
+                WHERE w.series_id = $1
+                ORDER BY w.rarity DESC, w.name ASC
+                """,
+                series_id
+            )
+            return [dict(row) for row in rows]
 
     async def get_waifus_by_rarity_and_series(self, rarity: int, series_id: int, limit: int = 100) -> List[Dict[str, Any]]:
         """Get waifus by rarity and series (PostgreSQL), including series name as 'series'."""
