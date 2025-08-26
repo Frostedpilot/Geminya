@@ -11,6 +11,98 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+    # Banner-related methods
+    async def create_banner(self, banner_data: Dict[str, Any]) -> int:
+        """Create a new banner and return its id."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO banners (name, type, start_time, end_time, description, is_active)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
+                """,
+                banner_data["name"],
+                banner_data["type"],
+                banner_data["start_time"],
+                banner_data["end_time"],
+                banner_data.get("description", ""),
+                banner_data.get("is_active", True),
+            )
+            return row["id"] if row else 0
+
+    async def update_banner(self, banner_id: int, update_data: Dict[str, Any]) -> bool:
+        """Update a banner by id. Returns True if updated."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        set_clauses = []
+        values = []
+        for idx, (key, value) in enumerate(update_data.items(), start=1):
+            set_clauses.append(f"{key} = ${idx}")
+            values.append(value)
+        if not set_clauses:
+            return False
+        values.append(banner_id)
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                f"""
+                UPDATE banners SET {', '.join(set_clauses)} WHERE id = ${len(values)}
+                """,
+                *values
+            )
+            return result.startswith("UPDATE")
+
+    async def get_banner(self, banner_id: int) -> Optional[Dict[str, Any]]:
+        """Get a banner by id."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM banners WHERE id = $1", banner_id)
+            return dict(row) if row else None
+
+    async def list_banners(self, active_only: bool = False) -> List[Dict[str, Any]]:
+        """List all banners, optionally only active ones."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            if active_only:
+                rows = await conn.fetch("SELECT * FROM banners WHERE is_active = TRUE")
+            else:
+                rows = await conn.fetch("SELECT * FROM banners")
+            return [dict(row) for row in rows]
+
+    # Banner item methods
+    async def add_banner_item(self, banner_id: int, item_id: int, rate_up: bool = False, drop_rate: float = None) -> int:
+        """Add an item to a banner. Returns banner_item id."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO banner_items (banner_id, item_id, rate_up, drop_rate)
+                VALUES ($1, $2, $3, $4)
+                RETURNING id
+                """,
+                banner_id, item_id, rate_up, drop_rate
+            )
+            return row["id"] if row else 0
+
+    async def get_banner_items(self, banner_id: int) -> List[Dict[str, Any]]:
+        """Get all items for a banner."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM banner_items WHERE banner_id = $1", banner_id)
+            return [dict(row) for row in rows]
+
+    async def get_banner_item(self, banner_item_id: int) -> Optional[Dict[str, Any]]:
+        """Get a banner item by id."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM banner_items WHERE id = $1", banner_item_id)
+            return dict(row) if row else None
     async def add_series(self, series_data: dict) -> int:
         """Add a new series to the database. Returns the series_id."""
         if not self.connection_pool:
@@ -313,6 +405,38 @@ class DatabaseService:
             CREATE INDEX IF NOT EXISTS idx_user_id ON user_inventory(user_id);
             CREATE INDEX IF NOT EXISTS idx_item_type ON user_inventory(item_type);
             CREATE INDEX IF NOT EXISTS idx_active ON user_inventory(is_active);
+            """
+        )
+
+        # Banner system tables
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS banners (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                type VARCHAR(50) NOT NULL, -- 'rate-up' or 'limited'
+                start_time TIMESTAMP NOT NULL,
+                end_time TIMESTAMP NOT NULL,
+                description TEXT,
+                is_active BOOLEAN DEFAULT TRUE
+            );
+            CREATE INDEX IF NOT EXISTS idx_banner_active ON banners(is_active);
+            CREATE INDEX IF NOT EXISTS idx_banner_type ON banners(type);
+            CREATE INDEX IF NOT EXISTS idx_banner_time ON banners(start_time, end_time);
+            """
+        )
+
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS banner_items (
+                id SERIAL PRIMARY KEY,
+                banner_id INTEGER NOT NULL REFERENCES banners(id) ON DELETE CASCADE,
+                item_id INTEGER NOT NULL REFERENCES waifus(waifu_id) ON DELETE CASCADE,
+                rate_up BOOLEAN DEFAULT FALSE,
+                drop_rate FLOAT DEFAULT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_banner_id ON banner_items(banner_id);
+            CREATE INDEX IF NOT EXISTS idx_item_id ON banner_items(item_id);
             """
         )
 

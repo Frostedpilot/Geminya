@@ -1,0 +1,34 @@
+[
+  {
+    "id": 1,
+    "name": "Summer Splash Banner",
+    "type": "rate-up",
+    "start_time": "2025-08-26 00:00:00",
+    "end_time": "2025-09-01 23:59:59",
+    "description": "Special summer event with increased drop rates for select waifus!",
+    "is_active": true,
+    "waifu_ids": [161471, 161472, 161470, 161469, 160603],
+    "series_ids": [1]
+  },
+  {
+    "id": 2,
+    "name": "Limited Anniversary Banner",
+    "type": "limited",
+    "start_time": "2025-09-10 00:00:00",
+    "end_time": "2025-09-20 23:59:59",
+    "description": "Anniversary celebration! Exclusive waifus available for a limited time.",
+    "is_active": true,
+    "waifu_ids": [55839, 150916],
+    "series_ids": [2, 3]
+  },
+  {
+    "id": 3,
+    "name": "Classic Banner",
+    "type": "standard",
+    "start_time": "2025-01-01 00:00:00",
+    "end_time": "2025-12-31 23:59:59",
+    "description": "The classic banner with the full waifu pool.",
+    "is_active": true,
+    "series_ids": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+  }
+]

@@ -242,16 +242,26 @@ class WaifuSummonCog(BaseCommand):
         name="nwnl_summon",
         description="🎰 Summon waifus using Sakura Crystals with NEW star system! (10 crystals per summon)",
     )
-    async def nwnl_summon(self, ctx: commands.Context):
+    @discord.app_commands.describe(banner_id="Banner ID to summon from (optional)")
+    async def nwnl_summon(self, ctx: commands.Context, banner_id: Optional[int] = None):
         """Perform a waifu summon with the new star upgrade system."""
         await ctx.defer()
-        return await self.queue_command(ctx, self._nwnl_summon_impl)
+        # Use user-selected banner if no banner_id provided
+        if banner_id is None:
+            try:
+                from .banner_select import user_selected_banners
+                user_banner = user_selected_banners.get(str(ctx.author.id))
+                if user_banner:
+                    banner_id = user_banner
+            except Exception:
+                pass
+        return await self.queue_command(ctx, self._nwnl_summon_impl, banner_id)
 
-    async def _nwnl_summon_impl(self, ctx: commands.Context):
+    async def _nwnl_summon_impl(self, ctx: commands.Context, banner_id: Optional[int] = None):
         """Implementation of nwnl_summon command."""
         try:
             # Perform the summon using the new service
-            result = await self.services.waifu_service.perform_summon(str(ctx.author.id))
+            result = await self.services.waifu_service.perform_summon(str(ctx.author.id), banner_id=banner_id)
 
             if not result["success"]:
                 embed = discord.Embed(
@@ -398,14 +408,25 @@ class WaifuSummonCog(BaseCommand):
         name="nwnl_multi_summon",
         description="🎰🎊 Perform 10 summons with NEW star system! (100 crystals total)",
     )
-    @discord.app_commands.describe(display_mode="How much detail to show for each pull (full, simple, minimal)")
+    @discord.app_commands.describe(
+        display_mode="How much detail to show for each pull (full, simple, minimal)",
+        banner_id="Banner ID to summon from (optional)"
+    )
     @discord.app_commands.autocomplete(display_mode=display_mode_autocomplete)
-    async def nwnl_multi_summon(self, ctx: commands.Context, display_mode: str = "full"):
+    async def nwnl_multi_summon(self, ctx: commands.Context, display_mode: str = "full", banner_id: Optional[int] = None):
         """Perform 10 waifu summons with the new star upgrade system."""
         await ctx.defer()
-
+        # Use user-selected banner if no banner_id provided
+        if banner_id is None:
+            try:
+                from .banner_select import user_selected_banners
+                user_banner = user_selected_banners.get(str(ctx.author.id))
+                if user_banner:
+                    banner_id = user_banner
+            except Exception:
+                pass
         # Perform the multi-summon (always 10 rolls)
-        result = await self.services.waifu_service.perform_multi_summon(str(ctx.author.id))
+        result = await self.services.waifu_service.perform_multi_summon(str(ctx.author.id), banner_id=banner_id)
         result["display_mode"] = display_mode
 
         # Rarity colors and emojis (3★ = old 5★ Legendary, 2★ = old 4★ Epic, 1★ = old 1★ Basic)
