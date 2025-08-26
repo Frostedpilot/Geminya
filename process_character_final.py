@@ -19,10 +19,25 @@ class CharacterFinalProcessor:
 
     def __init__(self):
         self.input_file = os.path.join("data", "characters_cleaned.xlsx")
-        self.output_file = os.path.join("data", "character_final.csv")
-        
+        self.anime_input_file = os.path.join("data", "anime_mal.xlsx")
+        self.character_output_file = os.path.join("data", "character_final.csv")
+        self.anime_output_file = os.path.join("data", "anime_final.csv")
         # Ensure data directory exists
         os.makedirs("data", exist_ok=True)
+    def load_anime_excel(self) -> Optional[pd.DataFrame]:
+        """Load the anime Excel file for series info."""
+        try:
+            logger.info(f"Loading Anime Excel file: {self.anime_input_file}")
+            df = pd.read_excel(self.anime_input_file)
+            logger.info(f"✅ Loaded {len(df)} anime/series from Excel file")
+            logger.info(f"📋 Anime Columns: {list(df.columns)}")
+            return df
+        except FileNotFoundError:
+            logger.error(f"❌ Anime Excel file {self.anime_input_file} not found!")
+            return None
+        except Exception as e:
+            logger.error(f"❌ Error loading Anime Excel file: {e}")
+            return None
 
     def load_excel_data(self) -> Optional[pd.DataFrame]:
         """Load the cleaned Excel file."""
@@ -140,55 +155,68 @@ class CharacterFinalProcessor:
                 percentage = count / total_chars * 100
                 logger.info(f"    {rarity}★: {count} characters ({percentage:.1f}%)")
 
-    def save_final_csv(self, df: pd.DataFrame) -> bool:
-        """Save the final processed data to CSV."""
+    def save_final_csvs(self, df_char: pd.DataFrame, df_anime: pd.DataFrame) -> bool:
+        """Save the final processed character and anime data to CSV."""
         try:
-            logger.info(f"💾 Saving final data to {self.output_file}")
-            
-            # Ensure columns are in the expected order for upload_to_mysql.py
-            column_order = ['waifu_id', 'name', 'series', 'genre', 'rarity', 'image_url', 'favorites']
-            df_final = df[column_order]
-            
-            # Save to CSV
-            df_final.to_csv(self.output_file, index=False, encoding='utf-8')
-            
-            logger.info(f"✅ Successfully saved {len(df_final)} characters to {self.output_file}")
-            logger.info(f"📁 File size: {os.path.getsize(self.output_file)} bytes")
-            
+            logger.info(f"💾 Saving anime/series data to {self.anime_output_file}")
+            anime_column_order = ['series_id', 'name', 'english_name', 'image_link']
+            df_anime_final = df_anime[anime_column_order]
+            df_anime_final.to_csv(self.anime_output_file, index=False, encoding='utf-8')
+            logger.info(f"✅ Saved {len(df_anime_final)} series to {self.anime_output_file}")
+            logger.info(f"📁 File size: {os.path.getsize(self.anime_output_file)} bytes")
+
+            logger.info(f"💾 Saving character data to {self.character_output_file}")
+            char_column_order = ['waifu_id', 'name', 'series', 'series_id', 'genre', 'rarity', 'image_url', 'favorites']
+            df_char_final = df_char[char_column_order]
+            df_char_final.to_csv(self.character_output_file, index=False, encoding='utf-8')
+            logger.info(f"✅ Saved {len(df_char_final)} characters to {self.character_output_file}")
+            logger.info(f"📁 File size: {os.path.getsize(self.character_output_file)} bytes")
             return True
-            
         except Exception as e:
-            logger.error(f"❌ Error saving CSV file: {e}")
+            logger.error(f"❌ Error saving CSV files: {e}")
             return False
 
     def process(self) -> bool:
-        """Main processing function."""
+        """Main processing function for both characters and series."""
         try:
-            logger.info("🚀 Starting character final processing for new star system...")
-            
-            # Load Excel data
-            df = self.load_excel_data()
-            if df is None:
+            logger.info("🚀 Starting character and series processing for new star system...")
+            # Load character and anime data
+            df_char = self.load_excel_data()
+            df_anime = self.load_anime_excel()
+            if df_char is None or df_anime is None:
+                logger.error("❌ Missing input files!")
                 return False
-            
-            # Validate and clean data
-            df_clean = self.validate_and_clean_data(df)
-            if df_clean.empty:
-                logger.error("❌ No valid data after cleaning!")
+            # Clean character data
+            df_char_clean = self.validate_and_clean_data(df_char)
+            if df_char_clean.empty:
+                logger.error("❌ No valid character data after cleaning!")
                 return False
-            
+            # Clean and deduplicate anime/series data
+            # Map anime_mal.xlsx columns to expected names
+            df_anime['name'] = df_anime['title'].astype(str).str.strip()
+            df_anime['english_name'] = df_anime['title_english'].astype(str).str.strip() if 'title_english' in df_anime.columns else ''
+            df_anime['image_link'] = df_anime['image_url'].astype(str).str.strip() if 'image_url' in df_anime.columns else ''
+            # Deduplicate by name
+            df_anime = df_anime.drop_duplicates(subset=['name'])
+            df_anime = df_anime.reset_index(drop=True)
+            df_anime['series_id'] = df_anime.index + 1
+            # Map series name to series_id for characters
+            char_series_map = {n.strip().lower(): sid for n, sid in zip(df_anime['name'], df_anime['series_id'])}
+            df_char_clean['series_id'] = df_char_clean['series'].astype(str).str.strip().str.lower().map(char_series_map)
+            missing_series = df_char_clean[df_char_clean['series_id'].isnull()]['series'].unique()
+            if len(missing_series) > 0:
+                logger.warning(f"⚠️ Some characters have series not found in anime_mal.xlsx: {missing_series}")
+                # Optionally, assign a default series_id or drop these rows
+                df_char_clean = df_char_clean.dropna(subset=['series_id'])
+            df_char_clean['series_id'] = df_char_clean['series_id'].astype(int)
             # Analyze star system impact
-            self.analyze_star_system_impact(df_clean)
-            
-            # Save final CSV
-            success = self.save_final_csv(df_clean)
-            
+            self.analyze_star_system_impact(df_char_clean)
+            # Save both CSVs
+            success = self.save_final_csvs(df_char_clean, df_anime)
             if success:
-                logger.info("🎉 Character final processing completed successfully!")
-                logger.info(f"📤 Output ready for upload_to_mysql.py: {self.output_file}")
-            
+                logger.info("🎉 Character and series processing completed successfully!")
+                logger.info(f"📤 Outputs: {self.character_output_file}, {self.anime_output_file}")
             return success
-            
         except Exception as e:
             logger.error(f"❌ Fatal error during processing: {e}")
             return False

@@ -11,6 +11,33 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+    async def add_series(self, series_data: dict) -> int:
+        """Add a new series to the database. Returns the series_id."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO series (name, english_name, image_link)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (name) DO UPDATE SET english_name = EXCLUDED.english_name, image_link = EXCLUDED.image_link
+                RETURNING series_id
+                """,
+                series_data.get('name', ''),
+                series_data.get('english_name', ''),
+                series_data.get('image_link', '')
+            )
+            return row['series_id'] if row else None
+
+    async def get_series_by_name(self, name: str) -> dict:
+        """Get a series by name (case-insensitive)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM series WHERE LOWER(name) = LOWER($1)", name
+            )
+            return dict(row) if row else None
     async def add_waifus_to_user_batch(self, discord_id: str, waifu_ids: List[int]) -> List[Dict[str, Any]]:
         """Batch add multiple waifus to a user's collection, skipping already-owned waifus. Returns full waifu+user_waifu data for all added."""
         if not waifu_ids:
@@ -108,12 +135,26 @@ class DatabaseService:
             """
         )
 
-        # Waifus table (waifu_id is now the primary key)
+        # Series table
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS series (
+                series_id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL UNIQUE,
+                english_name VARCHAR(255),
+                image_link TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_series_name ON series(name);
+            """
+        )
+
+        # Waifus table (waifu_id is now the primary key, series_id is a foreign key, series is denormalized string)
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS waifus (
                 waifu_id INTEGER PRIMARY KEY,
                 name VARCHAR(255) NOT NULL,
+                series_id INTEGER REFERENCES series(series_id) ON DELETE SET NULL,
                 series VARCHAR(255) NOT NULL,
                 genre VARCHAR(100) NOT NULL,
                 element VARCHAR(50),
@@ -127,6 +168,8 @@ class DatabaseService:
             );
             CREATE INDEX IF NOT EXISTS idx_rarity ON waifus(rarity);
             CREATE INDEX IF NOT EXISTS idx_name ON waifus(name);
+            CREATE INDEX IF NOT EXISTS idx_series_id ON waifus(series_id);
+            CREATE INDEX IF NOT EXISTS idx_series ON waifus(series);
             """
         )
 
@@ -338,9 +381,17 @@ class DatabaseService:
             return row["waifu_id"] if row else 0
 
     async def get_waifu_by_waifu_id(self, waifu_id: int) -> Optional[Dict[str, Any]]:
-        """Get a waifu by waifu_id."""
+        """Get a waifu by waifu_id, including series name as 'series'."""
         async with self.connection_pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM waifus WHERE waifu_id = $1", waifu_id)
+            row = await conn.fetchrow(
+                """
+                SELECT w.*, s.name AS series
+                FROM waifus w
+                LEFT JOIN series s ON w.series_id = s.series_id
+                WHERE w.waifu_id = $1
+                """,
+                waifu_id
+            )
             if row:
                 return dict(row)
             return None
@@ -355,10 +406,16 @@ class DatabaseService:
             return False
 
     async def get_waifus_by_rarity(self, rarity: int, limit: int = 100) -> List[Dict[str, Any]]:
-        """Get waifus by rarity level (PostgreSQL)."""
+        """Get waifus by rarity level (PostgreSQL), including series name as 'series'."""
         async with self.connection_pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT * FROM waifus WHERE rarity = $1 ORDER BY RANDOM() LIMIT $2",
+                """
+                SELECT w.*, s.name AS series
+                FROM waifus w
+                LEFT JOIN series s ON w.series_id = s.series_id
+                WHERE w.rarity = $1
+                ORDER BY RANDOM() LIMIT $2
+                """,
                 rarity, limit
             )
             return [dict(row) for row in rows]

@@ -29,7 +29,8 @@ class PostgresUploader:
         self.config = config
         self.db_service = None
         self.waifu_service = None
-        self.input_file = os.path.join("data", "character_final.csv")
+        self.character_file = os.path.join("data", "character_final.csv")
+        self.series_file = os.path.join("data", "anime_final.csv")
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -49,23 +50,40 @@ class PostgresUploader:
             await self.db_service.close()
 
     def load_characters(self) -> List[Dict[str, Any]]:
-        """Load characters from data/character_final.csv."""
+        """Load characters from character_final.csv."""
         characters = []
         try:
-            with open(self.input_file, 'r', encoding='utf-8', newline='') as f:
+            with open(self.character_file, 'r', encoding='utf-8', newline='') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     characters.append(row)
-            logger.info(f"Loaded {len(characters)} characters from {self.input_file}")
+            logger.info(f"Loaded {len(characters)} characters from {self.character_file}")
         except FileNotFoundError:
-            logger.error(f"Input file {self.input_file} not found!")
+            logger.error(f"Input file {self.character_file} not found!")
             logger.error("Please run process_character_final.py first to generate data/character_final.csv")
             return []
         except Exception as e:
             logger.error(f"Error loading characters: {e}")
             return []
-        
         return characters
+
+    def load_series(self) -> List[Dict[str, Any]]:
+        """Load series from anime_final.csv."""
+        series = []
+        try:
+            with open(self.series_file, 'r', encoding='utf-8', newline='') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    series.append(row)
+            logger.info(f"Loaded {len(series)} series from {self.series_file}")
+        except FileNotFoundError:
+            logger.error(f"Input file {self.series_file} not found!")
+            logger.error("Please run process_character_final.py first to generate data/anime_final.csv")
+            return []
+        except Exception as e:
+            logger.error(f"Error loading series: {e}")
+            return []
+        return series
 
     def process_character_for_database(self, character: Dict[str, Any]) -> 'Optional[Dict[str, Any]]':
         """Process character data for database insertion."""
@@ -83,7 +101,6 @@ class PostgresUploader:
             rarity = 1
         char_data = {
             "name": character.get("name", ""),
-            "series": character.get("series", "Unknown Series"),
             "genre": character.get("genre", "Anime"),
             "element": self.determine_element(character),
             "rarity": rarity,
@@ -179,75 +196,82 @@ class PostgresUploader:
         # Limit to 3-5 gifts
         return favorite_gifts[:5]
 
-    async def upload_characters(self):
-        """Main function to upload characters to PostgreSQL database."""
+    async def upload_series_and_characters(self):
+        """Upload series first, then characters to PostgreSQL database."""
         try:
-            logger.info("💾 Starting character upload to PostgreSQL...")
-
-            # Load character data
+            logger.info("💾 Starting series and character upload to PostgreSQL...")
+            # Load series and character data
+            series_list = self.load_series()
             characters = self.load_characters()
-            if not characters:
+            if not series_list or not characters:
                 return False
-
             # Check database connection
             logger.info("🔗 Testing database connection...")
             if not await self.db_service.test_connection():
                 logger.error("❌ Database connection failed!")
                 return False
-
             logger.info("✅ Database connection successful!")
-
-            # Process and upload each character
+            # Upload series
+            successful_series = 0
+            for s in series_list:
+                try:
+                    # Check if series exists by name
+                    existing = await self.db_service.get_series_by_name(s['name']) if hasattr(self.db_service, 'get_series_by_name') else None
+                    if existing:
+                        continue
+                    # Insert series
+                    await self.db_service.add_series(s)
+                    successful_series += 1
+                except Exception as e:
+                    logger.error(f"❌ Failed to upload series {s.get('name', '')}: {e}")
+            logger.info(f"✅ Uploaded {successful_series} new series entries.")
+            # Build a name->series_id map from DB
+            db_series = {s['name'].strip().lower(): s['series_id'] for s in (series_list)}
+            # Upload characters
             successful_uploads = 0
             failed_uploads = 0
-
+            # Build a series_id -> canonical name map from the loaded series_list
+            series_id_to_name = {int(s['series_id']): s['name'] for s in series_list if s.get('series_id') and s.get('name')}
             for i, character in enumerate(characters, 1):
                 char_name = character.get("name", "Unknown")
                 try:
                     logger.info(f"Uploading character {i}/{len(characters)}: {char_name}")
-
-                    # Prepare character data for database
                     char_data = self.process_character_for_database(character)
                     if not char_data:
                         failed_uploads += 1
                         continue
-
                     waifu_id = char_data["waifu_id"]
+                    # Set series_id from CSV (already mapped in ETL)
+                    char_data["series_id"] = int(character["series_id"])
+                    # Set canonical series name for denormalized field
+                    char_data["series"] = series_id_to_name.get(char_data["series_id"], "Unknown Series")
                     # Check db_service is initialized
                     if not self.db_service:
                         logger.error("Database service is not initialized!")
                         failed_uploads += 1
                         continue
-                    # Check if character already exists
                     existing = await self.db_service.get_waifu_by_waifu_id(waifu_id)
                     if existing:
                         logger.info(f"  Character {char_name} already exists in database (WAIFU ID: {waifu_id})")
                         continue
-
-                    # Add to database
                     await self.db_service.add_waifu(char_data)
                     successful_uploads += 1
                     logger.info(f"  ✅ Successfully uploaded {char_name}")
-
                 except Exception as e:
                     failed_uploads += 1
                     logger.error(f"  ❌ Failed to upload {char_name}: {e}")
-
-            # Summary
             logger.info(f"📊 Upload Summary:")
             logger.info(f"  ✅ Successful: {successful_uploads}")
             logger.info(f"  ❌ Failed: {failed_uploads}")
             logger.info(f"  📝 Total processed: {len(characters)}")
-
             if successful_uploads > 0:
                 logger.info("✅ Character upload completed successfully!")
                 return True
             else:
                 logger.warning("⚠️ No characters were uploaded!")
                 return False
-
         except Exception as e:
-            logger.error(f"❌ Error during character upload: {e}")
+            logger.error(f"❌ Error during series/character upload: {e}")
             return False
 
 
@@ -257,7 +281,7 @@ async def main():
         config = Config.create()
 
         async with PostgresUploader(config) as uploader:
-            success = await uploader.upload_characters()
+            success = await uploader.upload_series_and_characters()
 
         return success
 
