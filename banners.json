@@ -1,14 +1,14 @@
 [
   {
     "id": 1,
-    "name": "Summer Splash Banner",
+    "name": "Startup Banner",
     "type": "rate-up",
     "start_time": "2025-08-26 00:00:00",
     "end_time": "2025-09-01 23:59:59",
-    "description": "Special summer event with increased drop rates for select waifus!",
+    "description": "Initial rate-up banner with increased drop rates for select series!",
     "is_active": true,
-    "waifu_ids": [161471, 161472, 161470, 161469, 160603],
-    "series_ids": [1]
+    "waifu_ids": [],
+    "series_ids": [31,76,110,19]
   },
   {
     "id": 2,
@@ -17,8 +17,19 @@
     "start_time": "2025-09-10 00:00:00",
     "end_time": "2025-09-20 23:59:59",
     "description": "Anniversary celebration! Exclusive waifus available for a limited time.",
-    "is_active": true,
-    "waifu_ids": [55839, 150916],
+    "is_active": false,
+    "waifu_ids": [],
     "series_ids": [2, 3]
+  },
+  {
+    "id": 3,
+    "name": "Love Live Shenanigans",
+    "type": "rate-up",
+    "start_time": "2025-08-26 00:00:00",
+    "end_time": "2025-09-01 23:59:59",
+    "description": "Have fun getting all Sunshine characters before finding others!",
+    "is_active": true,
+    "waifu_ids": [],
+    "series_ids": [75,76,77,78]
   }
 ]

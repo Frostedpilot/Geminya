@@ -19,8 +19,8 @@ class WaifuService:
     # NEW GACHA RATES (1-3 stars only)
     GACHA_RATES = {
         3: 5.0,   # 3-star: 5%
-        2: 94.0,  # 2-star: 20% 
-        1: 1.0,  # 1-star: 75%
+        2: 20.0,  # 2-star: 20% 
+        1: 75.0,  # 1-star: 75%
     }
 
     # NEW PITY SYSTEM

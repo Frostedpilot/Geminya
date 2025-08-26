@@ -5,6 +5,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Union, TYPE_CHECKING
+from datetime import datetime, timezone
 
 if TYPE_CHECKING:
     from config.config import Config
@@ -163,15 +164,31 @@ class DatabaseService:
         async with self.connection_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO series (series_id, name, english_name, image_link)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (series_id) DO UPDATE SET name = EXCLUDED.name, english_name = EXCLUDED.english_name, image_link = EXCLUDED.image_link
+                INSERT INTO series (
+                    series_id, name, english_name, image_link, studios, genres, synopsis, favorites, members, score
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                ON CONFLICT (series_id) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    english_name = EXCLUDED.english_name,
+                    image_link = EXCLUDED.image_link,
+                    studios = EXCLUDED.studios,
+                    genres = EXCLUDED.genres,
+                    synopsis = EXCLUDED.synopsis,
+                    favorites = EXCLUDED.favorites,
+                    members = EXCLUDED.members,
+                    score = EXCLUDED.score
                 RETURNING series_id
                 """,
                 series_data['series_id'],
                 series_data.get('name', ''),
                 series_data.get('english_name', ''),
-                series_data.get('image_link', '')
+                series_data.get('image_link', ''),
+                series_data.get('studios', ''),
+                series_data.get('genres', ''),
+                series_data.get('synopsis', ''),
+                series_data.get('favorites', None),
+                series_data.get('members', None),
+                series_data.get('score', None)
             )
             if row and 'series_id' in row:
                 return row['series_id']
@@ -290,7 +307,13 @@ class DatabaseService:
                 series_id INTEGER PRIMARY KEY,
                 name VARCHAR(255) NOT NULL UNIQUE,
                 english_name VARCHAR(255),
-                image_link TEXT
+                image_link TEXT,
+                studios TEXT,
+                genres TEXT,
+                synopsis TEXT,
+                favorites INTEGER,
+                members INTEGER,
+                score FLOAT
             );
             CREATE INDEX IF NOT EXISTS idx_series_name ON series(name);
             """
@@ -308,6 +331,7 @@ class DatabaseService:
                 element VARCHAR(50),
                 rarity INTEGER NOT NULL CHECK (rarity >= 1 AND rarity <= 3),
                 image_url TEXT,
+                about TEXT,
                 base_stats TEXT,
                 birthday DATE,
                 favorite_gifts TEXT,
@@ -509,10 +533,12 @@ class DatabaseService:
             if user:
                 return dict(user)
             # Create new user
+            old_date = datetime(2022, 1, 1, tzinfo=timezone.utc)
+            old_timestamp = int(old_date.timestamp())
             await conn.execute(
                 """INSERT INTO users (discord_id, academy_name, last_daily_reset) 
                        VALUES ($1, $2, $3)""",
-                discord_id, f"Academy {discord_id[:6]}", int(datetime.now().timestamp())
+                discord_id, f"Academy {discord_id[:6]}", old_timestamp
             )
             user = await conn.fetchrow(
                 "SELECT * FROM users WHERE discord_id = $1", discord_id
@@ -535,16 +561,16 @@ class DatabaseService:
 
     # Waifu-related methods
     async def add_waifu(self, waifu_data: Dict[str, Any]) -> int:
-        """Add a new waifu to the database (PostgreSQL), including series_id as a foreign key."""
+        """Add a new waifu to the database (PostgreSQL), including series_id as a foreign key and about field."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         async with self.connection_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 INSERT INTO waifus (
-                    name, series_id, series, genre, element, rarity, image_url, waifu_id,
+                    name, series_id, series, genre, element, rarity, image_url, about, waifu_id,
                     base_stats, birthday, favorite_gifts, special_dialogue
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                 RETURNING waifu_id
                 """,
                 waifu_data["name"],
@@ -554,6 +580,7 @@ class DatabaseService:
                 waifu_data.get("element"),
                 waifu_data["rarity"],
                 waifu_data.get("image_url"),
+                waifu_data.get("about", None),
                 waifu_data.get("waifu_id"),
                 json.dumps(waifu_data.get("base_stats", {})),
                 waifu_data.get("birthday"),
@@ -563,7 +590,7 @@ class DatabaseService:
             return row["waifu_id"] if row else 0
 
     async def get_waifu_by_waifu_id(self, waifu_id: int) -> Optional[Dict[str, Any]]:
-        """Get a waifu by waifu_id, including series name as 'series'."""
+        """Get a waifu by waifu_id, including series name as 'series' and about field."""
         async with self.connection_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """

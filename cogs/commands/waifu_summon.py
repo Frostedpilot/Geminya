@@ -57,9 +57,21 @@ class WaifuSummonCog(BaseCommand):
             if series.get('image_link'):
                 embed.set_image(url=series['image_link'])
             # Add more fields if available
-            for key in ['genre', 'description']:
-                if key in series and series[key]:
-                    embed.add_field(name=key.capitalize(), value=series[key], inline=False)
+            # Add new fields for series info
+            display_fields = [
+                ('Studios', 'studios'),
+                ('Genres', 'genres'),
+                ('Synopsis', 'synopsis'),
+                ('Favorites', 'favorites'),
+                ('Members', 'members'),
+                ('Score', 'score'),
+                ('Genre', 'genre'),
+                ('Description', 'description'),
+            ]
+            for label, key in display_fields:
+                val = series.get(key)
+                if val and str(val).strip() and str(val).lower() != 'nan':
+                    embed.add_field(name=label, value=str(val), inline=False)
 
             # Fetch all waifus/characters in this series using the new method
             try:
@@ -196,15 +208,18 @@ class WaifuSummonCog(BaseCommand):
                     inline=False,
                 )
 
-            # Character details
+            # Character details (no about text)
             embed.add_field(name="Character", value=f"**{waifu['name']}**", inline=True)
             embed.add_field(name="Series", value=waifu.get("series", "Unknown"), inline=True)
+            embed.add_field(name="Element",
+                            value=f"{waifu.get('element', 'Unknown')} 🔮",
+                            inline=True,
+                            )            
             embed.add_field(
                 name="Current Star Level",
                 value=f"{'⭐' * summon_result['current_star_level']} ({summon_result['current_star_level']}★)",
                 inline=True,
             )
-
             embed.add_field(
                 name="Pull Rarity", 
                 value=f"{config['emoji']} {config['name']}", 
@@ -482,6 +497,7 @@ class WaifuSummonCog(BaseCommand):
                                 value="\n".join(upgrade_text),
                                 inline=False,
                             )
+                        # Only show basic info, no about text
                         embed.add_field(
                             name="Character", value=f"**{waifu['name']}**", inline=True
                         )
@@ -895,9 +911,10 @@ class WaifuSummonCog(BaseCommand):
             }
 
             current_star = user_waifu.get("current_star_level", waifu["rarity"]) if user_waifu else waifu["rarity"]
+            description = waifu.get("about") or waifu.get("personality_profile") or "A mysterious character..."
             embed = discord.Embed(
                 title=f"👤 {waifu['name']}",
-                description=waifu.get("personality_profile", "A mysterious character..."),
+                description=description,
                 color=rarity_colors.get(current_star, 0x95A5A6),
             )
 
