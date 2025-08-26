@@ -8,6 +8,64 @@ from services.database import DatabaseService
 
 class Banner(commands.Cog):
 
+    @commands.hybrid_command(name="nwnl_help", description="Show info about all NWNL commands.")
+    async def nwnl_help(self, ctx):
+        """Show info about all NWNL commands from all NWNL cogs (static/manual)."""
+        embed = discord.Embed(
+            title="NWNL Command Help",
+            description="Here are all available NWNL commands (manual list):",
+            color=0x4A90E2,
+        )
+        # --- Banner Cog ---
+        embed.add_field(
+            name="/nwnl_help",
+            value="Show info about all NWNL commands (this help message).",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_banner_list",
+            value="List all active banners.",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_banner_info <banner_id>",
+            value="Show details for a banner, including its series, type, and description. Example: `/nwnl_banner_info 1`",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_banner_waifupool <banner_id>",
+            value="Show the waifu pool for a banner, with scrolling buttons for long lists. Example: `/nwnl_banner_waifupool 1`",
+            inline=False,
+        )
+        # --- Waifu Summon Cog ---
+        embed.add_field(
+            name="/nwnl_summon [banner_id]",
+            value="Summon a waifu using Sakura Crystals. Optionally specify a banner ID.",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_multi_summon [display_mode] [banner_id]",
+            value="Perform 10 waifu summons at once. Choose display mode (full/simple/minimal) and optionally a banner ID.",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_collection [user]",
+            value="View your (or another user's) waifu academy collection with star levels.",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_profile <waifu_name>",
+            value="View detailed profile of a waifu, including star and bond info.",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_series <series_name>",
+            value="View detailed info about an anime series, including all characters in the series.",
+            inline=False,
+        )
+        embed.set_footer(text="Use the commands as shown. For more info, use /nwnl_banner_info <banner_id>.")
+        await ctx.send(embed=embed)
+
     @commands.hybrid_command(name="nwnl_banner_waifupool", description="Show the waifu pool for a banner, with scrolling buttons.")
     @discord.app_commands.describe(banner_id="Banner ID to show waifu pool for")
     async def nwnl_banner_waifupool(self, ctx, banner_id: int):

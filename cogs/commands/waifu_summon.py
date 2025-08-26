@@ -298,7 +298,7 @@ class WaifuSummonCog(BaseCommand):
         banner_id="Banner ID to summon from (optional)"
     )
     @discord.app_commands.autocomplete(display_mode=display_mode_autocomplete)
-    async def nwnl_multi_summon(self, ctx: commands.Context, display_mode: str = "full", banner_id: Optional[int] = None):
+    async def nwnl_multi_summon(self, ctx: commands.Context, banner_id: Optional[int] = None, display_mode: str = "full"):
         """Perform 10 waifu summons with the new star upgrade system."""
         await ctx.defer()
         # Only use explicit banner_id; no fallback to user_selected_banners
