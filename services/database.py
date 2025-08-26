@@ -11,6 +11,35 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+
+    async def get_waifus_by_rarity_and_series(self, rarity: int, series_id: int, limit: int = 100) -> List[Dict[str, Any]]:
+        """Get waifus by rarity and series (PostgreSQL), including series name as 'series'."""
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT w.*, s.name AS series
+                FROM waifus w
+                LEFT JOIN series s ON w.series_id = s.series_id
+                WHERE w.rarity = $1 AND w.series_id = $2
+                ORDER BY RANDOM() LIMIT $3
+                """,
+                rarity, series_id, limit
+            )
+            return [dict(row) for row in rows]
+
+    async def get_waifu_by_id_and_rarity(self, waifu_id: int, rarity: int) -> Optional[Dict[str, Any]]:
+        """Get a waifu by waifu_id and rarity (PostgreSQL), including series name as 'series'."""
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT w.*, s.name AS series
+                FROM waifus w
+                LEFT JOIN series s ON w.series_id = s.series_id
+                WHERE w.waifu_id = $1 AND w.rarity = $2
+                """,
+                waifu_id, rarity
+            )
+            return dict(row) if row else None
     async def get_series_by_id(self, series_id: int) -> Optional[Dict[str, Any]]:
         """Get a series by its primary key (series_id)."""
         if not self.connection_pool:
