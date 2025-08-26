@@ -215,13 +215,19 @@ class PostgresUploader:
             successful_series = 0
             for s in series_list:
                 try:
-                    # Check if series exists by name
-                    existing = await self.db_service.get_series_by_name(s['name']) if hasattr(self.db_service, 'get_series_by_name') else None
+                    # Ensure series_id is an integer
+                    s['series_id'] = int(s['series_id'])
+                    # Check if series exists by series_id
+                    existing = await self.db_service.get_series_by_id(s['series_id']) if hasattr(self.db_service, 'get_series_by_id') else None
                     if existing:
-                        continue
-                    # Insert series
-                    await self.db_service.add_series(s)
-                    successful_series += 1
+                        # Update the series in case of changes
+                        await self.db_service.add_series(s)
+                        logger.info(f"Updated existing series: {s.get('name', '')} (ID: {s.get('series_id', '')})")
+                    else:
+                        # Insert new series
+                        await self.db_service.add_series(s)
+                        successful_series += 1
+                        logger.info(f"Inserted new series: {s.get('name', '')} (ID: {s.get('series_id', '')})")
                 except Exception as e:
                     logger.error(f"❌ Failed to upload series {s.get('name', '')}: {e}")
             logger.info(f"✅ Uploaded {successful_series} new series entries.")

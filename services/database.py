@@ -141,22 +141,25 @@ class DatabaseService:
             row = await conn.fetchrow("SELECT * FROM banner_items WHERE id = $1", banner_item_id)
             return dict(row) if row else None
     async def add_series(self, series_data: dict) -> int:
-        """Add a new series to the database. Returns the series_id."""
+        """Add a new series to the database. Returns the series_id. series_id must be provided by caller (not serial)."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         async with self.connection_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO series (name, english_name, image_link)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (name) DO UPDATE SET english_name = EXCLUDED.english_name, image_link = EXCLUDED.image_link
+                INSERT INTO series (series_id, name, english_name, image_link)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (series_id) DO UPDATE SET name = EXCLUDED.name, english_name = EXCLUDED.english_name, image_link = EXCLUDED.image_link
                 RETURNING series_id
                 """,
+                series_data['series_id'],
                 series_data.get('name', ''),
                 series_data.get('english_name', ''),
                 series_data.get('image_link', '')
             )
-            return row['series_id'] if row else None
+            if row and 'series_id' in row:
+                return row['series_id']
+            raise ValueError("Failed to insert or update series with provided series_id")
 
     async def get_series_by_name(self, name: str) -> dict:
         """Get a series by name (case-insensitive)."""
@@ -264,11 +267,11 @@ class DatabaseService:
             """
         )
 
-        # Series table
+        # Series table (series_id is NOT SERIAL, must be provided by caller)
         await conn.execute(
             """
             CREATE TABLE IF NOT EXISTS series (
-                series_id SERIAL PRIMARY KEY,
+                series_id INTEGER PRIMARY KEY,
                 name VARCHAR(255) NOT NULL UNIQUE,
                 english_name VARCHAR(255),
                 image_link TEXT
@@ -516,19 +519,20 @@ class DatabaseService:
 
     # Waifu-related methods
     async def add_waifu(self, waifu_data: Dict[str, Any]) -> int:
-        """Add a new waifu to the database (PostgreSQL)."""
+        """Add a new waifu to the database (PostgreSQL), including series_id as a foreign key."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         async with self.connection_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 INSERT INTO waifus (
-                    name, series, genre, element, rarity, image_url, waifu_id,
+                    name, series_id, series, genre, element, rarity, image_url, waifu_id,
                     base_stats, birthday, favorite_gifts, special_dialogue
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING waifu_id
                 """,
                 waifu_data["name"],
+                waifu_data["series_id"],
                 waifu_data["series"],
                 waifu_data.get("genre", "Unknown"),
                 waifu_data.get("element"),
