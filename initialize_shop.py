@@ -16,7 +16,7 @@ DEFAULT_SHOP_ITEMS = [
     {
         "name": "3★ Guarantee Ticket",
         "description": "Guarantees a 3★ waifu summon (max rarity for direct summons)",
-        "price": 5,
+        "price": 300,
         "category": "tickets",
         "item_type": "guarantee_ticket",
         "item_data": {
@@ -25,6 +25,92 @@ DEFAULT_SHOP_ITEMS = [
         },
         "effects": {
             "guarantee_rarity": 3
+        },
+        "stock_limit": -1,
+        "is_active": True
+    },
+    {
+        "name": "2★ Series Ticket",
+        "description": "Choose a series and receive a random 2★ or higher character from that series.",
+        "price": 100,
+        "category": "tickets",
+        "item_type": "series_ticket",
+        "item_data": {
+            "min_rarity": 2,
+            "currency_type": "quartzs"
+        },
+        "effects": {
+            "choose_series": True,
+            "guarantee_rarity": 2
+        },
+        "stock_limit": -1,
+        "is_active": True
+    },
+    {
+        "name": "3★ Series Ticket",
+        "description": "Choose a series and receive a random 3★ character from that series.",
+        "price": 500,
+        "category": "tickets",
+        "item_type": "series_ticket",
+        "item_data": {
+            "min_rarity": 3,
+            "currency_type": "quartzs"
+        },
+        "effects": {
+            "choose_series": True,
+            "guarantee_rarity": 3
+        },
+        "stock_limit": -1,
+        "is_active": True
+    },
+    {
+        "name": "2★ Selectix Ticket",
+        "description": "Choose any 2★ character of your choice.",
+        "price": 200,
+        "category": "tickets",
+        "item_type": "selectix_ticket",
+        "item_data": {
+            "rarity": 2,
+            "currency_type": "quartzs"
+        },
+        "effects": {
+            "choose_character": True,
+            "guarantee_rarity": 2
+        },
+        "stock_limit": -1,
+        "is_active": True
+    },
+    {
+        "name": "3★ Selectix Ticket",
+        "description": "Choose any 3★ character of your choice.",
+        "price": 700,
+        "category": "tickets",
+        "item_type": "selectix_ticket",
+        "item_data": {
+            "rarity": 3,
+            "currency_type": "quartzs"
+        },
+        "effects": {
+            "choose_character": True,
+            "guarantee_rarity": 3
+        },
+        "stock_limit": -1,
+        "is_active": True
+    },
+    {
+        "name": "10-Summon All 3★ Guarantee Ticket",
+        "description": "Guarantees 10 summons, all 3★ characters.",
+        "price": 2500,
+        "category": "tickets",
+        "item_type": "multi_guarantee_ticket",
+        "item_data": {
+            "summon_count": 10,
+            "rarity": 3,
+            "currency_type": "quartzs"
+        },
+        "effects": {
+            "guarantee_rarity": 3,
+            "summon_count": 10
         },
         "stock_limit": -1,
         "is_active": True
