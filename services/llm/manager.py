@@ -20,6 +20,7 @@ from .exceptions import (
     RetriableError,
 )
 from .providers import OpenRouterProvider
+from .providers.aistudio import AIStudioProvider
 
 
 class LLMManager:
@@ -41,6 +42,7 @@ class LLMManager:
 
         self.provider_mapping: Dict[str, Type[LLMProvider]] = {
             "openrouter": OpenRouterProvider,
+            "aistudio": AIStudioProvider,
         }
 
     async def initialize(self) -> None:
@@ -91,6 +93,8 @@ class LLMManager:
 
         # Extract provider from model name (e.g., "openrouter/model-name")
         provider_name = self._extract_provider_name(request.model)
+
+        self.logger.debug(f"Using provider {provider_name} for model {request.model}")
 
         if provider_name not in self.providers:
             if self.default_provider and self.default_provider in self.providers:

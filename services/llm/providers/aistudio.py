@@ -19,21 +19,21 @@ from ..exceptions import (
 
 class AIStudioProvider(LLMProvider):
     def __init__(self, config: ProviderConfig, logger: logging.Logger):
-        super().__init__(config, logger)
+        super().__init__("aistudio", config, logger)
         self.client: Optional[Client] = None
 
-    def initialize(self):
+    async def initialize(self):
         try:
             # Get the api key from the config
-            aistudio_api_key = self.config.aistudio_api_key
+            aistudio_api_key = self.config.api_key
             self.client = Client(api_key=aistudio_api_key)
-            self._set_initialized()
+            self._set_initialized(True)
             self.logger.info("AI Studio client initialized successfully.")
         except Exception as e:
             self.logger.error(f"Failed to initialize AI Studio client: {e}")
-            raise ProviderError("Initialization failed") from e
+            raise ProviderError("aistudio", "Initialization failed") from e
 
-    def cleanup(self):
+    async def cleanup(self):
         try:
             if self.client:
                 self.client = None
@@ -41,7 +41,7 @@ class AIStudioProvider(LLMProvider):
                 self._set_initialized(False)
         except Exception as e:
             self.logger.error(f"Failed to cleanup AI Studio client: {e}")
-            raise ProviderError("Cleanup failed") from e
+            raise ProviderError("aistudio", "Cleanup failed") from e
 
     def get_models(self):
         model_infos = self.config.model_infos
@@ -62,14 +62,34 @@ class AIStudioProvider(LLMProvider):
             raise ModelNotFoundError(model_id, "aistudio")
 
     def supports_model(self, model_id: str) -> bool:
-        return model_id in self.get_models()
+        """Check if AI Studio supports the given model."""
+        # Get model info from config
+        model_infos = self.config.model_infos
+
+        # Check if model_id is in display name keys (direct match)
+        if model_id in model_infos:
+            return model_infos[model_id].provider == "aistudio"
+
+        # Check if model_id matches any ModelInfo.id values for this provider
+        for model_info in model_infos.values():
+            if model_info.provider == "aistudio" and model_info.id == model_id:
+                return True
+
+        # Check for short format (e.g., "gemini-2.5-flash-lite")
+        # by checking if "aistudio/" + model_id matches any ModelInfo.id
+        prefixed_model_id = f"aistudio/{model_id}"
+        for model_info in model_infos.values():
+            if model_info.provider == "aistudio" and model_info.id == prefixed_model_id:
+                return True
+
+        return False
 
     def convert_mcp_tools(self, mcp_tools):
         # Don't know how to properly implement this yet, since format for AI Studio tools is too different and strongly typed.
         raise NotImplementedError("Tool conversion not implemented for AI Studio")
 
-    def generate_response(self, request: LLMRequest) -> LLMResponse:
-        if not self.initialize():
+    async def generate_response(self, request: LLMRequest) -> LLMResponse:
+        if not self.is_initialized() or not self.client:
             raise ProviderError("aistudio", "Provider not initialized")
 
         if not self.supports_model(request.model):
@@ -86,19 +106,27 @@ class AIStudioProvider(LLMProvider):
             contents = request.messages
 
             # Build the messages object for aistudio
-            messages = [
-                genai_types.Content(
-                    role="user" if m["role"] == "user" else "model",
-                    parts=[genai_types.Part.from_text(c) for c in m["content"]],
-                )
-                for m in contents
-            ]
+            messages = []
+            for m in contents:
+                role = "user" if m["role"] == "user" else "model"
+                # Handle content - it could be a string or a list
+                content = m["content"]
+                if isinstance(content, str):
+                    parts = [genai_types.Part.from_text(text=content)]
+                elif isinstance(content, list):
+                    parts = [genai_types.Part.from_text("\n".join(content))]
+                else:
+                    parts = [genai_types.Part.from_text(text=str(content))]
+
+                messages.append(genai_types.Content(role=role, parts=parts))
 
             # Get the config
             additional_config = request.provider_specific or {}
             config = self._get_gen_config(request.temperature, additional_config)
 
             # Now call the API
+            self.logger.debug(f"Calling AI Studio API with model: {resolved_model_id}")
+
             response = self.client.models.generate_content(
                 model=resolved_model_id, contents=messages, config=config
             )
@@ -108,6 +136,10 @@ class AIStudioProvider(LLMProvider):
                 raise ProviderError("aistudio", "No response from API")
 
             response_text = response.text
+
+            self.logger.debug(
+                f"Generated AI Studio response: {len(response_text)} characters"
+            )
 
             # NOTE: Additional tool call parsing if we ever implement one
 

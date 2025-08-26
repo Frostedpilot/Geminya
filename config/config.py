@@ -113,13 +113,24 @@ class Config:
     guess_character: Dict[str, Any] = field(default_factory=dict)
 
     # LLM Providers specific configs
-    available_providers: List[str] = field(default_factory=lambda: ["openrouter"])
+    available_providers: List[str] = field(
+        default_factory=lambda: ["openrouter", "aistudio"]
+    )
     llm_providers: Dict[str, ProviderConfig] = field(default_factory=dict)
 
     openrouter_config: ProviderConfig = field(
         default_factory=lambda: ProviderConfig(
             api_key="",
             base_url="https://openrouter.ai/api/v1",
+            timeout=30,
+            model_infos=MODEL_INFOS.copy(),
+        )
+    )
+
+    aistudio_config: ProviderConfig = field(
+        default_factory=lambda: ProviderConfig(
+            api_key="",
+            base_url=None,
             timeout=30,
             model_infos=MODEL_INFOS.copy(),
         )
@@ -230,16 +241,18 @@ class Config:
             # If no Google API keys, remove Google Search MCP from instructions
             self.mcp_server_instruction.pop("google-search", None)
 
+        # Set up api key for each provider
+        for provider in self.available_providers:
+            api_key_attr_name = provider + "_api_key"
+            config_attr_name = provider + "_config"
+            if hasattr(self, api_key_attr_name):
+                self.__getattribute__(config_attr_name).api_key = self.__getattribute__(
+                    api_key_attr_name
+                )
+            else:
+                raise ConfigError(f"API key for provider '{provider}' is missing")
+
         # Set up provider config
-
-        if self.openrouter_api_key:
-            self.openrouter_config.api_key = self.openrouter_api_key
-            assert self.openrouter_config.api_key != ""  # Ensure API key is not empty
-        else:
-            raise ConfigError(
-                "OPENROUTER_API_KEY is required because it is the default provider"
-            )
-
         for provider in self.available_providers:
             self.llm_providers[provider] = self.__getattribute__(provider + "_config")
 
