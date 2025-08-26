@@ -7,224 +7,9 @@ from cogs.base_command import BaseCommand
 from services.container import ServiceContainer
 
 
+
+
 class WaifuSummonCog(BaseCommand):
-    @commands.hybrid_command(
-        name="nwnl_super_multiple_summon",
-        description="🎰🎊 Perform multiple 10x multi-summons in a single command! (100 crystals per multi)",
-    )
-    @discord.app_commands.describe(
-        multi_count="How many 10x multi-summons to perform (1-10)"
-    )
-    async def nwnl_super_multiple_summon(self, ctx: commands.Context, multi_count: int = 1):
-        """Perform multiple 10x multi-summons consecutively (always uses simple mode for each multi)."""
-        await ctx.defer()
-        if not (1 <= multi_count <= 10):
-            await ctx.send("❌ You must choose between 1 and 10 multis.")
-            return
-
-        all_results = []
-        total_rarity_counts = {1: 0, 2: 0, 3: 0}
-        all_new_waifus = []
-        all_shard_summary = {}
-        all_upgrade_summary = []
-        total_cost = 0
-        crystals_remaining = None
-
-        for i in range(multi_count):
-            result = await self.services.waifu_service.perform_multi_summon(str(ctx.author.id))
-            result["display_mode"] = "simple"
-            if not result["success"]:
-                await ctx.send(f"❌ Multi-summon #{i+1} failed: {result['message']}")
-                return
-            all_results.append(result)
-            for rarity, count in result["rarity_counts"].items():
-                total_rarity_counts[rarity] += count
-            all_new_waifus.extend(result.get("new_waifus", []))
-            for k, v in result.get("shard_summary", {}).items():
-                all_shard_summary[k] = all_shard_summary.get(k, 0) + v
-            all_upgrade_summary.extend(result.get("upgrade_summary", []))
-            total_cost += result.get("total_cost", 0)
-            crystals_remaining = result.get("crystals_remaining", crystals_remaining)
-
-        rarity_config = {
-            3: {"color": 0xFFD700, "emoji": "⭐⭐⭐", "name": "Legendary"},
-            2: {"color": 0x9932CC, "emoji": "⭐⭐", "name": "Epic"},
-            1: {"color": 0x808080, "emoji": "⭐", "name": "Basic"},
-        }
-
-        # Build summary embed
-        rarity_text = []
-        for rarity in [3, 2, 1]:
-            count = total_rarity_counts.get(rarity, 0)
-            if count > 0:
-                config = rarity_config[rarity]
-                rarity_text.append(f"{config['emoji']} {config['name']}: {count}")
-
-        summary_embed = discord.Embed(
-            title=f"📊 Super Multi-Summon Summary ({multi_count}x10)",
-            color=0x4A90E2,
-        )
-        summary_embed.add_field(
-            name="📊 Rarity Breakdown",
-            value="\n".join(rarity_text) if rarity_text else "No results",
-            inline=True,
-        )
-
-        # New waifus summary
-        if all_new_waifus:
-            unique_new_waifus = {w["name"] for w in all_new_waifus}
-            new_names = list(unique_new_waifus)[:5]
-            if len(unique_new_waifus) > 5:
-                new_names.append(f"...and {len(unique_new_waifus) - 5} more!")
-            summary_embed.add_field(
-                name=f"🆕 New Characters ({len(unique_new_waifus)})",
-                value="\n".join(new_names),
-                inline=True,
-            )
-
-        # Shard summary
-        if all_shard_summary:
-            shard_text = []
-            for char_name, shards in list(all_shard_summary.items())[:3]:
-                shard_text.append(f"💫 {char_name}: +{shards}")
-            if len(all_shard_summary) > 3:
-                shard_text.append(f"...and {len(all_shard_summary) - 3} more!")
-            summary_embed.add_field(
-                name="💫 Shard Gains",
-                value="\n".join(shard_text),
-                inline=True,
-            )
-
-        # Upgrade summary
-        if all_upgrade_summary:
-            upgrade_text = all_upgrade_summary[:5]
-            if len(all_upgrade_summary) > 5:
-                upgrade_text.append(f"...and {len(all_upgrade_summary) - 5} more!")
-            summary_embed.add_field(
-                name="⬆️ AUTO UPGRADES!",
-                value="\n".join(upgrade_text),
-                inline=False,
-            )
-
-        summary_embed.add_field(
-            name="💎 Crystals Remaining",
-            value=f"{crystals_remaining}",
-            inline=True,
-        )
-        summary_embed.add_field(
-            name="💰 Total Cost",
-            value=f"{total_cost} crystals",
-            inline=True,
-        )
-        summary_embed.set_footer(
-            text=f"Super multi-summon complete! Cost: {total_cost} crystals • Remaining: {crystals_remaining} crystals"
-        )
-
-        # Always show per-multi breakdown and 3★ card info
-        embeds = [summary_embed]
-        for idx, result in enumerate(all_results):
-            rarity_counts = result["rarity_counts"]
-            rarity_text = []
-            for rarity in [3, 2, 1]:
-                count = rarity_counts.get(rarity, 0)
-                if count > 0:
-                    config = rarity_config[rarity]
-                    rarity_text.append(f"{config['emoji']} {config['name']}: {count}")
-            breakdown_embed = discord.Embed(
-                title=f"Multi-Summon #{idx+1} Breakdown",
-                color=0x95A5A6,
-            )
-            breakdown_embed.add_field(
-                name="Rarity Breakdown",
-                value="\n".join(rarity_text) if rarity_text else "No results",
-                inline=True,
-            )
-            embeds.append(breakdown_embed)
-
-            # Show 3★ card info embeds for this multi
-            for i, summon_result in enumerate(result.get("results", [])):
-                waifu = summon_result["waifu"]
-                rarity = summon_result["rarity"]
-                if rarity == 3:
-                    config = rarity_config[3]
-                    embed = discord.Embed(
-                        title=f"🎊 Legendary Pull! (Multi {idx+1} #{i+1})",
-                        color=config["color"],
-                    )
-                    if summon_result["is_new"]:
-                        embed.add_field(
-                            name="🆕 NEW WAIFU!",
-                            value=f"**{waifu['name']}** has joined your academy at {summon_result['current_star_level']}★!",
-                            inline=False,
-                        )
-                    else:
-                        if summon_result.get("quartz_gained", 0) > 0 and summon_result.get("shards_gained", 0) == 0:
-                            embed.add_field(
-                                name="🌟 Max Level Duplicate!",
-                                value=f"**{waifu['name']}** is already 5⭐! Converted to {summon_result['quartz_gained']} quartz!",
-                                inline=False,
-                            )
-                        else:
-                            embed.add_field(
-                                name="🌟 Duplicate Summon!",
-                                value=f"**{waifu['name']}** gained {summon_result['shards_gained']} shards!",
-                                inline=False,
-                            )
-                    if summon_result.get("upgrades_performed"):
-                        upgrade_text = []
-                        for upgrade in summon_result["upgrades_performed"]:
-                            upgrade_text.append(f"🔥 {upgrade['from_star']}★ → {upgrade['to_star']}★")
-                        embed.add_field(
-                            name="⬆️ AUTOMATIC UPGRADES!",
-                            value="\n".join(upgrade_text),
-                            inline=False,
-                        )
-                    embed.add_field(name="Character", value=f"**{waifu['name']}**", inline=True)
-                    embed.add_field(name="Series", value=waifu.get("series", "Unknown"), inline=True)
-                    embed.add_field(
-                        name="Current Star Level",
-                        value=f"{'⭐' * summon_result['current_star_level']} ({summon_result['current_star_level']}★)",
-                        inline=True,
-                    )
-                    embed.add_field(
-                        name="Pull Rarity",
-                        value=f"{config['emoji']} {config['name']}",
-                        inline=True,
-                    )
-                    if not summon_result["is_new"]:
-                        embed.add_field(
-                            name="Star Shards",
-                            value=f"💫 {summon_result['total_shards']}",
-                            inline=True,
-                        )
-                    embed.add_field(
-                        name="Crystals Left",
-                        value=f"💎 {result.get('crystals_remaining', result.get('crystals', 'N/A'))}",
-                        inline=True,
-                    )
-                    if summon_result.get("quartz_gained", 0) > 0:
-                        embed.add_field(
-                            name="Quartz Gained",
-                            value=f"💠 +{summon_result['quartz_gained']} (from excess shards)",
-                            inline=True,
-                        )
-                    if waifu.get("image_url"):
-                        embed.set_image(url=waifu["image_url"])
-                    embed.set_footer(
-                        text=f"Legendary pull in Multi {idx+1} • Summoned by {ctx.author.display_name}"
-                    )
-                    embeds.append(embed)
-
-        # Discord allows max 10 embeds per message
-        MAX_EMBEDS = 10
-        for i in range(0, len(embeds), MAX_EMBEDS):
-            await ctx.send(embeds=embeds[i:i+MAX_EMBEDS])
-        self.logger.info(
-            f"User {ctx.author} performed {multi_count}x10 super multi-summon: "
-            f"3★:{total_rarity_counts.get(3,0)}, 2★:{total_rarity_counts.get(2,0)}, "
-            f"1★:{total_rarity_counts.get(1,0)}"
-        )
-
     async def display_mode_autocomplete(self, interaction: discord.Interaction, current: str):
         modes = [
             ("Full (show all info cards)", "full"),
@@ -235,8 +20,10 @@ class WaifuSummonCog(BaseCommand):
             discord.app_commands.Choice(name=label, value=val)
             for label, val in modes if current.lower() in val or current.lower() in label.lower()
         ]
+
     def __init__(self, bot: commands.Bot, services: ServiceContainer):
         super().__init__(bot, services)
+
 
     @commands.hybrid_command(
         name="nwnl_summon",
@@ -246,15 +33,7 @@ class WaifuSummonCog(BaseCommand):
     async def nwnl_summon(self, ctx: commands.Context, banner_id: Optional[int] = None):
         """Perform a waifu summon with the new star upgrade system."""
         await ctx.defer()
-        # Use user-selected banner if no banner_id provided
-        if banner_id is None:
-            try:
-                from .banner_select import user_selected_banners
-                user_banner = user_selected_banners.get(str(ctx.author.id))
-                if user_banner:
-                    banner_id = user_banner
-            except Exception:
-                pass
+        # Only use explicit banner_id; no fallback to user_selected_banners
         return await self.queue_command(ctx, self._nwnl_summon_impl, banner_id)
 
     async def _nwnl_summon_impl(self, ctx: commands.Context, banner_id: Optional[int] = None):
@@ -416,16 +195,7 @@ class WaifuSummonCog(BaseCommand):
     async def nwnl_multi_summon(self, ctx: commands.Context, display_mode: str = "full", banner_id: Optional[int] = None):
         """Perform 10 waifu summons with the new star upgrade system."""
         await ctx.defer()
-        # Use user-selected banner if no banner_id provided
-        if banner_id is None:
-            try:
-                from .banner_select import user_selected_banners
-                user_banner = user_selected_banners.get(str(ctx.author.id))
-                if user_banner:
-                    banner_id = user_banner
-            except Exception:
-                pass
-        # Perform the multi-summon (always 10 rolls)
+        # Only use explicit banner_id; no fallback to user_selected_banners
         result = await self.services.waifu_service.perform_multi_summon(str(ctx.author.id), banner_id=banner_id)
         result["display_mode"] = display_mode
 
@@ -1132,7 +902,10 @@ class WaifuSummonCog(BaseCommand):
             await ctx.send(embed=embed)
 
 
+
 async def setup(bot: commands.Bot):
     """Setup function for the cog."""
-    # Get services from bot instance  
+    # Ensure bot.services exists
+    if not hasattr(bot, "services"):
+        raise RuntimeError("ServiceContainer (bot.services) is required for WaifuSummonCog. Please initialize bot.services before loading this cog.")
     await bot.add_cog(WaifuSummonCog(bot, bot.services))
