@@ -11,8 +11,8 @@ class Banner(commands.Cog):
         self.bot = bot
         self.db = db
 
-    @commands.hybrid_command(name="banner_list", description="List all active banners.")
-    async def banner_list(self, ctx):
+    @commands.hybrid_command(name="nwnl_banner_list", description="List all active banners.")
+    async def nwnl_banner_list(self, ctx):
         """List all active banners."""
         banners = await self.db.list_banners(active_only=True)
         if not banners:
@@ -27,9 +27,9 @@ class Banner(commands.Cog):
             )
         await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="banner_info", description="Show details for a banner.")
+    @commands.hybrid_command(name="nwnl_banner_info", description="Show details for a banner.")
     @discord.app_commands.describe(banner_id="Banner ID to show details for")
-    async def banner_info(self, ctx, banner_id: int):
+    async def nwnl_banner_info(self, ctx, banner_id: int):
         """Show details for a specific banner, including waifu pool."""
         banner = await self.db.get_banner(banner_id)
         if not banner:
@@ -53,7 +53,13 @@ class Banner(commands.Cog):
         embed.add_field(name="Waifu Pool", value="\n".join(waifu_list) or "None", inline=False)
         await ctx.send(embed=embed)
 
-def setup(bot):
+async def setup(bot):
     from services.database import DatabaseService
-    db = bot.get_cog('DatabaseService') or DatabaseService(bot.config)
-    bot.add_cog(Banner(bot, db))
+    from config import Config
+    db = getattr(bot, 'db', None)
+    if db is None:
+        config = Config.create()
+        db = DatabaseService(config)
+        await db.initialize()
+        bot.db = db
+    await bot.add_cog(Banner(bot, db))

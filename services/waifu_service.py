@@ -317,7 +317,7 @@ class WaifuService:
     # ==================== UPDATED GACHA METHODS ====================
 
     async def perform_summon(self, discord_id: str, banner_id: Optional[int] = None) -> Dict[str, Any]:
-        """Perform a waifu summon with new star system, optionally from a banner pool."""
+        """Perform a waifu summon with new star system, optionally from a banner pool or normal pool."""
         user = await self.db.get_or_create_user(discord_id)
 
         # Check if user has enough crystals
@@ -330,17 +330,26 @@ class WaifuService:
         # Determine rarity using new gacha rates
         rarity = await self._determine_summon_rarity(user)
 
-        # Get waifu pool: from banner if provided, else default
+        available_waifus = []
+        # Banner gacha
         if banner_id is not None:
+            banner = await self.db.get_banner(banner_id)
+            if not banner:
+                return {"success": False, "message": f"Banner not found."}
+            banner_type = banner.get("type", "standard")
             banner_items = await self.db.get_banner_items(banner_id)
-            if not banner_items:
-                return {"success": False, "message": f"No waifus in this banner pool."}
-            # Filter by rarity
             waifu_ids = [item["item_id"] for item in banner_items]
             waifus = [w for w in self._waifu_list if w["waifu_id"] in waifu_ids and w.get("rarity") == rarity]
+            # For limited banners, always include all 1★ waifus
+            if banner_type == "limited":
+                one_star_waifus = [w for w in self._waifu_list if w.get("rarity") == 1]
+                if rarity == 1:
+                    # Add all 1* waifus (avoid duplicates)
+                    waifu_ids_set = set(waifu_ids)
+                    waifus = waifus + [w for w in one_star_waifus if w["waifu_id"] not in waifu_ids_set]
             # Apply rate-up logic if any
             rate_up_waifus = [w for w in waifus if any(item["item_id"] == w["waifu_id"] and item.get("rate_up") for item in banner_items)]
-            if rate_up_waifus:
+            if banner_type == "rate-up" and rate_up_waifus:
                 # 50% chance to pick from rate-up pool if available
                 if random.random() < 0.5:
                     available_waifus = rate_up_waifus
@@ -349,6 +358,7 @@ class WaifuService:
             else:
                 available_waifus = waifus
         else:
+            # Normal gacha: all waifus of the pulled rarity
             available_waifus = [w for w in self._waifu_list if w.get('rarity') == rarity]
 
         if not available_waifus:
