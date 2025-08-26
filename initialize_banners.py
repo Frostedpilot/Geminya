@@ -91,13 +91,16 @@ async def main():
             start_time = datetime.strptime(start_time, dt_format)
         if isinstance(end_time, str):
             end_time = datetime.strptime(end_time, dt_format)
+        # Store series_ids as a JSON string for DB compatibility
+        import json as _json
         banner_data = {
             'name': banner['name'],
             'type': banner['type'],
             'start_time': start_time,
             'end_time': end_time,
             'description': banner.get('description', ''),
-            'is_active': banner.get('is_active', True)
+            'is_active': banner.get('is_active', True),
+            'series_ids': _json.dumps(banner.get('series_ids', []))
         }
         banner_id = await db.create_banner(banner_data)
         print(f"Inserted banner: {banner['name']} (ID: {banner_id})")

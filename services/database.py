@@ -11,6 +11,13 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+    async def get_series_by_id(self, series_id: int) -> Optional[Dict[str, Any]]:
+        """Get a series by its primary key (series_id)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM series WHERE series_id = $1", series_id)
+            return dict(row) if row else None
     # Banner-related methods
     async def create_banner(self, banner_data: Dict[str, Any]) -> int:
         """Create a new banner and return its id."""
@@ -19,8 +26,8 @@ class DatabaseService:
         async with self.connection_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO banners (name, type, start_time, end_time, description, is_active)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO banners (name, type, start_time, end_time, description, is_active, series_ids)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 RETURNING id
                 """,
                 banner_data["name"],
@@ -29,6 +36,7 @@ class DatabaseService:
                 banner_data["end_time"],
                 banner_data.get("description", ""),
                 banner_data.get("is_active", True),
+                banner_data.get("series_ids", "[]"),
             )
             return row["id"] if row else 0
 
@@ -418,7 +426,8 @@ class DatabaseService:
                 start_time TIMESTAMP NOT NULL,
                 end_time TIMESTAMP NOT NULL,
                 description TEXT,
-                is_active BOOLEAN DEFAULT TRUE
+                is_active BOOLEAN DEFAULT TRUE,
+                series_ids TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_banner_active ON banners(is_active);
             CREATE INDEX IF NOT EXISTS idx_banner_type ON banners(type);
