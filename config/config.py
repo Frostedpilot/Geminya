@@ -47,6 +47,7 @@ class Config:
     tavily_api_key: str
     google_console_api_key: str
     google_search_engine_id: str
+    aistudio_api_key: str
 
     # MyAnimeList API credentials
     mal_client_id: str
@@ -276,6 +277,7 @@ class Config:
         tavily_key = os.getenv("TAVILY_API_KEY", "")
         google_console_api_key = os.getenv("GOOGLE_CONSOLE_API_KEY", "")
         google_search_engine_id = os.getenv("GOOGLE_SEARCH_ENGINE_ID", "")
+        aistudio_key = os.getenv("GOOGLE_API_KEY", "")
 
         if not discord_tokens:
             raise ConfigError("DISCORD_BOT_TOKEN environment variable is required")
@@ -296,6 +298,7 @@ class Config:
             tavily_api_key=tavily_key,
             google_console_api_key=google_console_api_key,
             google_search_engine_id=google_search_engine_id,
+            aistudio_api_key=aistudio_key,
             mal_client_id=os.getenv("MAL_CLIENT_ID", ""),
             mal_client_secret=os.getenv("MAL_CLIENT_SECRET", ""),
             language=os.getenv("LANGUAGE", "en"),
@@ -361,6 +364,7 @@ class Config:
         tavily_key = secrets.get("TAVILY_API_KEY", "")
         google_console_api_key = secrets.get("GOOGLE_CONSOLE_API_KEY", "")
         google_search_engine_id = secrets.get("GOOGLE_SEARCH_ENGINE_ID", "")
+        aistudio_key = secrets.get("GOOGLE_API_KEY", "")
 
         # MAL API credentials
         mal_client_id = secrets.get("MAL_CLIENT_ID", "")
@@ -409,6 +413,7 @@ class Config:
             tavily_api_key=tavily_key,
             google_console_api_key=google_console_api_key,
             google_search_engine_id=google_search_engine_id,
+            aistudio_api_key=aistudio_key,
             mal_client_id=mal_client_id,
             mal_client_secret=mal_client_secret,
             language=config_data.get("language", "en"),

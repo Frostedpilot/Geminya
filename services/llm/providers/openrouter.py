@@ -46,7 +46,9 @@ class OpenRouterProvider(LLMProvider):
 
         except Exception as e:
             self.logger.error(f"Failed to initialize OpenRouter provider: {e}")
-            raise ProviderError("openrouter", f"Initialization failed: {str(e)}", e)
+            raise ProviderError(
+                "openrouter", f"Initialization failed: {str(e)}", e
+            ) from e
 
     async def cleanup(self) -> None:
         """Cleanup OpenRouter provider resources."""
@@ -157,7 +159,7 @@ class OpenRouterProvider(LLMProvider):
                 raise QuotaExceededError("openrouter", str(e))
 
             self.logger.error(f"Error generating OpenRouter response: {e}")
-            raise ProviderError("openrouter", f"Generation failed: {str(e)}", e)
+            raise ProviderError("openrouter", f"Generation failed: {str(e)}", e) from e
 
     def get_models(self) -> Dict[str, ModelInfo]:
         """Get available models from OpenRouter."""

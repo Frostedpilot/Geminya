@@ -17,6 +17,10 @@ DOLPHIN_MISTRAL_24B = (
     "openrouter/cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
 )
 
+GEMINI_2_5_FLASH_GG = "aistudio/gemini-2.5-flash"
+GEMINI_2_5_FLASH_LITE_GG = "aistudio/gemini-2.5-flash-lite"
+GEMINI_2_5_PRO_GG = "aistudio/gemini-2.5-pro"
+
 # Model display name constants
 DEEPSEEK_V3_NAME = "DeepSeek V3 0324"
 DEEPSEEK_V3_PAID_NAME = "DeepSeek V3 0324 (paid)"
@@ -28,6 +32,10 @@ QWEN_3_235B_NAME = "Qwen 3 235B A22B Instruct 2507"
 MISTRAL_NEMO_NAME = "Mistral Nemo"
 DOLPHIN_MISTRAL_24B_NAME = "Venice Uncensored"
 
+GEMINI_2_5_FLASH_GG_NAME = "Gemini 2.5 Flash (Aistudio)"
+GEMINI_2_5_FLASH_LITE_GG_NAME = "Gemini 2.5 Flash Lite (Aistudio)"
+GEMINI_2_5_PRO_GG_NAME = "Gemini 2.5 Pro (Aistudio)"
+
 # Model display names
 MODEL_NAMES = {
     DEEPSEEK_V3_NAME: DEEPSEEK_V3_0324,
@@ -38,6 +46,9 @@ MODEL_NAMES = {
     GEMINI_2_5_FLASH_NAME: GEMINI_2_5_FLASH,
     QWEN_3_235B_NAME: QWEN_3_235B_A22B_2507,
     MISTRAL_NEMO_NAME: MISTRAL_NEMO,
+    GEMINI_2_5_FLASH_GG_NAME: GEMINI_2_5_FLASH_GG,
+    GEMINI_2_5_FLASH_LITE_GG_NAME: GEMINI_2_5_FLASH_LITE_GG,
+    GEMINI_2_5_PRO_GG_NAME: GEMINI_2_5_PRO_GG,
 }
 
 # Model information definitions
@@ -122,5 +133,33 @@ MODEL_INFOS: Dict[str, ModelInfo] = {
         supports_tools=False,
         cost_per_million_tokens={"in": 0.0, "out": 0.0},
         description="Venice Uncensored Dolphin Mistral 24B Venice Edition is a fine-tuned variant of Mistral-Small-24B-Instruct-2501, developed by dphn.ai in collaboration with Venice.ai. This model is designed as an “uncensored” instruct-tuned LLM, preserving user control over alignment, system prompts, and behavior. Intended for advanced and unrestricted use cases, Venice Uncensored emphasizes steerability and transparent behavior, removing default safety and alignment layers typically found in mainstream assistant models.",
+    ),
+    # NOTE: Aistudio models, tools are all disabled, for now
+    GEMINI_2_5_FLASH_GG_NAME: ModelInfo(
+        id=GEMINI_2_5_FLASH_GG,
+        name="Gemini 2.5 Flash (Aistudio)",
+        provider="aistudio",
+        context_length=1048576,
+        supports_tools=False,
+        cost_per_million_tokens={"in": 0.00, "out": 0.00},
+        description="Google's best model in terms of price-performance, offering well-rounded capabilities. 2.5 Flash is best for large scale processing, low-latency, high volume tasks that require thinking, and agentic use cases.",
+    ),
+    GEMINI_2_5_FLASH_LITE_GG_NAME: ModelInfo(
+        id=GEMINI_2_5_FLASH_LITE_GG,
+        name="Gemini 2.5 Flash Lite (Aistudio)",
+        provider="aistudio",
+        context_length=1048576,
+        supports_tools=False,
+        cost_per_million_tokens={"in": 0.00, "out": 0.00},
+        description="A Gemini 2.5 Flash model optimized for cost-efficiency and high throughput.",
+    ),
+    GEMINI_2_5_PRO_GG_NAME: ModelInfo(
+        id=GEMINI_2_5_PRO_GG,
+        name="Gemini 2.5 Pro (Aistudio)",
+        provider="aistudio",
+        context_length=1048576,
+        supports_tools=False,
+        cost_per_million_tokens={"in": 0.00, "out": 0.00},
+        description="Gemini 2.5 Pro is Google's state-of-the-art thinking model, capable of reasoning over complex problems in code, math, and STEM, as well as analyzing large datasets, codebases, and documents using long context.",
     ),
 }
