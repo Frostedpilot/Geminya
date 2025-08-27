@@ -50,6 +50,110 @@ async def display_mode_autocomplete(interaction: discord.Interaction, current: s
 
 class WaifuSummonCog(BaseCommand):
 
+    @commands.hybrid_command(
+        name="nwnl_collection_list",
+        description="📖 View your waifu collection as a paginated list"
+    )
+    async def nwnl_collection_list(self, ctx: commands.Context, user: Optional[discord.Member] = None):
+        """Display the user's waifu collection as a paginated list with navigation buttons."""
+        await ctx.defer()
+        target_user = user if user is not None else ctx.author
+        @commands.hybrid_command(
+            name="nwnl_collection_list",
+            description="📖 View your waifu collection as a paginated list"
+        )
+        @discord.app_commands.describe(
+            user="(Optional) View another user's collection",
+            series_id="(Optional) Only show waifus from this series ID"
+        )
+        async def nwnl_collection_list(self, ctx: commands.Context, user: Optional[discord.Member] = None, series_id: Optional[int] = None):
+            """Display the user's waifu collection as a paginated list with navigation buttons. Optionally filter by series_id."""
+            await ctx.defer()
+            target_user = user if user is not None else ctx.author
+            try:
+                # Get user's collection from database
+                collection = await self.services.database.get_user_collection(str(target_user.id))
+                if not collection:
+                    embed = discord.Embed(
+                        title="🏫 Empty Academy",
+                        description=f"{'You have' if target_user == ctx.author else f'{target_user.display_name} has'} no waifus yet!\nUse `/nwnl_summon` to start your collection!",
+                        color=0x95A5A6,
+                    )
+                    await ctx.send(embed=embed)
+                    return
+
+                # Filter by series_id if provided
+                filtered_collection = collection
+                if series_id is not None:
+                    filtered_collection = [w for w in collection if w.get("series_id") == series_id]
+                # Always sort by star level (desc), then name
+                sorted_collection = sorted(filtered_collection, key=lambda w: (-w.get("current_star_level", w["rarity"]), w["name"]))
+
+                class CollectionPaginator(discord.ui.View):
+                    def __init__(self, ctx, waifus, user, series_id):
+                        super().__init__(timeout=180)
+                        self.ctx = ctx
+                        self.waifus = waifus
+                        self.user = user
+                        self.series_id = series_id
+                        self.page_idx = 0
+                        self.page_size = 10
+                        self.page_count = max(1, (len(waifus) + self.page_size - 1) // self.page_size)
+
+                    def get_embed(self):
+                        start = self.page_idx * self.page_size
+                        end = start + self.page_size
+                        waifu_page = self.waifus[start:end]
+                        title = f"🏫 {self.user.display_name}'s Waifu Collection"
+                        if self.series_id is not None:
+                            title += f" (Series ID: {self.series_id})"
+                        embed = discord.Embed(
+                            title=title,
+                            description=f"Page {self.page_idx+1}/{self.page_count} • Total: {len(self.waifus)} waifus",
+                            color=0x3498DB,
+                        )
+                        if waifu_page:
+                            for w in waifu_page:
+                                stars = "⭐" * w.get("current_star_level", w["rarity"])
+                                shards = w.get("character_shards", 0)
+                                value = f"{stars} | {w['series']}"
+                                if shards > 0:
+                                    value += f" | {shards} shards"
+                                embed.add_field(
+                                    name=w["name"],
+                                    value=value,
+                                    inline=False
+                                )
+                        else:
+                            embed.add_field(name="No Characters", value="This page is empty.", inline=False)
+                        embed.set_footer(text=f"Use buttons to navigate • Page {self.page_idx+1}/{self.page_count}")
+                        return embed
+
+                    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                        return interaction.user == self.ctx.author
+
+                    @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.primary, row=0)
+                    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                        self.page_idx = (self.page_idx - 1) % self.page_count
+                        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+                    @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.primary, row=0)
+                    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                        self.page_idx = (self.page_idx + 1) % self.page_count
+                        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+                view = CollectionPaginator(ctx, sorted_collection, target_user, series_id)
+                await ctx.send(embed=view.get_embed(), view=view)
+            except Exception as e:
+                self.logger.error(f"Error displaying collection list: {e}")
+                embed = discord.Embed(
+                    title="❌ Collection List Error",
+                    description="Unable to display collection list. Please try again later!",
+                    color=0xFF6B6B,
+                )
+                await ctx.send(embed=embed)
+            await ctx.send(embed=embed)
+
 
     @commands.hybrid_command(
         name="nwnl_database",
