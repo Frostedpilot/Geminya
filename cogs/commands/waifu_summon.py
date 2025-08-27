@@ -1,3 +1,31 @@
+async def waifu_name_autocomplete(interaction, current: str):
+    # Try to get waifu list from the waifu_service if available
+    waifu_list = []
+    try:
+        cog = interaction.client.get_cog("WaifuSummonCog")
+        if cog and hasattr(cog.services, "waifu_service"):
+            waifu_list = getattr(cog.services.waifu_service, '_waifu_list', [])
+    except Exception:
+        pass
+    names = [w.get("name", "") for w in waifu_list if current.lower() in w.get("name", "").lower()]
+    # Return up to 20 results
+    return [discord.app_commands.Choice(name=n, value=n) for n in names[:20]]
+
+async def series_name_autocomplete(interaction, current: str):
+    # Try to get series list from the database if available
+    series_list = []
+    try:
+        cog = interaction.client.get_cog("WaifuSummonCog")
+        if cog and hasattr(cog.services, "database"):
+            db = cog.services.database
+            if hasattr(db, 'connection_pool'):
+                async with db.connection_pool.acquire() as conn:
+                    rows = await conn.fetch("SELECT name FROM series ORDER BY name")
+                    series_list = [row["name"] for row in rows]
+    except Exception:
+        pass
+    filtered = [s for s in series_list if current.lower() in s.lower()]
+    return [discord.app_commands.Choice(name=s, value=s) for s in filtered[:20]]
 
 
 """New waifu summon command with star upgrade system."""
@@ -150,6 +178,7 @@ class WaifuSummonCog(BaseCommand):
         name="nwnl_series",
         description="📺 View detailed info about an anime series by name"
     )
+    @discord.app_commands.autocomplete(series_name=series_name_autocomplete)
     async def nwnl_series(self, ctx: commands.Context, *, series_name: str):
         """Display detailed info about an anime series, including all characters in the series, with pagination."""
         await ctx.defer()
@@ -1017,17 +1046,17 @@ class WaifuSummonCog(BaseCommand):
             )
             await ctx.send(embed=embed)
 
+
     @commands.hybrid_command(
         name="nwnl_profile", description="👤 View detailed profile of a waifu with star information"
     )
+    @discord.app_commands.autocomplete(waifu_name=waifu_name_autocomplete)
     async def nwnl_profile(self, ctx: commands.Context, *, waifu_name: str):
-        """Display detailed waifu profile with star system information."""
+        """Display all matching waifu profiles with star system information, using a paginator."""
         await ctx.defer()
-
         try:
-            # Search for the waifu
-            search_results = await self.services.database.search_waifus(waifu_name, 5)
-
+            # Search for all matching waifus
+            search_results = await self.services.database.search_waifus(waifu_name, 20)
             if not search_results:
                 embed = discord.Embed(
                     title="❌ Waifu Not Found",
@@ -1037,140 +1066,146 @@ class WaifuSummonCog(BaseCommand):
                 await ctx.send(embed=embed)
                 return
 
-            # Use the first result
-            waifu = search_results[0]
-
-            # Check if user owns this waifu
+            # Get user's collection once
             collection = await self.services.database.get_user_collection(str(ctx.author.id))
-            user_waifu = next((w for w in collection if w["waifu_id"] == waifu["waifu_id"]), None)
+            collection_dict = {w["waifu_id"]: w for w in collection}
 
-            # Create profile embed with updated star system colors
             rarity_colors = {
                 5: 0xFF0000,  # Red for 5★ (Mythic)
-                4: 0xFFD700,  # Gold for 4★ (Legendary) 
+                4: 0xFFD700,  # Gold for 4★ (Legendary)
                 3: 0x9932CC,  # Purple for 3★ (Epic)
                 2: 0x4169E1,  # Blue for 2★ (Rare)
                 1: 0x808080,  # Gray for 1★ (Common)
             }
 
-            current_star = user_waifu.get("current_star_level", waifu["rarity"]) if user_waifu else waifu["rarity"]
-            description = waifu.get("about") or waifu.get("personality_profile") or "A mysterious character..."
-            embed = discord.Embed(
-                title=f"👤 {waifu['name']}",
-                description=description,
-                color=rarity_colors.get(current_star, 0x95A5A6),
-            )
+            class ProfilePaginator(discord.ui.View):
+                def __init__(self, ctx, waifus, collection_dict):
+                    super().__init__(timeout=180)
+                    self.ctx = ctx
+                    self.waifus = waifus
+                    self.collection_dict = collection_dict
+                    self.idx = 0
 
-            # Basic info
-            embed.add_field(name="🎭 Series", value=waifu["series"], inline=True)
-            embed.add_field(name="🏷️ Genre", value=waifu.get("genre", "Unknown"), inline=True)
-            embed.add_field(name="🔮 Element", value=waifu.get("element", "Unknown"), inline=True)
-            embed.add_field(name="⭐ Base Rarity", value="⭐" * waifu["rarity"], inline=True)
-            
-            # Add MAL ID if available
-            if waifu.get("mal_id"):
-                embed.add_field(name="🔗 MAL ID", value=str(waifu["mal_id"]), inline=True)
-            
-            # Add birthday if available  
-            if waifu.get("birthday"):
-                embed.add_field(name="🎂 Birthday", value=str(waifu["birthday"]), inline=True)
+                def get_embed(self):
+                    waifu = self.waifus[self.idx]
+                    user_waifu = self.collection_dict.get(waifu["waifu_id"])
+                    current_star = user_waifu.get("current_star_level", waifu["rarity"]) if user_waifu else waifu["rarity"]
+                    description = waifu.get("about") or waifu.get("personality_profile") or "A mysterious character..."
+                    embed = discord.Embed(
+                        title=f"👤 {waifu['name']}",
+                        description=description,
+                        color=rarity_colors.get(current_star, 0x95A5A6),
+                    )
+                    embed.add_field(name="🎭 Series", value=waifu["series"], inline=True)
+                    embed.add_field(name="🏷️ Genre", value=waifu.get("genre", "Unknown"), inline=True)
+                    embed.add_field(name="🔮 Element", value=waifu.get("element", "Unknown"), inline=True)
+                    embed.add_field(name="⭐ Base Rarity", value="⭐" * waifu["rarity"], inline=True)
+                    if waifu.get("mal_id"):
+                        embed.add_field(name="🔗 MAL ID", value=str(waifu["mal_id"]), inline=True)
+                    if waifu.get("birthday"):
+                        embed.add_field(name="🎂 Birthday", value=str(waifu["birthday"]), inline=True)
+                    if user_waifu:
+                        current_star = user_waifu.get("current_star_level", waifu["rarity"])
+                        # Get shards from WaifuService (not database field)
+                        # This must be awaited, so we will patch this below after the class
+                        embed.add_field(name="🌟 Star Progress", value="Loading...", inline=True)
+                        embed.add_field(
+                            name="⚡ Combat Stats",
+                            value=f"**Power:** Loading...\n"
+                            f"**Bond Level:** {user_waifu.get('bond_level', 1)}\n"
+                            f"**Conversations:** {user_waifu.get('total_conversations', 0)}",
+                            inline=True,
+                        )
+                        if user_waifu.get("custom_nickname"):
+                            embed.add_field(
+                                name="🏷️ Nickname",
+                                value=user_waifu["custom_nickname"],
+                                inline=True,
+                            )
+                        obtained_at = user_waifu.get("obtained_at")
+                        if obtained_at:
+                            if isinstance(obtained_at, str):
+                                embed.add_field(
+                                    name="📅 Obtained",
+                                    value=f"<t:{int(obtained_at)}:R>" if obtained_at.isdigit() else "Unknown",
+                                    inline=True,
+                                )
+                            else:
+                                timestamp = int(obtained_at.timestamp()) if hasattr(obtained_at, 'timestamp') else 0
+                                embed.add_field(
+                                    name="📅 Obtained",
+                                    value=f"<t:{timestamp}:R>",
+                                    inline=True,
+                                )
+                    else:
+                        embed.add_field(
+                            name="❓ Status",
+                            value="Not in your collection\nUse `/nwnl_summon` to try getting them!",
+                            inline=True,
+                        )
+                    if waifu.get("image_url"):
+                        embed.set_image(url=waifu["image_url"])
+                    if user_waifu:
+                        footer_text = f"ID: {waifu['waifu_id']} • Auto upgrades with shards • /nwnl_collection to view all"
+                    else:
+                        footer_text = f"ID: {waifu['waifu_id']} • Use /nwnl_summon to try collecting • /nwnl_collection to view owned"
+                    embed.set_footer(text=f"{footer_text} • Match {self.idx+1}/{len(self.waifus)}")
+                    return embed
 
-            # User-specific info if owned
+                async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                    return interaction.user == self.ctx.author
+
+                @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.primary, row=0)
+                async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.idx = (self.idx - 1) % len(self.waifus)
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+                @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.primary, row=0)
+                async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.idx = (self.idx + 1) % len(self.waifus)
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+            view = ProfilePaginator(ctx, search_results, collection_dict)
+            # Patch in the async star/shard info for the first page if owned
+            waifu = search_results[0]
+            user_waifu = collection_dict.get(waifu["waifu_id"])
+            embed = view.get_embed()
             if user_waifu:
                 current_star = user_waifu.get("current_star_level", waifu["rarity"])
-                
-                # Get shards from WaifuService (not database field)
                 shards = await self.services.waifu_service.get_character_shards(str(ctx.author.id), waifu["waifu_id"])
-                
-                is_max_star = current_star >= 5  # Max 5★ system
-
+                is_max_star = current_star >= 5
                 star_info = f"**Current Star Level:** {'⭐' * current_star} ({current_star}★)\n"
                 star_info += f"**Star Shards:** {shards:,}"
-                
                 if is_max_star:
                     star_info += " (MAX STAR - converts to quartz)"
                 else:
                     next_star = current_star + 1
-                    # Updated costs: 2=50, 3=100, 4=150, 5=200
                     upgrade_costs = {2: 50, 3: 100, 4: 150, 5: 200}
                     required = upgrade_costs.get(next_star, 999)
                     star_info += f"/{required:,} (for {next_star}★)"
                     if shards >= required:
                         star_info += " 🔥 READY TO UPGRADE!"
-                
-                embed.add_field(
-                    name="🌟 Star Progress",
-                    value=star_info,
-                    inline=True,
-                )
-
-                # Calculate character power based on star level  
-                if current_star == 1:
-                    power = 100
-                elif current_star == 2:
-                    power = 250
-                elif current_star == 3:
-                    power = 500
-                elif current_star == 4:
-                    power = 1000
-                elif current_star >= 5:
-                    power = 2000 * (2 ** (current_star - 5))
-                else:
-                    power = 100
-
-                embed.add_field(
-                    name="⚡ Combat Stats",
-                    value=f"**Power:** {power:,}\n"
-                    f"**Bond Level:** {user_waifu.get('bond_level', 1)}\n"
-                    f"**Conversations:** {user_waifu.get('total_conversations', 0)}",
-                    inline=True,
-                )
-
-                if user_waifu.get("custom_nickname"):
-                    embed.add_field(
-                        name="🏷️ Nickname",
-                        value=user_waifu["custom_nickname"],
-                        inline=True,
-                    )
-                
-                # Add when obtained info
-                obtained_at = user_waifu.get("obtained_at")
-                if obtained_at:
-                    if isinstance(obtained_at, str):
-                        embed.add_field(
-                            name="📅 Obtained",
-                            value=f"<t:{int(obtained_at)}:R>" if obtained_at.isdigit() else "Unknown",
-                            inline=True,
-                        )
-                    else:
-                        # Assume it's a datetime object
-                        timestamp = int(obtained_at.timestamp()) if hasattr(obtained_at, 'timestamp') else 0
-                        embed.add_field(
-                            name="📅 Obtained",
-                            value=f"<t:{timestamp}:R>",
-                            inline=True,
-                        )
-            else:
-                embed.add_field(
-                    name="❓ Status",
-                    value="Not in your collection\nUse `/nwnl_summon` to try getting them!",
-                    inline=True,
-                )
-
-            # Add image
-            if waifu.get("image_url"):
-                embed.set_image(url=waifu["image_url"])
-
-            # Updated footer with more relevant commands
-            if user_waifu:
-                footer_text = f"ID: {waifu['waifu_id']} • Auto upgrades with shards • /nwnl_collection to view all"
-            else:
-                footer_text = f"ID: {waifu['waifu_id']} • Use /nwnl_summon to try collecting • /nwnl_collection to view owned"
-            
-            embed.set_footer(text=footer_text)
-
-            await ctx.send(embed=embed)
-
+                # Patch the embed
+                for field in embed.fields:
+                    if field.name == "🌟 Star Progress":
+                        field.value = star_info
+                    if field.name == "⚡ Combat Stats":
+                        if current_star == 1:
+                            power = 100
+                        elif current_star == 2:
+                            power = 250
+                        elif current_star == 3:
+                            power = 500
+                        elif current_star == 4:
+                            power = 1000
+                        elif current_star >= 5:
+                            power = 2000 * (2 ** (current_star - 5))
+                        else:
+                            power = 100
+                        field.value = f"**Power:** {power:,}\n" \
+                            f"**Bond Level:** {user_waifu.get('bond_level', 1)}\n" \
+                            f"**Conversations:** {user_waifu.get('total_conversations', 0)}"
+            await ctx.send(embed=embed, view=view)
         except Exception as e:
             self.logger.error(f"Error displaying waifu profile: {e}")
             embed = discord.Embed(
