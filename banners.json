@@ -1,0 +1,35 @@
+[
+  {
+    "id": 1,
+    "name": "Startup Banner",
+    "type": "rate-up",
+    "start_time": "2025-08-26 00:00:00",
+    "end_time": "2025-09-01 23:59:59",
+    "description": "Initial rate-up banner with increased drop rates for select series!",
+    "is_active": true,
+    "waifu_ids": [],
+    "series_ids": [31,76,110,19]
+  },
+  {
+    "id": 2,
+    "name": "Limited Anniversary Banner",
+    "type": "limited",
+    "start_time": "2025-09-10 00:00:00",
+    "end_time": "2025-09-20 23:59:59",
+    "description": "Anniversary celebration! Exclusive waifus available for a limited time.",
+    "is_active": false,
+    "waifu_ids": [],
+    "series_ids": [2, 3]
+  },
+  {
+    "id": 3,
+    "name": "Love Live Shenanigans",
+    "type": "rate-up",
+    "start_time": "2025-08-26 00:00:00",
+    "end_time": "2025-09-01 23:59:59",
+    "description": "Have fun getting all Sunshine characters before finding others!",
+    "is_active": true,
+    "waifu_ids": [],
+    "series_ids": [75,76,77,78]
+  }
+]

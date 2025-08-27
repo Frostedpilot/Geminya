@@ -59,13 +59,12 @@ class Config:
     mal_client_id: str = ""
     mal_client_secret: str = ""
 
-    # Database configuration (MySQL only)
-    mysql_host: str = ""
-    mysql_port: int = 3306
-    mysql_user: str = ""
-    mysql_password: str = ""
-    mysql_database: str = ""
-    mysql_charset: str = "utf8mb4"
+    # Database configuration (PostgreSQL only)
+    postgres_host: str = ""
+    postgres_port: int = 5432
+    postgres_user: str = ""
+    postgres_password: str = ""
+    postgres_database: str = ""
 
     # Bot behavior settings
     language: str = "en"
@@ -336,12 +335,11 @@ class Config:
             ),
             max_response_length=int(os.getenv("MAX_RESPONSE_LENGTH", "1999")),
             active_servers=active_servers,
-            mysql_host=os.getenv("MYSQL_HOST", ""),
-            mysql_port=int(os.getenv("MYSQL_PORT", "3306")),
-            mysql_user=os.getenv("MYSQL_USER", ""),
-            mysql_password=os.getenv("MYSQL_PASSWORD", ""),
-            mysql_database=os.getenv("MYSQL_DATABASE", ""),
-            mysql_charset=os.getenv("MYSQL_CHARSET", "utf8mb4"),
+            postgres_host=os.getenv("POSTGRES_HOST", ""),
+            postgres_port=int(os.getenv("POSTGRES_PORT", "5432")),
+            postgres_user=os.getenv("POSTGRES_USER", ""),
+            postgres_password=os.getenv("POSTGRES_PASSWORD", ""),
+            postgres_database=os.getenv("POSTGRES_DB", ""),
         )
 
     @classmethod
@@ -393,18 +391,21 @@ class Config:
         mal_client_id = secrets.get("MAL_CLIENT_ID", "")
         mal_client_secret = secrets.get("MAL_CLIENT_SECRET", "")
 
+
         # Spotify credentials
         spotify_username = secrets.get("SPOTIFY_USERNAME", "")
         spotify_password = secrets.get("SPOTIFY_PASSWORD", "")
         spotify_client_id = secrets.get("SPOTIFY_CLIENT_ID", "")
         spotify_client_secret = secrets.get("SPOTIFY_CLIENT_SECRET", "")
 
-        # Database credentials from secrets
-        mysql_host = secrets.get("MYSQL_HOST", "")
-        mysql_port = secrets.get("MYSQL_PORT", 3306)
-        mysql_user = secrets.get("MYSQL_USER", "")
-        mysql_password = secrets.get("MYSQL_PASSWORD", "")
-        mysql_database = secrets.get("MYSQL_DATABASE", "")
+
+        # Database credentials from secrets (PostgreSQL only)
+        postgres_host = secrets.get("POSTGRES_HOST", "")
+        postgres_port = secrets.get("POSTGRES_PORT", 5432)
+        postgres_user = secrets.get("POSTGRES_USER", "")
+        postgres_password = secrets.get("POSTGRES_PASSWORD", "")
+        postgres_database = secrets.get("POSTGRES_DB", "")
+
 
         if not discord_tokens:
             raise ConfigError("DISCORD_BOT_TOKEN not found in secrets file")
@@ -416,7 +417,6 @@ class Config:
         if config_path.exists():
             try:
                 import yaml
-
                 with open(config_path, "r", encoding="utf-8") as f:
                     config_data = yaml.safe_load(f) or {}
             except ImportError:
@@ -431,7 +431,7 @@ class Config:
             active_servers = [s.strip() for s in active_servers.split(",") if s.strip()]
         active_servers = tuple(str(s) for s in active_servers)
 
-        # Database configuration from config file and secrets (MySQL only)
+        # Database configuration from config file and secrets (PostgreSQL only)
         database_config = config_data.get("database", {})
 
         return cls(
@@ -463,12 +463,11 @@ class Config:
             active_servers=active_servers,
             anidle=config_data.get("anidle", {}),
             guess_character=config_data.get("guess_character", {}),
-            mysql_host=mysql_host,
-            mysql_port=mysql_port,
-            mysql_user=mysql_user,
-            mysql_password=mysql_password,
-            mysql_database=mysql_database,
-            mysql_charset=database_config.get("mysql", {}).get("charset", "utf8mb4"),
+            postgres_host=postgres_host,
+            postgres_port=postgres_port,
+            postgres_user=postgres_user,
+            postgres_password=postgres_password,
+            postgres_database=postgres_database,
         )
 
     @classmethod
@@ -522,16 +521,14 @@ class Config:
         if not self.language.strip():
             raise ConfigError("Language cannot be empty")
 
-    def get_mysql_config(self) -> Dict[str, Any]:
-        """Get MySQL configuration dictionary."""
+    def get_postgres_config(self) -> Dict[str, Any]:
+        """Get PostgreSQL configuration dictionary."""
         return {
-            "host": self.mysql_host,
-            "port": self.mysql_port,
-            "user": self.mysql_user,
-            "password": self.mysql_password,
-            "database": self.mysql_database,
-            "charset": self.mysql_charset,
-            "autocommit": True,
+            "host": self.postgres_host,
+            "port": self.postgres_port,
+            "user": self.postgres_user,
+            "password": self.postgres_password,
+            "database": self.postgres_database,
         }
 
     def to_dict(self) -> Dict[str, Any]:
