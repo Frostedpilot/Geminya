@@ -122,6 +122,10 @@ class MusicService:
             self.logger.info(
                 f"Joined voice channel {channel.name} in {channel.guild.name}"
             )
+
+            # Auto-resume if there's a queue or current track waiting
+            await self._try_resume_playback_after_reconnect(guild_id)
+
             return True
 
         except Exception as e:
@@ -133,11 +137,12 @@ class MusicService:
         try:
             if guild_id in self._voice_clients:
                 voice_client = self._voice_clients[guild_id]
+
+                # Stop current playback without clearing queue
+                self.stop_playback_only(guild_id)
+
                 await voice_client.disconnect()
                 del self._voice_clients[guild_id]
-
-                # Stop current playback
-                await self.stop(guild_id)
 
                 # Cancel disconnect timer
                 if guild_id in self._disconnect_timers:
@@ -151,6 +156,37 @@ class MusicService:
 
         except Exception as e:
             self.logger.error(f"Failed to leave voice channel in guild {guild_id}: {e}")
+            return False
+
+    async def handle_forced_disconnect(self, guild_id: int):
+        """Handle forced disconnect from voice channel (preserves queue)."""
+        try:
+            if guild_id in self._voice_clients:
+                # Remove the voice client reference since we're already disconnected
+                del self._voice_clients[guild_id]
+
+                # Stop current playback gracefully without clearing queue
+                # We can't use stop_playback_only since there's no voice client anymore
+                self._is_playing[guild_id] = False
+                self._is_paused[guild_id] = False
+                # Note: We intentionally keep current_tracks and queues intact
+
+                # Cancel disconnect timer if it exists
+                if guild_id in self._disconnect_timers:
+                    self._disconnect_timers[guild_id].cancel()
+                    del self._disconnect_timers[guild_id]
+
+                self.logger.info(
+                    f"Handled forced disconnect in guild {guild_id} - queue preserved"
+                )
+                return True
+
+            return False
+
+        except Exception as e:
+            self.logger.error(
+                f"Failed to handle forced disconnect in guild {guild_id}: {e}"
+            )
             return False
 
     def add_to_queue(
@@ -391,6 +427,21 @@ class MusicService:
                 return True
         return False
 
+    def stop_playback_only(self, guild_id: int) -> bool:
+        """Stop current playback without clearing queue or current track."""
+        if guild_id in self._voice_clients:
+            voice_client = self._voice_clients[guild_id]
+            if voice_client.is_playing() or voice_client.is_paused():
+                voice_client.stop()
+
+            # Update playback state only
+            self._is_playing[guild_id] = False
+            self._is_paused[guild_id] = False
+            # Note: We keep _current_tracks and _queues intact
+
+            return True
+        return False
+
     async def stop(self, guild_id: int) -> bool:
         """Stop playback and clear queue."""
         if guild_id in self._voice_clients:
@@ -488,6 +539,12 @@ class MusicService:
         """Get queue mode for guild."""
         return self._queue_modes.get(guild_id, QueueMode.NORMAL)
 
+    def has_queued_music(self, guild_id: int) -> bool:
+        """Check if there's any music queued or paused for this guild."""
+        current_track = self._current_tracks.get(guild_id)
+        queue = self._get_guild_queue(guild_id)
+        return bool(current_track or queue)
+
     async def _start_auto_disconnect_timer(self, guild_id: int):
         """Start auto-disconnect timer when queue is empty."""
         if guild_id in self._disconnect_timers:
@@ -522,6 +579,23 @@ class MusicService:
         """Handle Spotify track end."""
         # This is called by SpotifyService
         pass
+
+    async def _try_resume_playback_after_reconnect(self, guild_id: int):
+        """Try to resume playback after reconnecting to voice channel."""
+        try:
+            # Check if there's a current track or queue waiting
+            current_track = self._current_tracks.get(guild_id)
+            queue = self._get_guild_queue(guild_id)
+
+            if current_track or queue:
+                self.logger.info(
+                    f"Resuming playback after reconnect in guild {guild_id}"
+                )
+                # Start playing the current track or next in queue
+                await self.play_next(guild_id)
+
+        except Exception as e:
+            self.logger.error(f"Error resuming playback after reconnect: {e}")
 
     async def close(self):
         """Close the music service."""

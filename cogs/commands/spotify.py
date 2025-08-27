@@ -831,10 +831,18 @@ class SpotifyMusicCog(BaseCommand):
             return
 
         channel = interaction.user.voice.channel
+        guild_id = interaction.guild_id
+
+        # Check if there's a preserved queue before joining
+        had_preserved_music = self.music.has_queued_music(guild_id)
+
         success = await self.music.join_voice_channel(channel)
 
         if success:
-            await interaction.response.send_message(f"🎵 Joined **{channel.name}**!")
+            message = f"🎵 Joined **{channel.name}**!"
+            if had_preserved_music:
+                message += "\n🎶 Resumed your preserved queue!"
+            await interaction.response.send_message(message)
         else:
             await interaction.response.send_message(
                 f"❌ Failed to join **{channel.name}**!", ephemeral=True
@@ -847,10 +855,21 @@ class SpotifyMusicCog(BaseCommand):
     async def leave(self, interaction: discord.Interaction):
         """Leave the voice channel."""
         guild_id = interaction.guild_id
+
+        # Check if there's a queue before leaving
+        queue = self.music.get_queue(guild_id)
+        current_track = self.music.get_current_track(guild_id)
+        has_music = bool(queue or current_track)
+
         success = await self.music.leave_voice_channel(guild_id)
 
         if success:
-            await interaction.response.send_message("👋 Left the voice channel!")
+            message = "👋 Left the voice channel!"
+            if has_music:
+                message += (
+                    "\n💾 Your queue has been preserved and will resume when I rejoin!"
+                )
+            await interaction.response.send_message(message)
         else:
             await interaction.response.send_message(
                 "❌ Not connected to a voice channel!", ephemeral=True
@@ -1193,6 +1212,69 @@ class SpotifyMusicCog(BaseCommand):
             embed.add_field(
                 name="Spotify Link",
                 value=f"[Open in Spotify]({current.track.external_url})",
+                inline=False,
+            )
+
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(
+        name="spotify_status",
+        description="Show detailed music service status (debug info)",
+    )
+    async def status(self, interaction: discord.Interaction):
+        """Show detailed status of the music service."""
+        guild_id = interaction.guild_id
+
+        # Get music service status
+        is_connected = guild_id in self.music._voice_clients
+        is_playing = self.music.is_playing(guild_id)
+        is_paused = self.music.is_paused(guild_id)
+        has_queued_music = self.music.has_queued_music(guild_id)
+        current_track = self.music.get_current_track(guild_id)
+        queue = self.music.get_queue(guild_id)
+        volume = self.music.get_volume(guild_id)
+        queue_mode = self.music.get_queue_mode(guild_id)
+
+        embed = discord.Embed(
+            title="🎵 Music Service Status", color=discord.Color.blue()
+        )
+
+        # Connection status
+        connection_status = "🟢 Connected" if is_connected else "🔴 Disconnected"
+        embed.add_field(name="Voice Connection", value=connection_status, inline=True)
+
+        # Playback status
+        if is_playing:
+            playback_status = "▶️ Playing"
+        elif is_paused:
+            playback_status = "⏸️ Paused"
+        else:
+            playback_status = "⏹️ Stopped"
+        embed.add_field(name="Playback Status", value=playback_status, inline=True)
+
+        # Music availability
+        music_status = "🎶 Has Music" if has_queued_music else "💿 No Music"
+        embed.add_field(name="Queue Status", value=music_status, inline=True)
+
+        # Current track
+        if current_track:
+            embed.add_field(
+                name="Current Track",
+                value=f"**{current_track.track.display_name}**\nRequested by: {current_track.requested_by.display_name}",
+                inline=False,
+            )
+        else:
+            embed.add_field(name="Current Track", value="None", inline=False)
+
+        # Queue info
+        queue_info = f"{len(queue)} track(s) | Mode: {queue_mode.value} | Volume: {int(volume * 100)}%"
+        embed.add_field(name="Queue Details", value=queue_info, inline=False)
+
+        # Special note for preserved queues
+        if not is_connected and has_queued_music:
+            embed.add_field(
+                name="📋 Note",
+                value="Queue is preserved from previous session. Use `/spotify_join` to resume!",
                 inline=False,
             )
 
