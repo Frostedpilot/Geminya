@@ -47,6 +47,7 @@ class Config:
     tavily_api_key: str
     google_console_api_key: str
     google_search_engine_id: str
+    aistudio_api_key: str
 
     # Spotify credentials
     spotify_username: str = ""
@@ -118,13 +119,24 @@ class Config:
     guess_character: Dict[str, Any] = field(default_factory=dict)
 
     # LLM Providers specific configs
-    available_providers: List[str] = field(default_factory=lambda: ["openrouter"])
+    available_providers: List[str] = field(
+        default_factory=lambda: ["openrouter", "aistudio"]
+    )
     llm_providers: Dict[str, ProviderConfig] = field(default_factory=dict)
 
     openrouter_config: ProviderConfig = field(
         default_factory=lambda: ProviderConfig(
             api_key="",
             base_url="https://openrouter.ai/api/v1",
+            timeout=30,
+            model_infos=MODEL_INFOS.copy(),
+        )
+    )
+
+    aistudio_config: ProviderConfig = field(
+        default_factory=lambda: ProviderConfig(
+            api_key="",
+            base_url=None,
             timeout=30,
             model_infos=MODEL_INFOS.copy(),
         )
@@ -235,16 +247,18 @@ class Config:
             # If no Google API keys, remove Google Search MCP from instructions
             self.mcp_server_instruction.pop("google-search", None)
 
+        # Set up api key for each provider
+        for provider in self.available_providers:
+            api_key_attr_name = provider + "_api_key"
+            config_attr_name = provider + "_config"
+            if hasattr(self, api_key_attr_name):
+                self.__getattribute__(config_attr_name).api_key = self.__getattribute__(
+                    api_key_attr_name
+                )
+            else:
+                raise ConfigError(f"API key for provider '{provider}' is missing")
+
         # Set up provider config
-
-        if self.openrouter_api_key:
-            self.openrouter_config.api_key = self.openrouter_api_key
-            assert self.openrouter_config.api_key != ""  # Ensure API key is not empty
-        else:
-            raise ConfigError(
-                "OPENROUTER_API_KEY is required because it is the default provider"
-            )
-
         for provider in self.available_providers:
             self.llm_providers[provider] = self.__getattribute__(provider + "_config")
 
@@ -282,6 +296,7 @@ class Config:
         tavily_key = os.getenv("TAVILY_API_KEY", "")
         google_console_api_key = os.getenv("GOOGLE_CONSOLE_API_KEY", "")
         google_search_engine_id = os.getenv("GOOGLE_SEARCH_ENGINE_ID", "")
+        aistudio_key = os.getenv("GOOGLE_API_KEY", "")
 
         if not discord_tokens:
             raise ConfigError("DISCORD_BOT_TOKEN environment variable is required")
@@ -302,6 +317,7 @@ class Config:
             tavily_api_key=tavily_key,
             google_console_api_key=google_console_api_key,
             google_search_engine_id=google_search_engine_id,
+            aistudio_api_key=aistudio_key,
             mal_client_id=os.getenv("MAL_CLIENT_ID", ""),
             mal_client_secret=os.getenv("MAL_CLIENT_SECRET", ""),
             spotify_username=os.getenv("SPOTIFY_USERNAME", ""),
@@ -371,6 +387,7 @@ class Config:
         tavily_key = secrets.get("TAVILY_API_KEY", "")
         google_console_api_key = secrets.get("GOOGLE_CONSOLE_API_KEY", "")
         google_search_engine_id = secrets.get("GOOGLE_SEARCH_ENGINE_ID", "")
+        aistudio_key = secrets.get("GOOGLE_API_KEY", "")
 
         # MAL API credentials
         mal_client_id = secrets.get("MAL_CLIENT_ID", "")
@@ -425,6 +442,7 @@ class Config:
             tavily_api_key=tavily_key,
             google_console_api_key=google_console_api_key,
             google_search_engine_id=google_search_engine_id,
+            aistudio_api_key=aistudio_key,
             mal_client_id=mal_client_id,
             mal_client_secret=mal_client_secret,
             spotify_username=spotify_username,

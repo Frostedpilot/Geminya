@@ -7,7 +7,15 @@ from openai import AsyncOpenAI
 
 from mcp.types import Tool
 from ..provider import LLMProvider
-from ..types import LLMRequest, LLMResponse, ModelInfo, ToolCall, ProviderConfig
+from ..types import (
+    LLMRequest,
+    LLMResponse,
+    ModelInfo,
+    ToolCall,
+    ProviderConfig,
+    ImageRequest,
+    ImageResponse,
+)
 from ..exceptions import (
     ProviderError,
     ModelNotFoundError,
@@ -46,7 +54,9 @@ class OpenRouterProvider(LLMProvider):
 
         except Exception as e:
             self.logger.error(f"Failed to initialize OpenRouter provider: {e}")
-            raise ProviderError("openrouter", f"Initialization failed: {str(e)}", e)
+            raise ProviderError(
+                "openrouter", f"Initialization failed: {str(e)}", e
+            ) from e
 
     async def cleanup(self) -> None:
         """Cleanup OpenRouter provider resources."""
@@ -157,7 +167,47 @@ class OpenRouterProvider(LLMProvider):
                 raise QuotaExceededError("openrouter", str(e))
 
             self.logger.error(f"Error generating OpenRouter response: {e}")
-            raise ProviderError("openrouter", f"Generation failed: {str(e)}", e)
+            raise ProviderError("openrouter", f"Generation failed: {str(e)}", e) from e
+
+    async def generate_image(self, request: ImageRequest) -> ImageResponse:
+        """Generate an image using the provider's models."""
+        model_name = request.model
+        model_info = self.get_model_info(model_name)
+
+        # Verify that the model can generate_image
+        if not model_info.image_gen:
+            return ImageResponse(
+                error=f"Model {model_name} does not support image generation",
+                image_url=None,
+                model_used=None,
+                user_id=request.user_id,
+            )
+
+        resolved_model_id = self._resolve_model_id(model_name)
+
+        # Now make the request
+        request_params = {
+            "model": resolved_model_id,
+            "messages": [{"role": "user", "content": request.prompt}],
+            "temperature": 1,
+            "modalities": ["text", "image"],
+        }
+        response = await self.client.chat.completions.create(**request_params)
+
+        if response and response.choices:
+            message = response.choices[0].message
+            image_url = None
+            if message.images and len(message.images) > 0:
+                image_dict = message.images[0]
+                image_url = image_dict.get("image_url").get("url")
+
+            return ImageResponse(
+                error=None,
+                image_url=image_url,
+                model_used=model_name,
+                user_id=request.user_id,
+                image_base64=image_url[len("data:image/png;base64,") :].encode("utf-8"),
+            )
 
     def get_models(self) -> Dict[str, ModelInfo]:
         """Get available models from OpenRouter."""

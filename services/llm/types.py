@@ -39,6 +39,8 @@ class ModelInfo:
     supports_tools: bool = False
     cost_per_million_tokens: Optional[Dict[str, float]] = None
     description: Optional[str] = None
+    text: bool = True
+    image_gen: bool = False
 
 
 @dataclass
@@ -67,3 +69,25 @@ class ProviderConfig:
     base_url: str
     timeout: int
     model_infos: Dict[str, ModelInfo] = field(default_factory=dict)
+
+
+@dataclass
+class ImageRequest:
+    """Request object for image generation."""
+
+    prompt: str
+    model: str
+    user_id: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ImageResponse:
+    """Response object from image generation."""
+
+    image_url: str
+    model_used: str
+    user_id: str
+    image_base64: Optional[str] = None  # The base 64-encoded image data
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    error: Optional[str] = None
