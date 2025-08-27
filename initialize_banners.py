@@ -47,6 +47,8 @@ async def main():
     async with db.connection_pool.acquire() as conn:
         await conn.execute("DELETE FROM banner_items;")
         await conn.execute("DELETE FROM banners;")
+        #reset id start from 1 again
+        await conn.execute("ALTER SEQUENCE banners_id_seq RESTART WITH 1;")
         print("Cleared all data from banner_items and banners tables.")
 
     # Load waifu data from CSV
