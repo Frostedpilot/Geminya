@@ -597,6 +597,31 @@ class DatabaseService:
             """
         )
 
+        # Gift code system tables (add foreign keys)
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS gift_codes (
+                code TEXT PRIMARY KEY,
+                reward_type TEXT,
+                reward_value INT,
+                is_active BOOLEAN,
+                usage_limit INT,
+                created_at TIMESTAMP
+            );
+            """
+        )
+
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS gift_code_redemptions (
+                user_id VARCHAR(100) NOT NULL REFERENCES users(discord_id) ON DELETE CASCADE,
+                code TEXT NOT NULL REFERENCES gift_codes(code) ON DELETE CASCADE,
+                redeemed_at TIMESTAMP,
+                PRIMARY KEY (user_id, code)
+            );
+            """
+        )
+
     # User-related methods
     async def get_or_create_user(self, discord_id: str) -> Dict[str, Any]:
         """Get user from database or create if doesn't exist (PostgreSQL)."""
@@ -832,7 +857,7 @@ class DatabaseService:
 
     # Account management
     async def reset_user_account(self, discord_id: str) -> bool:
-        """Reset a user's account to default state (PostgreSQL)."""
+        """Reset a user's account to default state (PostgreSQL), including inventory and purchases."""
         async with self.connection_pool.acquire() as conn:
             try:
                 # Reset user stats
@@ -852,18 +877,24 @@ class DatabaseService:
                     await conn.execute("DELETE FROM user_waifus WHERE user_id = $1", user_id)
                     await conn.execute("DELETE FROM conversations WHERE user_id = $1", user_id)
                     await conn.execute("DELETE FROM user_mission_progress WHERE user_id = $1", user_id)
+                    await conn.execute("DELETE FROM user_inventory WHERE user_id = $1", discord_id)
+                    await conn.execute("DELETE FROM user_purchases WHERE user_id = $1", discord_id)
+                    await conn.execute("DELETE FROM gift_code_redemptions WHERE user_id = $1", discord_id)
                 return True
             except Exception as e:
                 self.logger.error(f"Error resetting user account {discord_id}: {e}")
                 return False
 
     async def delete_user_account(self, discord_id: str) -> bool:
-        """Permanently delete a user's account (PostgreSQL)."""
+        """Permanently delete a user's account (PostgreSQL), including inventory and purchases."""
         async with self.connection_pool.acquire() as conn:
             try:
                 user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
                 if user_row:
                     user_id = user_row[0]
+                    await conn.execute("DELETE FROM user_inventory WHERE user_id = $1", discord_id)
+                    await conn.execute("DELETE FROM user_purchases WHERE user_id = $1", discord_id)
+                    await conn.execute("DELETE FROM gift_code_redemptions WHERE user_id = $1", discord_id)
                     await conn.execute("DELETE FROM users WHERE id = $1", user_id)
                 return True
             except Exception as e:
