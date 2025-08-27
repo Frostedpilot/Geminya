@@ -276,12 +276,9 @@ class MCPClientManager:
                 f"Starting tool iteration {iteration_count}/{self.config.max_tool_iterations}"
             )
 
-            # Convert MCP tools to OpenAI format for LLM
-            openai_tools = [convert_tool_format(tool) for tool in all_tools]
-
             # Get AI response
             response = await self._get_ai_response(
-                messages, openai_tools, server_id, model
+                messages, all_tools, server_id, model
             )
             if not response:
                 return self._create_error_response(
@@ -329,7 +326,7 @@ class MCPClientManager:
     async def _get_ai_response(
         self,
         messages: List[Dict[str, Any]],
-        all_tools: List[Dict[str, Any]],
+        all_tools: List[Tool],
         server_id: str,
         model: str,
     ) -> LLMResponse:
