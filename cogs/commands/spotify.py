@@ -707,7 +707,27 @@ class PaginatedQueueView(discord.ui.View):
         if self.music_service and self.guild_id:
             # Get updated queue data
             self.current_track = self.music_service.get_current_track(self.guild_id)
-            self.queue_items = self.music_service.get_queue(self.guild_id)
+
+            # Get the appropriate queue based on mode
+            mode = self.music_service.get_queue_mode(self.guild_id)
+            if mode == QueueMode.LOOP_QUEUE:
+                # For loop queue mode, show the snapshot queue with position offset
+                snapshot = self.music_service.get_queue_snapshot(self.guild_id)
+                snapshot_position = self.music_service.get_snapshot_position(
+                    self.guild_id
+                )
+
+                # Show snapshot from current position, then loop back
+                if snapshot:
+                    self.queue_items = (
+                        snapshot[snapshot_position:] + snapshot[:snapshot_position]
+                    )
+                else:
+                    self.queue_items = []
+            else:
+                # Normal mode - just show regular queue
+                self.queue_items = self.music_service.get_queue(self.guild_id)
+
             self.max_pages = (
                 (len(self.queue_items) - 1) // self.items_per_page + 1
                 if self.queue_items
@@ -735,6 +755,14 @@ class PaginatedQueueView(discord.ui.View):
                 value=f"**{self.current_track.track.display_name}**\nRequested by: {self.current_track.requested_by.mention}",
                 inline=False,
             )
+
+        # Get mode info for queue display
+        mode = None
+        queue_title = "📋 Queue"
+        if self.music_service and self.guild_id:
+            mode = self.music_service.get_queue_mode(self.guild_id)
+            if mode == QueueMode.LOOP_QUEUE:
+                queue_title = "📋 Queue (Loop Mode)"
 
         # Show queue items for current page
         if self.queue_items:
@@ -771,21 +799,39 @@ class PaginatedQueueView(discord.ui.View):
                 page_info = f" (Page {self.current_page + 1}/{self.max_pages})"
 
             embed.add_field(
-                name=f"📋 Queue ({len(self.queue_items)} tracks){page_info}",
+                name=f"{queue_title} ({len(self.queue_items)} tracks){page_info}",
                 value=queue_text,
                 inline=False,
             )
         else:
-            embed.add_field(name="📋 Queue", value="No tracks in queue", inline=False)
+            embed.add_field(name=queue_title, value="No tracks in queue", inline=False)
 
         # Add queue info if we have access to the music service
         if self.music_service and self.guild_id:
             mode = self.music_service.get_queue_mode(self.guild_id)
             volume = self.music_service.get_volume(self.guild_id)
+            is_shuffled = self.music_service.is_queue_shuffled(self.guild_id)
+
+            mode_display = f"**{mode.value.replace('_', ' ').title()}**"
+            if is_shuffled:
+                mode_display += " 🔀"
+
+            settings_text = f"Mode: {mode_display}\nVolume: **{volume:.0%}**"
+
+            # Add extra info for queue loop mode
+            if mode == QueueMode.LOOP_QUEUE:
+                snapshot = self.music_service.get_queue_snapshot(self.guild_id)
+                position = self.music_service.get_snapshot_position(self.guild_id)
+
+                settings_text += f"\nSnapshot: **{len(snapshot)}** tracks"
+                if snapshot:
+                    settings_text += (
+                        f"\nSnapshot pos: **{position + 1}/{len(snapshot)}**"
+                    )
 
             embed.add_field(
                 name="⚙️ Settings",
-                value=f"Mode: **{mode.value.title()}**\nVolume: **{volume:.0%}**",
+                value=settings_text,
                 inline=True,
             )
 
@@ -1030,11 +1076,28 @@ class SpotifyMusicCog(BaseCommand):
         """Show the current music queue with pagination."""
         guild_id = interaction.guild_id
         current = self.music.get_current_track(guild_id)
-        queue = self.music.get_queue(guild_id)
+
+        # Get the appropriate queue based on mode
+        mode = self.music.get_queue_mode(guild_id)
+        if mode == QueueMode.LOOP_QUEUE:
+            # For loop queue mode, show the snapshot queue with position offset
+            snapshot = self.music.get_queue_snapshot(guild_id)
+            snapshot_position = self.music.get_snapshot_position(guild_id)
+
+            # Show snapshot from current position, then loop back
+            if snapshot:
+                queue_items = (
+                    snapshot[snapshot_position:] + snapshot[:snapshot_position]
+                )
+            else:
+                queue_items = []
+        else:
+            # Normal mode - just show regular queue
+            queue_items = self.music.get_queue(guild_id)
 
         # Create paginated view for the queue
         view = PaginatedQueueView(
-            queue_items=queue,
+            queue_items=queue_items,
             current_track=current,
             guild_id=guild_id,
             music_service=self.music,
@@ -1179,6 +1242,130 @@ class SpotifyMusicCog(BaseCommand):
 
         self.music.set_volume(guild_id, volume)
         await interaction.response.send_message(f"🔊 Volume set to **{level}%**")
+
+    @app_commands.command(
+        name="spotify_playback_mode",
+        description="Set Spotify playback mode or manage queue shuffle",
+    )
+    @app_commands.describe(
+        mode="Choose playback mode (optional - leave empty to see current status)",
+        shuffle="Shuffle the current queue",
+    )
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(name="Normal", value="normal"),
+            app_commands.Choice(name="Song Loop", value="song_loop"),
+            app_commands.Choice(name="Queue Loop", value="queue_loop"),
+            app_commands.Choice(name="Shuffle Mode", value="shuffle"),
+        ]
+    )
+    async def playback_mode(
+        self,
+        interaction: discord.Interaction,
+        mode: app_commands.Choice[str] = None,
+        shuffle: bool = False,
+    ):
+        """Set playback mode or shuffle the queue."""
+        guild_id = interaction.guild_id
+
+        # Handle shuffle action first
+        if shuffle:
+            current_mode = self.music.get_queue_mode(guild_id)
+            queue = self.music.get_queue(guild_id)
+
+            if not queue and current_mode != QueueMode.LOOP_QUEUE:
+                await interaction.response.send_message(
+                    "❌ No queue to shuffle!", ephemeral=True
+                )
+                return
+
+            self.music.shuffle_queue(guild_id)
+
+            if current_mode == QueueMode.LOOP_QUEUE:
+                await interaction.response.send_message("🔀 Shuffled queue snapshot!")
+            else:
+                await interaction.response.send_message(
+                    f"🔀 Shuffled queue with {len(queue)} tracks!"
+                )
+            return
+
+        # If mode is provided, set it
+        if mode:
+            mode_map = {
+                "normal": QueueMode.NORMAL,
+                "song_loop": QueueMode.LOOP_TRACK,
+                "queue_loop": QueueMode.LOOP_QUEUE,
+                "shuffle": QueueMode.SHUFFLE,
+            }
+
+            new_mode = mode_map.get(mode.value)
+            if not new_mode:
+                await interaction.response.send_message(
+                    "❌ Invalid mode selected!", ephemeral=True
+                )
+                return
+
+            old_mode = self.music.get_queue_mode(guild_id)
+            self.music.set_queue_mode(guild_id, new_mode)
+
+            mode_display = {
+                QueueMode.NORMAL: "Normal",
+                QueueMode.LOOP_TRACK: "Song Loop",
+                QueueMode.LOOP_QUEUE: "Queue Loop",
+                QueueMode.SHUFFLE: "Shuffle",
+            }
+
+            response = f"🎵 Playback mode changed to **{mode_display[new_mode]}**"
+
+            # Add special messages for mode transitions
+            if new_mode == QueueMode.LOOP_QUEUE and old_mode != QueueMode.LOOP_QUEUE:
+                response += "\n📸 Created queue snapshot for looping"
+            elif new_mode == QueueMode.SHUFFLE:
+                response += "\n🔀 Queue will be shuffled on next play"
+
+            await interaction.response.send_message(response)
+            return
+
+        # No parameters provided, show current status
+        current_mode = self.music.get_queue_mode(guild_id)
+        is_shuffled = self.music.is_queue_shuffled(guild_id)
+
+        mode_display = {
+            QueueMode.NORMAL: "Normal",
+            QueueMode.LOOP_TRACK: "Song Loop",
+            QueueMode.LOOP_QUEUE: "Queue Loop",
+            QueueMode.SHUFFLE: "Shuffle",
+        }
+
+        embed = discord.Embed(
+            title="🎵 Current Playback Mode",
+            description=f"**Mode:** {mode_display.get(current_mode, 'Unknown')}\n**Queue Shuffled:** {'Yes' if is_shuffled else 'No'}",
+            color=0x1DB954,
+        )
+
+        # Add mode descriptions
+        embed.add_field(
+            name="Mode Descriptions",
+            value=(
+                "**Normal:** Play queue in order\n"
+                "**Song Loop:** Repeat current song\n"
+                "**Queue Loop:** Loop through queue snapshot\n"
+                "**Shuffle:** Randomize queue order"
+            ),
+            inline=False,
+        )
+
+        embed.add_field(
+            name="Usage",
+            value=(
+                "• Select a **mode** to change playback behavior\n"
+                "• Enable **shuffle** to randomize the current queue\n"
+                "• Use without parameters to see this status"
+            ),
+            inline=False,
+        )
+
+        await interaction.response.send_message(embed=embed)
 
     @app_commands.command(
         name="spotify_now", description="Show currently playing Spotify track"

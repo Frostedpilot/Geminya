@@ -6,6 +6,7 @@ with the Spotify service to provide music playback functionality.
 
 import asyncio
 import logging
+import random
 from typing import Optional, List, Dict, Deque, Callable, Any
 from collections import deque
 from dataclasses import dataclass, field
@@ -55,6 +56,16 @@ class MusicService:
         self._queue_modes: Dict[int, QueueMode] = {}  # guild_id -> mode
         self._volumes: Dict[int, float] = {}  # guild_id -> volume
 
+        # Enhanced queue management for queue loop mode
+        self._queue_snapshots: Dict[int, List[QueueItem]] = {}  # guild_id -> snapshot
+        self._snapshot_positions: Dict[int, int] = (
+            {}
+        )  # guild_id -> position in snapshot
+        self._is_shuffled: Dict[int, bool] = {}  # guild_id -> shuffle state
+        self._snapshot_shuffled: Dict[int, bool] = (
+            {}
+        )  # guild_id -> snapshot shuffle state
+
         # Playback state
         self._is_playing: Dict[int, bool] = {}  # guild_id -> is_playing
         self._is_paused: Dict[int, bool] = {}  # guild_id -> is_paused
@@ -99,6 +110,11 @@ class MusicService:
             self._is_playing[guild_id] = False
             self._is_paused[guild_id] = False
             self._current_tracks[guild_id] = None
+            # Initialize new fields
+            self._queue_snapshots[guild_id] = []
+            self._snapshot_positions[guild_id] = 0
+            self._is_shuffled[guild_id] = False
+            self._snapshot_shuffled[guild_id] = False
         return self._queues[guild_id]
 
     async def join_voice_channel(self, channel: discord.VoiceChannel) -> bool:
@@ -190,20 +206,56 @@ class MusicService:
             return False
 
     def add_to_queue(
-        self, guild_id: int, track: SpotifyTrack, requested_by: discord.Member
+        self,
+        guild_id: int,
+        track: SpotifyTrack,
+        requested_by: discord.Member,
+        add_to_start: bool = False,
     ):
         """Add track to queue."""
-        queue = self._get_guild_queue(guild_id)
-        item = QueueItem(track=track, requested_by=requested_by)
-        queue.append(item)
+        mode = self._queue_modes[guild_id]
 
-        self.logger.info(f"Added {track.display_name} to queue in guild {guild_id}")
+        if mode == QueueMode.LOOP_QUEUE:
+            # In queue loop mode, add to the snapshot queue instead of regular queue
+            snapshot = self._queue_snapshots.get(guild_id, [])
+            item = QueueItem(track=track, requested_by=requested_by)
+
+            if add_to_start:
+                # Add to the beginning of snapshot (right after current position)
+                current_pos = self._snapshot_positions[guild_id]
+                snapshot.insert(current_pos, item)
+            else:
+                # Add to the end of snapshot
+                snapshot.append(item)
+
+            self._queue_snapshots[guild_id] = snapshot
+        else:
+            # Normal mode - use regular queue
+            queue = self._get_guild_queue(guild_id)
+            item = QueueItem(track=track, requested_by=requested_by)
+
+            if add_to_start:
+                queue.appendleft(item)
+            else:
+                queue.append(item)
+
+            # Reset shuffle state for normal mode when adding new tracks
+            if mode != QueueMode.LOOP_QUEUE:
+                self._is_shuffled[guild_id] = False
+
+        self.logger.info(
+            f"Added {track.display_name} to {'start' if add_to_start else 'end'} of queue in guild {guild_id}"
+        )
 
     def add_playlist_to_queue(
-        self, guild_id: int, tracks: List[SpotifyTrack], requested_by: discord.Member
+        self,
+        guild_id: int,
+        tracks: List[SpotifyTrack],
+        requested_by: discord.Member,
+        add_to_start: bool = False,
     ):
         """Add multiple tracks to queue, filtering out unavailable ones."""
-        queue = self._get_guild_queue(guild_id)
+        mode = self._queue_modes[guild_id]
 
         # Filter out unavailable tracks
         playable_tracks = []
@@ -217,17 +269,43 @@ class MusicService:
             playable_tracks.append(track)
 
         # Add playable tracks to queue
-        for track in playable_tracks:
-            item = QueueItem(track=track, requested_by=requested_by)
-            queue.append(item)
+        if mode == QueueMode.LOOP_QUEUE:
+            # In queue loop mode, add to the snapshot queue
+            snapshot = self._queue_snapshots.get(guild_id, [])
+            current_pos = self._snapshot_positions[guild_id]
+
+            for i, track in enumerate(playable_tracks):
+                item = QueueItem(track=track, requested_by=requested_by)
+                if add_to_start:
+                    # Insert in reverse order to maintain playlist order when adding to start
+                    snapshot.insert(current_pos + i, item)
+                else:
+                    snapshot.append(item)
+
+            self._queue_snapshots[guild_id] = snapshot
+        else:
+            # Normal mode - use regular queue
+            queue = self._get_guild_queue(guild_id)
+
+            for track in playable_tracks:
+                item = QueueItem(track=track, requested_by=requested_by)
+                if add_to_start:
+                    # Insert in reverse order to maintain playlist order when adding to start
+                    queue.appendleft(item)
+                else:
+                    queue.append(item)
+
+            # Reset shuffle state for normal mode when adding new tracks
+            if mode != QueueMode.LOOP_QUEUE and playable_tracks:
+                self._is_shuffled[guild_id] = False
 
         if skipped_count > 0:
             self.logger.info(
-                f"Added {len(playable_tracks)} tracks to queue in guild {guild_id} (skipped {skipped_count} unavailable)"
+                f"Added {len(playable_tracks)} tracks to {'start' if add_to_start else 'end'} of queue in guild {guild_id} (skipped {skipped_count} unavailable)"
             )
         else:
             self.logger.info(
-                f"Added {len(playable_tracks)} tracks to queue in guild {guild_id}"
+                f"Added {len(playable_tracks)} tracks to {'start' if add_to_start else 'end'} of queue in guild {guild_id}"
             )
 
         return len(playable_tracks), skipped_count
@@ -372,20 +450,48 @@ class MusicService:
 
     def _get_next_track(self, guild_id: int) -> Optional[QueueItem]:
         """Get next track based on queue mode."""
-        queue = self._get_guild_queue(guild_id)
         mode = self._queue_modes[guild_id]
         current = self._current_tracks[guild_id]
 
+        # Loop current track
         if mode == QueueMode.LOOP_TRACK and current:
             return current
-        elif mode == QueueMode.LOOP_QUEUE and not queue and current:
-            # Re-add current track to end of queue for loop
-            queue.append(current)
 
-        if queue:
+        # Queue loop mode - use snapshot queue
+        elif mode == QueueMode.LOOP_QUEUE:
+            snapshot = self._queue_snapshots.get(guild_id, [])
+            if not snapshot:
+                return None
+
+            position = self._snapshot_positions[guild_id]
+
+            if position >= len(snapshot):
+                # Reset to beginning of snapshot
+                position = 0
+                self._snapshot_positions[guild_id] = 0
+
+            next_item = snapshot[position]
+            self._snapshot_positions[guild_id] = position + 1
+            return next_item
+
+        # Normal mode and shuffle mode - use regular queue
+        else:
+            queue = self._get_guild_queue(guild_id)
+
+            if not queue:
+                return None
+
+            # Shuffle mode
+            if mode == QueueMode.SHUFFLE:
+                if not self._is_shuffled[guild_id]:
+                    # Convert deque to list, shuffle, and convert back
+                    queue_list = list(queue)
+                    random.shuffle(queue_list)
+                    queue.clear()
+                    queue.extend(queue_list)
+                    self._is_shuffled[guild_id] = True
+
             return queue.popleft()
-
-        return None
 
     async def _on_track_finished(self, guild_id: int, item: QueueItem, error):
         """Handle track finishing."""
@@ -472,19 +578,39 @@ class MusicService:
 
     async def skip_to(self, guild_id: int, position: int) -> bool:
         """Skip to a specific position in the queue (1-indexed)."""
-        queue = self._get_guild_queue(guild_id)
+        mode = self._queue_modes[guild_id]
 
-        # Convert to 0-indexed and validate position
+        # Convert to 0-indexed
         index = position - 1
-        if index < 0 or index >= len(queue):
-            return False
 
-        # Remove tracks before the target position
-        for _ in range(index):
-            if queue:
-                queue.popleft()
+        if mode == QueueMode.LOOP_QUEUE:
+            # In loop queue mode, work with snapshot
+            snapshot = self._queue_snapshots.get(guild_id, [])
+            current_pos = self._snapshot_positions.get(guild_id, 0)
 
-        # Stop current track to trigger playing the new first track
+            # Get remaining tracks from current position
+            remaining_tracks = snapshot[current_pos:] if snapshot else []
+
+            if index < 0 or index >= len(remaining_tracks):
+                return False
+
+            # Update snapshot position to skip to the target
+            new_position = current_pos + index
+            self._snapshot_positions[guild_id] = new_position
+
+        else:
+            # Normal mode - work with regular queue
+            queue = self._get_guild_queue(guild_id)
+
+            if index < 0 or index >= len(queue):
+                return False
+
+            # Remove tracks before the target position
+            for _ in range(index):
+                if queue:
+                    queue.popleft()
+
+        # Stop current track to trigger playing the new target track
         if guild_id in self._voice_clients:
             voice_client = self._voice_clients[guild_id]
             if voice_client.is_playing() or voice_client.is_paused():
@@ -507,17 +633,133 @@ class MusicService:
     def set_queue_mode(self, guild_id: int, mode: QueueMode):
         """Set queue mode for guild."""
         self._get_guild_queue(guild_id)  # Ensure guild is initialized
+        old_mode = self._queue_modes[guild_id]
         self._queue_modes[guild_id] = mode
 
+        # Handle mode transitions
+        if mode == QueueMode.LOOP_QUEUE and old_mode != QueueMode.LOOP_QUEUE:
+            # Create snapshot of current queue + current track
+            self._create_queue_snapshot(guild_id)
+        elif mode != QueueMode.LOOP_QUEUE and old_mode == QueueMode.LOOP_QUEUE:
+            # Copy snapshot queue back to normal queue when leaving loop queue mode
+            snapshot = self._queue_snapshots.get(guild_id, [])
+            current_pos = self._snapshot_positions.get(guild_id, 0)
+
+            # Get the remaining tracks from current position onwards, then wrap around
+            if snapshot:
+                remaining_tracks = snapshot[current_pos:] + snapshot[:current_pos]
+                # Clear normal queue and add snapshot tracks
+                queue = self._get_guild_queue(guild_id)
+                queue.clear()
+                queue.extend(remaining_tracks)
+
+            # Clear snapshot data
+            self._queue_snapshots[guild_id] = []
+            self._snapshot_positions[guild_id] = 0
+
+        # Reset shuffle state when changing modes
+        if mode != QueueMode.SHUFFLE:
+            self._is_shuffled[guild_id] = False
+        if mode != QueueMode.LOOP_QUEUE:
+            self._snapshot_shuffled[guild_id] = False
+
+    def _create_queue_snapshot(self, guild_id: int):
+        """Create a snapshot of the current queue state for loop queue mode."""
+        queue = self._get_guild_queue(guild_id)
+        current = self._current_tracks[guild_id]
+
+        # Create snapshot: current track (if any) + remaining queue
+        snapshot = []
+        if current:
+            snapshot.append(current)
+        snapshot.extend(list(queue))
+
+        self._queue_snapshots[guild_id] = snapshot
+        self._snapshot_positions[guild_id] = 0
+
+        # If shuffle was enabled before, maintain it in the snapshot
+        if self._is_shuffled[guild_id]:
+            random.shuffle(self._queue_snapshots[guild_id])
+            self._snapshot_shuffled[guild_id] = True
+
+    def shuffle_queue(self, guild_id: int):
+        """Shuffle the current queue or snapshot queue depending on mode."""
+        mode = self._queue_modes[guild_id]
+
+        if mode == QueueMode.LOOP_QUEUE:
+            # Shuffle the snapshot queue
+            if self._queue_snapshots[guild_id]:
+                random.shuffle(self._queue_snapshots[guild_id])
+                self._snapshot_positions[guild_id] = 0  # Reset position
+                self._snapshot_shuffled[guild_id] = True
+        else:
+            # Shuffle the regular queue
+            queue = self._get_guild_queue(guild_id)
+            if queue:
+                queue_list = list(queue)
+                random.shuffle(queue_list)
+                queue.clear()
+                queue.extend(queue_list)
+                self._is_shuffled[guild_id] = True
+
+    def get_queue_snapshot(self, guild_id: int) -> List[QueueItem]:
+        """Get the current queue snapshot for loop queue mode."""
+        return self._queue_snapshots.get(guild_id, []).copy()
+
+    def get_snapshot_position(self, guild_id: int) -> int:
+        """Get the current position in the snapshot queue."""
+        return self._snapshot_positions.get(guild_id, 0)
+
+    def set_snapshot_position(self, guild_id: int, position: int):
+        """Set the current position in the snapshot queue."""
+        if guild_id in self._queue_snapshots:
+            snapshot_len = len(self._queue_snapshots[guild_id])
+            if snapshot_len > 0:
+                # Ensure position is within bounds
+                self._snapshot_positions[guild_id] = max(
+                    0, min(position, snapshot_len - 1)
+                )
+
+    def is_queue_shuffled(self, guild_id: int) -> bool:
+        """Check if the queue is currently shuffled."""
+        mode = self._queue_modes[guild_id]
+        if mode == QueueMode.LOOP_QUEUE:
+            return self._snapshot_shuffled.get(guild_id, False)
+        else:
+            return self._is_shuffled.get(guild_id, False)
+
     def clear_queue(self, guild_id: int):
-        """Clear the queue for guild."""
+        """Clear the queue for guild based on current mode."""
+        mode = self._queue_modes.get(guild_id, QueueMode.NORMAL)
+
+        if mode == QueueMode.LOOP_QUEUE:
+            # In loop queue mode, clear snapshot queue
+            if guild_id in self._queue_snapshots:
+                self._queue_snapshots[guild_id].clear()
+                self._snapshot_positions[guild_id] = 0
+                self._snapshot_shuffled[guild_id] = False
+
+        # Always clear regular queue as well
         if guild_id in self._queues:
             self._queues[guild_id].clear()
+            self._is_shuffled[guild_id] = False
 
     def get_queue(self, guild_id: int) -> List[QueueItem]:
-        """Get current queue for guild."""
-        queue = self._get_guild_queue(guild_id)
-        return list(queue)
+        """Get current queue for guild based on active mode."""
+        mode = self._queue_modes.get(guild_id, QueueMode.NORMAL)
+
+        if mode == QueueMode.LOOP_QUEUE:
+            # In loop queue mode, return the snapshot queue from current position
+            snapshot = self._queue_snapshots.get(guild_id, [])
+            position = self._snapshot_positions.get(guild_id, 0)
+            if snapshot:
+                # Return remaining tracks from current position
+                return snapshot[position:]
+            return []
+        else:
+            # Normal mode, shuffle mode - return regular queue
+            queue = self._get_guild_queue(guild_id)
+            return list(queue)
 
     def get_current_track(self, guild_id: int) -> Optional[QueueItem]:
         """Get currently playing track for guild."""
@@ -586,11 +828,44 @@ class MusicService:
             # Check if there's a current track or queue waiting
             current_track = self._current_tracks.get(guild_id)
             queue = self._get_guild_queue(guild_id)
+            mode = self._queue_modes.get(guild_id, QueueMode.NORMAL)
 
-            if current_track or queue:
+            if (
+                current_track
+                or queue
+                or (
+                    mode == QueueMode.LOOP_QUEUE and self._queue_snapshots.get(guild_id)
+                )
+            ):
                 self.logger.info(
                     f"Resuming playback after reconnect in guild {guild_id}"
                 )
+
+                # In loop queue mode, if we have a current track that was from the snapshot,
+                # we need to ensure the snapshot position is consistent
+                if mode == QueueMode.LOOP_QUEUE and current_track and not queue:
+                    snapshot = self._queue_snapshots.get(guild_id, [])
+                    position = self._snapshot_positions.get(guild_id, 0)
+
+                    # If the current track matches the track at the current snapshot position,
+                    # we're in sync. Otherwise, we might need to adjust.
+                    if (
+                        position < len(snapshot)
+                        and snapshot[position].track.display_name
+                        == current_track.track.display_name
+                    ):
+                        # We're in sync, current track will be replayed from snapshot
+                        pass
+                    else:
+                        # Try to find the current track in the snapshot to sync position
+                        for i, item in enumerate(snapshot):
+                            if (
+                                item.track.display_name
+                                == current_track.track.display_name
+                            ):
+                                self._snapshot_positions[guild_id] = i
+                                break
+
                 # Start playing the current track or next in queue
                 await self.play_next(guild_id)
 
