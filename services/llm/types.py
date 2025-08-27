@@ -78,6 +78,7 @@ class ImageRequest:
     prompt: str
     model: str
     user_id: str
+    input_image_url: Optional[str] = None  # URL of input image for img2img or vision
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 

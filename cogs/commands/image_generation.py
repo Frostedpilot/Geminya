@@ -7,6 +7,7 @@ from discord import app_commands
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from enum import Enum
+import re
 
 import io
 
@@ -164,15 +165,44 @@ class ImageGenerationCog(BaseCommand):
 
         return enhanced
 
+    def _process_image_input(
+        self, image: Optional[discord.Attachment], prompt: str
+    ) -> tuple[Optional[str], str]:
+        """Process image input and return (image_url, cleaned_prompt)."""
+        image_url = None
+        cleaned_prompt = prompt
+
+        # Check for Discord attachment first
+        if image and image.content_type and image.content_type.startswith("image/"):
+            image_url = image.url
+        else:
+            # Look for image URLs in the prompt using a simple pattern
+            url_pattern = r"(https?://[^\s]+)"
+            urls = re.findall(url_pattern, prompt)
+
+            # Check if any URL looks like an image
+            image_extensions = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp")
+            for url in urls:
+                if any(url.lower().endswith(ext) for ext in image_extensions):
+                    image_url = url
+                    # Remove the URL from the prompt and clean up extra spaces
+                    cleaned_prompt = re.sub(
+                        r"\s+", " ", prompt.replace(url, "")
+                    ).strip()
+                    break
+
+        return image_url, cleaned_prompt
+
     @app_commands.command(
         name="generate", description="Generate an AI image from a text prompt"
     )
     @app_commands.describe(
-        prompt="Description of the image you want to generate",
+        prompt="Description of the image you want to generate (can include image URLs)",
         model="AI model to use for image generation",
         size="Image size (default: 1024x1024)",
         style="Art style for the image",
         quality="Image quality setting",
+        image="Optional: Upload an image for image-to-image generation",
     )
     @app_commands.autocomplete(
         model=_model_autocomplete, size=_size_autocomplete, style=_style_autocomplete
@@ -185,6 +215,7 @@ class ImageGenerationCog(BaseCommand):
         size: str = "512x512",
         style: str = None,
         quality: str = "standard",
+        image: Optional[discord.Attachment] = None,
     ):
         """Generate an AI image from a text prompt."""
         try:
@@ -226,21 +257,48 @@ class ImageGenerationCog(BaseCommand):
             # Get the actual model ID
             model_id = image_models[model]
 
+            # Process input image if provided and clean prompt
+            input_image_url, cleaned_prompt = self._process_image_input(image, prompt)
+
             # Enhance the prompt
-            enhanced_prompt = self._enhance_prompt(prompt, style)
+            enhanced_prompt = self._enhance_prompt(cleaned_prompt, style)
 
             # Send initial "generating" message
+            image_info = "\n**Input Image:** Provided" if input_image_url else ""
             embed = discord.Embed(
                 title="🎨 Generating Image...",
                 description=f"Creating an image with **{model}**\n\n"
-                f"**Prompt:** {prompt}\n"
+                f"**Prompt:** {cleaned_prompt}\n"
                 f"**Size:** {size}\n"
                 f"**Style:** {style or 'Default'}\n"
-                f"**Quality:** {quality}",
+                f"**Quality:** {quality}{image_info}",
                 color=0x3498DB,
             )
             embed.set_footer(text="This may take 10-30 seconds...")
-            await interaction.response.send_message(embed=embed)
+
+            # Include input image with the initial message if provided
+            files = []
+            if image and image.content_type and image.content_type.startswith("image/"):
+                # For Discord attachments, we can include the original image
+                try:
+                    # Read the image data
+                    image_data = await image.read()
+                    # Create a file object with the original filename
+                    input_file = discord.File(
+                        io.BytesIO(image_data), filename=f"input_{image.filename}"
+                    )
+                    files.append(input_file)
+                    embed.set_image(url=f"attachment://input_{image.filename}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to include input image: {e}")
+            elif input_image_url:
+                # For URLs, set the image in the embed
+                embed.set_image(url=input_image_url)
+
+            if files:
+                await interaction.response.send_message(embed=embed, files=files)
+            else:
+                await interaction.response.send_message(embed=embed)
 
             # Prepare the request
             try:
@@ -249,6 +307,7 @@ class ImageGenerationCog(BaseCommand):
                     prompt=enhanced_prompt,
                     model=model_id,
                     user_id=str(interaction.user.id),
+                    input_image_url=input_image_url,
                 )
 
                 response = await self.services.llm_manager.generate_image(request)
