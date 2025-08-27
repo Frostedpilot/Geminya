@@ -185,10 +185,21 @@ class OpenRouterProvider(LLMProvider):
 
         resolved_model_id = self._resolve_model_id(model_name)
 
+        # Prepare message content based on whether we have an input image
+        if request.input_image_url:
+            # Use multimodal format with image input
+            message_content = [
+                {"type": "text", "text": request.prompt},
+                {"type": "image_url", "image_url": {"url": request.input_image_url}},
+            ]
+        else:
+            # Text-only prompt
+            message_content = request.prompt
+
         # Now make the request
         request_params = {
             "model": resolved_model_id,
-            "messages": [{"role": "user", "content": request.prompt}],
+            "messages": [{"role": "user", "content": message_content}],
             "temperature": 1,
             "modalities": ["text", "image"],
         }
