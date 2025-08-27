@@ -35,6 +35,38 @@ def get_models_by_provider(provider: str) -> Dict[str, ModelInfo]:
     }
 
 
+def get_text_models_by_provider(provider: str) -> Dict[str, ModelInfo]:
+    """Get all text generation models for a specific provider.
+
+    Args:
+        provider: The provider name
+
+    Returns:
+        Dictionary of display_name -> ModelInfo for text models from the provider
+    """
+    return {
+        display_name: model_info
+        for display_name, model_info in MODEL_INFOS.items()
+        if model_info.provider == provider and getattr(model_info, "text", True)
+    }
+
+
+def get_image_models_by_provider(provider: str) -> Dict[str, ModelInfo]:
+    """Get all image generation models for a specific provider.
+
+    Args:
+        provider: The provider name
+
+    Returns:
+        Dictionary of display_name -> ModelInfo for image models from the provider
+    """
+    return {
+        display_name: model_info
+        for display_name, model_info in MODEL_INFOS.items()
+        if model_info.provider == provider and getattr(model_info, "image_gen", False)
+    }
+
+
 def get_all_providers() -> List[str]:
     """Get list of all available providers.
 

@@ -8,7 +8,15 @@ from google.genai import types as genai_types
 
 from mcp.types import Tool
 from ..provider import LLMProvider
-from ..types import LLMRequest, LLMResponse, ModelInfo, ToolCall, ProviderConfig
+from ..types import (
+    LLMRequest,
+    LLMResponse,
+    ModelInfo,
+    ToolCall,
+    ProviderConfig,
+    ImageRequest,
+    ImageResponse,
+)
 from ..exceptions import (
     ProviderError,
     ModelNotFoundError,
@@ -159,6 +167,9 @@ class AIStudioProvider(LLMProvider):
 
         except Exception as e:
             raise ProviderError("aistudio", str(e)) from e
+
+    async def generate_image(self, request: ImageRequest) -> ImageResponse:
+        return ImageResponse()
 
     def _resolve_model_id(self, model_id: str) -> str:
         if not model_id.startswith("aistudio/"):

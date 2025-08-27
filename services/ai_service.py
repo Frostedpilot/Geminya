@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import logging
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Optional, Dict, TYPE_CHECKING
 from discord import Message
 
 if TYPE_CHECKING:
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 from services.state_manager import StateManager
 from services.llm import LLMManager
 from services.mcp import MCPClientManager
-from services.llm.types import LLMRequest
+from services.llm.types import LLMRequest, ImageRequest
 from services.mcp.types import ToolResult
 
 
@@ -31,6 +31,30 @@ class AIService:
         self.llm_manager = llm_manager
         self.mcp_client = mcp_client
         self.logger = logger
+
+    async def gen_image(
+        self, message: Message, server_id: str, model: str
+    ) -> Dict[str, Any]:
+        """Generate an image using the specified model."""
+        if not self.llm_manager._initialized:
+            self.logger.error("AI Service not ready - LLM Manager not initialized")
+            return {"error": "Nya! I'm not ready yet, please try again in a moment."}
+
+        try:
+            # Prepare the image generation request
+            request = ImageRequest(
+                prompt=message.content,
+                model=model,
+                user_id=str(message.author.id),
+            )
+
+            # Delegate the request to the LLM Manager
+            response = await self.llm_manager.generate_image(request)
+            return response
+
+        except Exception as e:
+            self.logger.error(f"Error generating image: {e}")
+            return "Nya! Something went wrong, please try again later."
 
     async def get_response(self, message: Message, server_id: str) -> str:
         """Main entry point for AI responses - orchestrates LLM and MCP."""

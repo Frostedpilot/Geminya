@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 from services.state_manager import StateManager
 
 from .provider import LLMProvider
-from .types import LLMRequest, LLMResponse, ModelInfo
+from .types import LLMRequest, LLMResponse, ModelInfo, ImageRequest, ImageResponse
 from .exceptions import (
     LLMError,
     ModelNotFoundError,
@@ -244,3 +244,13 @@ class LLMManager:
         except Exception as e:
             self.logger.error(f"Failed to initialize LLM providers: {e}")
             raise ConfigurationError(f"LLM providers initialization failed: {str(e)}")
+
+    async def generate_image(self, request: ImageRequest) -> ImageResponse:
+        """Generate an image using the specified model."""
+        provider_name = self._extract_provider_name(request.model)
+        if provider_name not in self.providers:
+            self.logger.error(f"Provider not found: {provider_name}")
+            return ImageResponse.error("Provider not found")
+
+        provider = self.providers[provider_name]
+        return await provider.generate_image(request)
