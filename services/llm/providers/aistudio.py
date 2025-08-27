@@ -61,13 +61,15 @@ class AIStudioProvider(LLMProvider):
 
     def get_model_info(self, model_id: str) -> ModelInfo:
         models = self.get_models()
-        model_ids = [model_info.id for model_info in models.values()]
+        # First check if model_id is a display name (key in models dict)
         if model_id in models:
             return models[model_id]
-        elif model_id in model_ids:
-            return models[model_ids.index(model_id)]
-        else:
-            raise ModelNotFoundError(model_id, "aistudio")
+        # Then check if model_id matches any model's actual ID
+        for model_info in models.values():
+            if model_info.id == model_id:
+                return model_info
+        # If not found, raise error
+        raise ModelNotFoundError(model_id, "aistudio")
 
     def supports_model(self, model_id: str) -> bool:
         """Check if AI Studio supports the given model."""

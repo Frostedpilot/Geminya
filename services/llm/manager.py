@@ -217,7 +217,7 @@ class LLMManager:
                 if model_info:
                     return model_info
             except Exception as e:
-                self.logger.warning(f"Failed to get model info from provider: {e}")
+                self.logger.warning(f"Failed to get model info from provider: {str(e)}")
         raise ModelNotFoundError(f"Model {model} not found")
 
     async def _initialize_providers(self) -> None:
