@@ -1078,18 +1078,17 @@ class WaifuSummonCog(BaseCommand):
                 1: 0x808080,  # Gray for 1★ (Common)
             }
 
+
             class ProfilePaginator(discord.ui.View):
-                def __init__(self, ctx, waifus, collection_dict):
+                def __init__(self, ctx, waifus, collection_dict, waifu_service):
                     super().__init__(timeout=180)
                     self.ctx = ctx
                     self.waifus = waifus
                     self.collection_dict = collection_dict
+                    self.waifu_service = waifu_service
                     self.idx = 0
 
-                def get_embed(self):
-                    waifu = self.waifus[self.idx]
-                    user_waifu = self.collection_dict.get(waifu["waifu_id"])
-                    current_star = user_waifu.get("current_star_level", waifu["rarity"]) if user_waifu else waifu["rarity"]
+                def build_embed(self, waifu, user_waifu, current_star, star_progress=None, combat_stats=None):
                     description = waifu.get("about") or waifu.get("personality_profile") or "A mysterious character..."
                     embed = discord.Embed(
                         title=f"👤 {waifu['name']}",
@@ -1105,13 +1104,10 @@ class WaifuSummonCog(BaseCommand):
                     if waifu.get("birthday"):
                         embed.add_field(name="🎂 Birthday", value=str(waifu["birthday"]), inline=True)
                     if user_waifu:
-                        current_star = user_waifu.get("current_star_level", waifu["rarity"])
-                        # Get shards from WaifuService (not database field)
-                        # This must be awaited, so we will patch this below after the class
-                        embed.add_field(name="🌟 Star Progress", value="Loading...", inline=True)
+                        embed.add_field(name="🌟 Star Progress", value=star_progress or "Loading...", inline=True)
                         embed.add_field(
                             name="⚡ Combat Stats",
-                            value=f"**Power:** Loading...\n"
+                            value=combat_stats or f"**Power:** Loading...\n"
                             f"**Bond Level:** {user_waifu.get('bond_level', 1)}\n"
                             f"**Conversations:** {user_waifu.get('total_conversations', 0)}",
                             inline=True,
@@ -1152,44 +1148,28 @@ class WaifuSummonCog(BaseCommand):
                     embed.set_footer(text=f"{footer_text} • Match {self.idx+1}/{len(self.waifus)}")
                     return embed
 
-                async def interaction_check(self, interaction: discord.Interaction) -> bool:
-                    return interaction.user == self.ctx.author
-
-                @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.primary, row=0)
-                async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-                    self.idx = (self.idx - 1) % len(self.waifus)
-                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
-
-                @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.primary, row=0)
-                async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
-                    self.idx = (self.idx + 1) % len(self.waifus)
-                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
-
-            view = ProfilePaginator(ctx, search_results, collection_dict)
-            # Patch in the async star/shard info for the first page if owned
-            waifu = search_results[0]
-            user_waifu = collection_dict.get(waifu["waifu_id"])
-            embed = view.get_embed()
-            if user_waifu:
-                current_star = user_waifu.get("current_star_level", waifu["rarity"])
-                shards = await self.services.waifu_service.get_character_shards(str(ctx.author.id), waifu["waifu_id"])
-                is_max_star = current_star >= 5
-                star_info = f"**Current Star Level:** {'⭐' * current_star} ({current_star}★)\n"
-                star_info += f"**Star Shards:** {shards:,}"
-                if is_max_star:
-                    star_info += " (MAX STAR - converts to quartz)"
-                else:
-                    next_star = current_star + 1
-                    upgrade_costs = {2: 50, 3: 100, 4: 150, 5: 200}
-                    required = upgrade_costs.get(next_star, 999)
-                    star_info += f"/{required:,} (for {next_star}★)"
-                    if shards >= required:
-                        star_info += " 🔥 READY TO UPGRADE!"
-                # Patch the embed
-                for field in embed.fields:
-                    if field.name == "🌟 Star Progress":
-                        field.value = star_info
-                    if field.name == "⚡ Combat Stats":
+                async def get_embed(self):
+                    waifu = self.waifus[self.idx]
+                    user_waifu = self.collection_dict.get(waifu["waifu_id"])
+                    current_star = user_waifu.get("current_star_level", waifu["rarity"]) if user_waifu else waifu["rarity"]
+                    star_progress = None
+                    combat_stats = None
+                    if user_waifu:
+                        shards = await self.waifu_service.get_character_shards(str(self.ctx.author.id), waifu["waifu_id"])
+                        is_max_star = current_star >= 5
+                        star_info = f"**Current Star Level:** {'⭐' * current_star} ({current_star}★)\n"
+                        star_info += f"**Star Shards:** {shards:,}"
+                        if is_max_star:
+                            star_info += " (MAX STAR - converts to quartz)"
+                        else:
+                            next_star = current_star + 1
+                            upgrade_costs = {2: 50, 3: 100, 4: 150, 5: 200}
+                            required = upgrade_costs.get(next_star, 999)
+                            star_info += f"/{required:,} (for {next_star}★)"
+                            if shards >= required:
+                                star_info += " 🔥 READY TO UPGRADE!"
+                        star_progress = star_info
+                        # Power calculation
                         if current_star == 1:
                             power = 100
                         elif current_star == 2:
@@ -1202,9 +1182,28 @@ class WaifuSummonCog(BaseCommand):
                             power = 2000 * (2 ** (current_star - 5))
                         else:
                             power = 100
-                        field.value = f"**Power:** {power:,}\n" \
+                        combat_stats = f"**Power:** {power:,}\n" \
                             f"**Bond Level:** {user_waifu.get('bond_level', 1)}\n" \
                             f"**Conversations:** {user_waifu.get('total_conversations', 0)}"
+                    return self.build_embed(waifu, user_waifu, current_star, star_progress, combat_stats)
+
+                async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                    return interaction.user == self.ctx.author
+
+                @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.primary, row=0)
+                async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.idx = (self.idx - 1) % len(self.waifus)
+                    embed = await self.get_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
+
+                @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.primary, row=0)
+                async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.idx = (self.idx + 1) % len(self.waifus)
+                    embed = await self.get_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
+
+            view = ProfilePaginator(ctx, search_results, collection_dict, self.services.waifu_service)
+            embed = await view.get_embed()
             await ctx.send(embed=embed, view=view)
         except Exception as e:
             self.logger.error(f"Error displaying waifu profile: {e}")
