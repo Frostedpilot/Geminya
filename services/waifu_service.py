@@ -874,18 +874,12 @@ class WaifuService:
             current_power = stats["collection_power"]
             current_waifus = stats["total_waifus"]
             
-            # Calculate what rank the user should actually be based on their power
-            # Rank 1: 0 power, Rank 2: 2000 power, Rank 3: 6000 power (2000+4000), etc.
+            # Calculate what rank the user should actually be based on their power (non-cumulative, matches docs)
             actual_rank_by_power = 1
-            total_power_needed = 0
-            
-            # Keep checking if user has enough power for next rank
             while True:
                 next_rank = actual_rank_by_power + 1
-                power_needed_for_next_rank = 1000 * (2 ** actual_rank_by_power)  # 2000, 4000, 8000, etc.
-                
-                if current_power >= total_power_needed + power_needed_for_next_rank:
-                    total_power_needed += power_needed_for_next_rank
+                power_needed_for_next_rank = 1000 * (2 ** (next_rank - 1))
+                if current_power >= power_needed_for_next_rank:
                     actual_rank_by_power = next_rank
                 else:
                     break

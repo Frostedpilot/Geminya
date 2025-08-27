@@ -1,3 +1,5 @@
+
+
 """New waifu summon command with star upgrade system."""
 
 import discord
@@ -7,16 +9,149 @@ from cogs.base_command import BaseCommand
 from services.container import ServiceContainer
 
 
-
+async def display_mode_autocomplete(interaction: discord.Interaction, current: str):
+    modes = [
+        ("Full (show all info cards)", "full"),
+        ("Simple (hide 2★ info cards)", "simple"),
+        ("Minimal (summary only)", "minimal"),
+    ]
+    return [
+        discord.app_commands.Choice(name=label, value=val)
+        for label, val in modes if current.lower() in val or current.lower() in label.lower()
+    ]
 
 class WaifuSummonCog(BaseCommand):
+
+
+    @commands.hybrid_command(
+        name="nwnl_database",
+        description="📚 View all series and their characters in the database with pagination"
+    )
+    @discord.app_commands.describe(series_name="(Optional) Search for a series by name")
+    async def nwnl_database(self, ctx: commands.Context, *, series_name: Optional[str] = None):
+        """Display all series and their characters with pagination and buttons. Optionally filter by series name."""
+        await ctx.defer()
+        try:
+            # Fetch all series
+            if hasattr(self.services.database, 'connection_pool'):
+                async with self.services.database.connection_pool.acquire() as conn:
+                    if series_name:
+                        # Case-insensitive partial match on name or english_name
+                        rows = await conn.fetch(
+                            "SELECT * FROM series WHERE LOWER(name) LIKE $1 OR LOWER(english_name) LIKE $1 ORDER BY name",
+                            f"%{series_name.lower()}%"
+                        )
+                    else:
+                        rows = await conn.fetch("SELECT * FROM series ORDER BY name")
+                    all_series = [dict(row) for row in rows]
+            else:
+                all_series = []
+            if not all_series:
+                embed = discord.Embed(
+                    title="❌ No Series Found",
+                    description="No series found in the database." if not series_name else f"No series found matching '{series_name}'.",
+                    color=0xFF6B6B,
+                )
+                await ctx.send(embed=embed)
+                return
+
+            # Helper to fetch waifus for a series from the local in-memory list
+            def get_waifus_for_series(series_row):
+                waifu_list = getattr(self.services.waifu_service, '_waifu_list', [])
+                series_id = series_row.get('series_id')
+                series_name = series_row.get('name')
+                waifus = [w for w in waifu_list if (w.get('series_id') == series_id) or (w.get('series') == series_name)]
+                return waifus
+
+            # Build a list of (series, waifus) pairs
+            series_waifus = []
+            for s in all_series:
+                waifus = get_waifus_for_series(s)
+                series_waifus.append((s, waifus))
+
+            # Paginated view class
+            class DatabasePaginator(discord.ui.View):
+                def __init__(self, ctx, series_waifus):
+                    super().__init__(timeout=180)
+                    self.ctx = ctx
+                    self.series_waifus = series_waifus
+                    self.series_idx = 0
+                    self.page_idx = 0
+                    self.update_page_count()
+
+                def update_page_count(self):
+                    _, waifus = self.series_waifus[self.series_idx]
+                    self.page_count = max(1, (len(waifus) + 24) // 25)
+                    if self.page_idx >= self.page_count:
+                        self.page_idx = self.page_count - 1
+
+                def get_embed(self):
+                    series, waifus = self.series_waifus[self.series_idx]
+                    self.update_page_count()
+                    start = self.page_idx * 25
+                    end = start + 25
+                    waifu_page = waifus[start:end]
+                    embed = discord.Embed(
+                        title=f"🏷️ {series.get('name', 'Unknown Series')} (ID: {series.get('series_id', '?')})",
+                        description=series.get('english_name', ''),
+                        color=0x8e44ad,
+                    )
+                    if waifu_page:
+                        lines = [f"{'⭐'*w.get('rarity', 1)} {w.get('name', 'Unknown')} (ID: {w.get('waifu_id', '?')})" for w in waifu_page]
+                        embed.add_field(
+                            name=f"Characters (Page {self.page_idx+1}/{self.page_count})",
+                            value="\n".join(lines),
+                            inline=False
+                        )
+                    else:
+                        embed.add_field(name="No Characters", value="This series has no characters.", inline=False)
+                    embed.set_footer(text=f"Series {self.series_idx+1}/{len(self.series_waifus)} • Use buttons to navigate")
+                    return embed
+
+                async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                    return interaction.user == self.ctx.author
+
+                @discord.ui.button(label="⏮️ Series", style=discord.ButtonStyle.secondary, row=0)
+                async def prev_series(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.series_idx = (self.series_idx - 1) % len(self.series_waifus)
+                    self.page_idx = 0
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+                @discord.ui.button(label="⏭️ Series", style=discord.ButtonStyle.secondary, row=0)
+                async def next_series(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.series_idx = (self.series_idx + 1) % len(self.series_waifus)
+                    self.page_idx = 0
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+                @discord.ui.button(label="⬅️ Page", style=discord.ButtonStyle.primary, row=1)
+                async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.update_page_count()
+                    self.page_idx = (self.page_idx - 1) % self.page_count
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+                @discord.ui.button(label="➡️ Page", style=discord.ButtonStyle.primary, row=1)
+                async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.update_page_count()
+                    self.page_idx = (self.page_idx + 1) % self.page_count
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+            view = DatabasePaginator(ctx, series_waifus)
+            await ctx.send(embed=view.get_embed(), view=view)
+        except Exception as e:
+            self.logger.error(f"Error displaying NWNL database: {e}")
+            embed = discord.Embed(
+                title="❌ Database Error",
+                description="Unable to display NWNL database. Please try again later!",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
 
     @commands.hybrid_command(
         name="nwnl_series",
         description="📺 View detailed info about an anime series by name"
     )
     async def nwnl_series(self, ctx: commands.Context, *, series_name: str):
-        """Display detailed info about an anime series, including all characters in the series."""
+        """Display detailed info about an anime series, including all characters in the series, with pagination."""
         await ctx.defer()
         try:
             # Search for the series (case-insensitive, partial match)
@@ -47,64 +182,81 @@ class WaifuSummonCog(BaseCommand):
                 await ctx.send(embed=embed)
                 return
 
-            # Build embed with series info
-            embed = discord.Embed(
-                title=f"📺 {series.get('name', 'Unknown Series')}",
-                description=series.get('english_name', ''),
-                color=0x4A90E2,
-            )
-            # ID will be shown in the footer instead of as a field
-            if series.get('image_link'):
-                embed.set_image(url=series['image_link'])
-            # Add more fields if available
-            # Add new fields for series info
-            display_fields = [
-                ('Studios', 'studios'),
-                ('Genres', 'genres'),
-                ('Synopsis', 'synopsis'),
-                ('Favorites', 'favorites'),
-                ('Members', 'members'),
-                ('Score', 'score'),
-                ('Genre', 'genre'),
-                ('Description', 'description'),
-            ]
-            for label, key in display_fields:
-                val = series.get(key)
-                if val and str(val).strip() and str(val).lower() != 'nan':
-                    embed.add_field(name=label, value=str(val), inline=False)
+            # Fetch all waifus for this series from the local in-memory list
+            waifu_list = getattr(self.services.waifu_service, '_waifu_list', [])
+            series_id = series.get('series_id')
+            series_name_actual = series.get('name')
+            waifus = [w for w in waifu_list if (w.get('series_id') == series_id) or (w.get('series') == series_name_actual)]
+            waifus = sorted(waifus, key=lambda w: (-w.get('rarity', 1), w.get('name', '')))
 
-            # Fetch all waifus/characters in this series using the new method
-            try:
-                series_id = series.get('series_id')
-                characters = await self.services.database.get_waifus_by_series_id(series_id)
-            except Exception as ce:
-                self.logger.error(f"Error fetching characters for series {series_id}: {ce}")
-                characters = []
+            # Paginated view for waifus in this series
+            class SeriesPaginator(discord.ui.View):
+                def __init__(self, ctx, series, waifus):
+                    super().__init__(timeout=180)
+                    self.ctx = ctx
+                    self.series = series
+                    self.waifus = waifus
+                    self.page_idx = 0
+                    self.page_count = max(1, (len(waifus) + 24) // 25)
 
-            # Display up to 10 characters, summarize if more
-            if characters:
-                # Sort by rarity descending, then name
-                characters = sorted(characters, key=lambda w: (-w.get('rarity', 1), w.get('name', '')))
-                char_lines = []
-                for w in characters[:10]:
-                    stars = '⭐' * w.get('rarity', 1)
-                    char_lines.append(f"{stars} {w.get('name', 'Unknown')}")
-                if len(characters) > 10:
-                    char_lines.append(f"...and {len(characters) - 10} more!")
-                embed.add_field(
-                    name=f"Characters in this Series ({len(characters)})",
-                    value="\n".join(char_lines),
-                    inline=False
-                )
-            else:
-                embed.add_field(
-                    name="Characters in this Series",
-                    value="No characters found for this series.",
-                    inline=False
-                )
+                def get_embed(self):
+                    start = self.page_idx * 25
+                    end = start + 25
+                    waifu_page = self.waifus[start:end]
+                    embed = discord.Embed(
+                        title=f"📺 {self.series.get('name', 'Unknown Series')} (ID: {self.series.get('series_id', '?')})",
+                        description=self.series.get('english_name', ''),
+                        color=0x4A90E2,
+                    )
+                    # Add image if available
+                    if self.series.get('image_link'):
+                        embed.set_image(url=self.series['image_link'])
+                    # Add info fields, truncate if needed
+                    display_fields = [
+                        ('Studios', 'studios'),
+                        ('Genres', 'genres'),
+                        ('Synopsis', 'synopsis'),
+                        ('Favorites', 'favorites'),
+                        ('Members', 'members'),
+                        ('Score', 'score'),
+                        ('Genre', 'genre'),
+                        ('Description', 'description'),
+                    ]
+                    for label, key in display_fields:
+                        val = self.series.get(key)
+                        if val and str(val).strip() and str(val).lower() != 'nan':
+                            sval = str(val)
+                            if len(sval) > 1024:
+                                sval = sval[:1021] + '...'
+                            embed.add_field(name=label, value=sval, inline=False)
+                    # Add waifu list for this page
+                    if waifu_page:
+                        lines = [f"{'⭐'*w.get('rarity', 1)} {w.get('name', 'Unknown')} (ID: {w.get('waifu_id', '?')})" for w in waifu_page]
+                        embed.add_field(
+                            name=f"Characters (Page {self.page_idx+1}/{self.page_count})",
+                            value="\n".join(lines),
+                            inline=False
+                        )
+                    else:
+                        embed.add_field(name="No Characters", value="This series has no characters.", inline=False)
+                    embed.set_footer(text=f"Series ID: {self.series.get('series_id', 'N/A')} • Page {self.page_idx+1}/{self.page_count} • Use buttons to navigate")
+                    return embed
 
-            embed.set_footer(text=f"Series ID: {series.get('series_id', 'N/A')} • Use /nwnl_summon or /nwnl_profile for more info on characters from this series!")
-            await ctx.send(embed=embed)
+                async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                    return interaction.user == self.ctx.author
+
+                @discord.ui.button(label="⬅️ Page", style=discord.ButtonStyle.primary, row=0)
+                async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.page_idx = (self.page_idx - 1) % self.page_count
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+                @discord.ui.button(label="➡️ Page", style=discord.ButtonStyle.primary, row=0)
+                async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.page_idx = (self.page_idx + 1) % self.page_count
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+            view = SeriesPaginator(ctx, series, waifus)
+            await ctx.send(embed=view.get_embed(), view=view)
         except Exception as e:
             self.logger.error(f"Error displaying series info: {e}")
             embed = discord.Embed(
@@ -113,16 +265,7 @@ class WaifuSummonCog(BaseCommand):
                 color=0xFF6B6B,
             )
             await ctx.send(embed=embed)
-    async def display_mode_autocomplete(self, interaction: discord.Interaction, current: str):
-        modes = [
-            ("Full (show all info cards)", "full"),
-            ("Simple (hide 2★ info cards)", "simple"),
-            ("Minimal (summary only)", "minimal"),
-        ]
-        return [
-            discord.app_commands.Choice(name=label, value=val)
-            for label, val in modes if current.lower() in val or current.lower() in label.lower()
-        ]
+
 
     def __init__(self, bot: commands.Bot, services: ServiceContainer):
         super().__init__(bot, services)
