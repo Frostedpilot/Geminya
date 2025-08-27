@@ -12,6 +12,82 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+    # --- Gift Code System ---
+    #
+    # Table: gift_codes
+    #   code TEXT PRIMARY KEY
+    #   reward_type TEXT -- 'quartz', 'gems', 'item'
+    #   reward_value INT -- amount or item_id
+    #   is_active BOOLEAN
+    #   usage_limit INT -- max redemptions (NULL for unlimited)
+    #   created_at TIMESTAMP
+    #
+    # Table: gift_code_redemptions
+    #   user_id TEXT
+    #   code TEXT
+    #   redeemed_at TIMESTAMP
+    #   PRIMARY KEY (user_id, code)
+
+    async def get_gift_code(self, code: str) -> Optional[dict]:
+        """Fetch a gift code by code string."""
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM gift_codes WHERE code = $1", code)
+            return dict(row) if row else None
+
+    async def has_redeemed_gift_code(self, user_id: str, code: str) -> bool:
+        """Check if a user has already redeemed a gift code."""
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT 1 FROM gift_code_redemptions WHERE user_id = $1 AND code = $2", user_id, code)
+            return row is not None
+
+    async def redeem_gift_code(self, user_id: str, code: str) -> str:
+        """Attempt to redeem a gift code for a user. Returns a status string."""
+        async with self.connection_pool.acquire() as conn:
+            async with conn.transaction():
+                gift = await conn.fetchrow("SELECT * FROM gift_codes WHERE code = $1 FOR UPDATE", code)
+                if not gift or not gift['is_active']:
+                    return "invalid"
+                # Check usage limit
+                if gift['usage_limit'] is not None:
+                    count = await conn.fetchval("SELECT COUNT(*) FROM gift_code_redemptions WHERE code = $1", code)
+                    if count >= gift['usage_limit']:
+                        return "limit"
+                # Check if user already redeemed
+                already = await conn.fetchrow("SELECT 1 FROM gift_code_redemptions WHERE user_id = $1 AND code = $2", user_id, code)
+                if already:
+                    return "already"
+                # Apply reward
+                if gift['reward_type'] == 'quartz':
+                    await conn.execute("UPDATE users SET quartzs = quartzs + $1 WHERE discord_id = $2", gift['reward_value'], user_id)
+                elif gift['reward_type'] == 'gems':
+                    await conn.execute("UPDATE users SET sakura_crystals = sakura_crystals + $1 WHERE discord_id = $2", gift['reward_value'], user_id)
+                elif gift['reward_type'] == 'item':
+                    # Use purchase_item logic, but free
+                    item_id = gift['reward_value']
+                    # Add item to inventory (quantity=1)
+                    item = await conn.fetchrow("SELECT * FROM shop_items WHERE id = $1 AND is_active = TRUE", item_id)
+                    if not item:
+                        return "item_missing"
+                    existing_item = await conn.fetchrow(
+                        "SELECT id, quantity FROM user_inventory WHERE user_id = $1 AND item_name = $2 AND item_type = $3 AND is_active = TRUE",
+                        user_id, item['name'], item['item_type'])
+                    if existing_item:
+                        await conn.execute("UPDATE user_inventory SET quantity = quantity + 1 WHERE id = $1", existing_item['id'])
+                    else:
+                        await conn.execute(
+                            """
+                            INSERT INTO user_inventory (user_id, item_name, item_type, quantity, metadata, effects, is_active)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                            """,
+                            user_id, item['name'], item['item_type'], 1,
+                            item['item_data'] if item['item_data'] else '{}',
+                            item['effects'] if item['effects'] else '{}', True
+                        )
+                else:
+                    return "unknown_type"
+                # Record redemption
+                await conn.execute("INSERT INTO gift_code_redemptions (user_id, code, redeemed_at) VALUES ($1, $2, $3)", user_id, code, datetime.utcnow())
+                return "success"
     async def get_waifus_by_series_id(self, series_id: int) -> List[Dict[str, Any]]:
         """Get all waifus belonging to a given series_id, including series name as 'series'."""
         if not self.connection_pool:
@@ -934,8 +1010,8 @@ class DatabaseService:
                             VALUES ($1, $2, $3, $4, $5, $6, $7)
                             """,
                             user_id, item['name'], item['item_type'], quantity,
-                            json.dumps(item['item_data']) if item['item_data'] else '{}',
-                            json.dumps(item['effects']) if item['effects'] else '{}', True
+                            item['item_data'] if item['item_data'] else '{}',
+                            item['effects'] if item['effects'] else '{}', True
                         )
                     self.logger.info(f"Purchase transaction committed successfully")
                     return True

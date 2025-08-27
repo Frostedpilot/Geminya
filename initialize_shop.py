@@ -36,7 +36,7 @@ DEFAULT_SHOP_ITEMS = [
         "category": "tickets",
         "item_type": "series_ticket",
         "item_data": {
-            "min_rarity": 2,
+            "rarity": "rare",
             "currency_type": "quartzs"
         },
         "effects": {
@@ -53,7 +53,7 @@ DEFAULT_SHOP_ITEMS = [
         "category": "tickets",
         "item_type": "series_ticket",
         "item_data": {
-            "min_rarity": 3,
+            "rarity": "rare",
             "currency_type": "quartzs"
         },
         "effects": {
@@ -70,7 +70,7 @@ DEFAULT_SHOP_ITEMS = [
         "category": "tickets",
         "item_type": "selectix_ticket",
         "item_data": {
-            "rarity": 2,
+            "rarity": "rare",
             "currency_type": "quartzs"
         },
         "effects": {
@@ -87,7 +87,7 @@ DEFAULT_SHOP_ITEMS = [
         "category": "tickets",
         "item_type": "selectix_ticket",
         "item_data": {
-            "rarity": 3,
+            "rarity": "rare",
             "currency_type": "quartzs"
         },
         "effects": {
@@ -104,8 +104,7 @@ DEFAULT_SHOP_ITEMS = [
         "category": "tickets",
         "item_type": "multi_guarantee_ticket",
         "item_data": {
-            "summon_count": 10,
-            "rarity": 3,
+            "rarity": "legendary",
             "currency_type": "quartzs"
         },
         "effects": {
@@ -139,6 +138,7 @@ async def initialize_shop():
         if existing_count > 0:
             logger.info(f"Removing {existing_count} existing shop items...")
             await conn.execute("DELETE FROM shop_items")
+            await conn.execute("ALTER SEQUENCE shop_items_id_seq RESTART WITH 1")
             logger.info("All existing shop items removed.")
         # Add all default items
         added_count = 0
