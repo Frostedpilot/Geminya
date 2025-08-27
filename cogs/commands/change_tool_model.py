@@ -9,7 +9,7 @@ from services.container import ServiceContainer
 from services.llm.types import ModelInfo
 from utils.model_utils import (
     get_model_name_by_id,
-    get_models_by_provider,
+    get_text_models_by_provider,
     get_all_providers,
 )
 
@@ -26,7 +26,7 @@ class ProviderSelect(Select):
 
         options = []
         for provider in providers:
-            models = get_models_by_provider(provider)
+            models = get_text_models_by_provider(provider)
 
             filtered_models = self.filter_out_non_tool_models(models)
 
@@ -73,7 +73,7 @@ class ProviderSelect(Select):
 
     def _create_provider_embed(self, provider: str) -> discord.Embed:
         """Create embed showing provider information."""
-        models = get_models_by_provider(provider)
+        models = get_text_models_by_provider(provider)
 
         embed = discord.Embed(
             title=f"🤖 {provider.title()} Models",
@@ -171,7 +171,7 @@ class ModelSelect(Select):
         self.provider = provider
 
         # Get models for this provider
-        models = get_models_by_provider(provider)
+        models = get_text_models_by_provider(provider)
 
         filtered_models = self.filter_out_non_tool_models(models)
 
@@ -271,7 +271,7 @@ class ModelSelect(Select):
         )
 
         # Add model details
-        models = get_models_by_provider(self.provider)
+        models = get_text_models_by_provider(self.provider)
         model_info = None
         for info in models.values():
             if info.id == selected_model_id:
@@ -412,7 +412,7 @@ class InitialSelectionView(View):
         providers = get_all_providers()
         provider_info = []
         for provider in providers:
-            models = get_models_by_provider(provider)
+            models = get_text_models_by_provider(provider)
             tool_count = sum(1 for model in models.values() if model.supports_tools)
             provider_info.append(
                 f"**{provider.title()}:** {len(models)} models ({tool_count} with tools)"

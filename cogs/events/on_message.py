@@ -79,6 +79,8 @@ class OnMessage(BaseEventHandler):
                 content = content.replace(f"<@{mention.id}>", f"@{mention.name}")
                 content = content.replace(f"<@!{mention.id}>", f"@{mention.name}")
 
+        message.content = content.strip()
+
         return content.strip()
 
     def _add_to_history(self, message: discord.Message, processed_content: str) -> None:
@@ -95,7 +97,7 @@ class OnMessage(BaseEventHandler):
         self.state_manager.add_message(
             channel_id=message.channel.id,
             author_id=author.id,
-            author_name=f"{author.name}#{author.discriminator}",
+            author_name=author.name,
             nick=nick,
             content=processed_content,
         )

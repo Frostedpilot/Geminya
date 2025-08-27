@@ -16,6 +16,8 @@ from services.mcp import MCPClientManager
 from services.database import DatabaseService
 from services.waifu_service import WaifuService
 from services.command_queue import CommandQueueService
+from services.spotify_service import SpotifyService
+from services.music_service import MusicService
 
 
 class ServiceContainer:
@@ -65,6 +67,33 @@ class ServiceContainer:
         self.waifu_service = WaifuService(self.database)
         self.command_queue = CommandQueueService()
 
+        # Initialize music services
+        self.spotify_service: Optional[SpotifyService] = None
+        self.music_service: Optional[MusicService] = None
+
+        # Only initialize if credentials are provided
+        if (
+            config.spotify_username
+            and config.spotify_password
+            and config.spotify_client_id
+            and config.spotify_client_secret
+        ):
+            try:
+                self.spotify_service = SpotifyService(
+                    username=config.spotify_username,
+                    password=config.spotify_password,
+                    client_id=config.spotify_client_id,
+                    client_secret=config.spotify_client_secret,
+                )
+                self.music_service = MusicService(self.spotify_service)
+                self.logger.info("Spotify services initialized")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize Spotify services: {e}")
+        else:
+            self.logger.info(
+                "Spotify credentials not provided, music features disabled"
+            )
+
         self.logger.info("Service container created")
 
     async def initialize_all(self) -> None:
@@ -77,6 +106,12 @@ class ServiceContainer:
 
             # Initialize Waifu Academy services
             await self.waifu_service.initialize()
+
+            # Initialize music services if available
+            if self.spotify_service:
+                await self.spotify_service.initialize()
+            if self.music_service:
+                await self.music_service.initialize()
 
             # MCP servers will connect automatically when needed
             self.logger.info(
@@ -97,6 +132,10 @@ class ServiceContainer:
         try:
             if hasattr(self, "command_queue"):
                 await self.command_queue.shutdown()
+            if hasattr(self, "music_service") and self.music_service:
+                await self.music_service.close()
+            if hasattr(self, "spotify_service") and self.spotify_service:
+                await self.spotify_service.close()
             if hasattr(self, "waifu_service"):
                 await self.waifu_service.close()
             if hasattr(self, "llm_manager"):
@@ -141,3 +180,11 @@ class ServiceContainer:
     def get_command_queue(self) -> CommandQueueService:
         """Get the command queue service."""
         return self.command_queue
+
+    def get_spotify_service(self) -> Optional[SpotifyService]:
+        """Get the Spotify service."""
+        return self.spotify_service
+
+    def get_music_service(self) -> Optional[MusicService]:
+        """Get the music service."""
+        return self.music_service

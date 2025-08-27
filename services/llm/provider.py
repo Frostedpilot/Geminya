@@ -5,7 +5,14 @@ from typing import Dict, Any, List, Optional, Union
 import logging
 
 from mcp.types import Tool
-from .types import LLMRequest, LLMResponse, ModelInfo, ProviderConfig
+from .types import (
+    LLMRequest,
+    LLMResponse,
+    ModelInfo,
+    ProviderConfig,
+    ImageRequest,
+    ImageResponse,
+)
 from .exceptions import LLMError
 
 
@@ -36,6 +43,11 @@ class LLMProvider(ABC):
     @abstractmethod
     async def generate_response(self, request: LLMRequest) -> LLMResponse:
         """Generate a response using the provider's models."""
+        pass
+
+    @abstractmethod
+    async def generate_image(self, request: ImageRequest) -> ImageResponse:
+        """Generate an image using the provider's models."""
         pass
 
     @abstractmethod
