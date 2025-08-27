@@ -351,10 +351,10 @@ class WaifuService:
                     for w in waifus:
                         if w["waifu_id"] in rate_up_ids:
                             available_waifus.append(w)
-                            weights.append(m)
+                            weights.append(m/2)
                         else:
                             available_waifus.append(w)
-                            weights.append(n)
+                            weights.append(n*1.5)
                 else:
                     # All rate-up or all non-rate-up, fallback to uniform
                     available_waifus = waifus
@@ -596,10 +596,10 @@ class WaifuService:
                         for w in pool:
                             if w["waifu_id"] in rate_up_ids:
                                 available_waifus.append(w)
-                                weights.append(m)
+                                weights.append(m/2)
                             else:
                                 available_waifus.append(w)
-                                weights.append(n)
+                                weights.append(n*1.5)
                     else:
                         available_waifus = pool
                         weights = [1] * len(available_waifus)
