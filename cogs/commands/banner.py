@@ -54,6 +54,11 @@ class Banner(commands.Cog):
             inline=False,
         )
         embed.add_field(
+            name="/nwnl_collection_list [user] [series_id]",
+            value="View your waifu collection as a paginated list. Optionally filter by user or series.",
+            inline=False,
+        )
+        embed.add_field(
             name="/nwnl_profile <waifu_name>",
             value="View detailed profile of a waifu, including star and bond info.",
             inline=False,
@@ -61,6 +66,42 @@ class Banner(commands.Cog):
         embed.add_field(
             name="/nwnl_series <series_name>",
             value="View detailed info about an anime series, including all characters in the series.",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_database [series_name]",
+            value="Search the waifu/series database. Optionally filter by series name.",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_giftcode <code>",
+            value="Redeem a gift code for rewards.",
+            inline=False,
+        )
+        # --- Waifu Academy Cog ---
+        embed.add_field(
+            name="/nwnl_status",
+            value="Check your academy status and statistics.",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_rename_academy <new_name>",
+            value="Rename your waifu academy.",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_daily",
+            value="Claim your daily rewards.",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_reset_account confirmation:confirm",
+            value="Reset your academy account (WARNING: Deletes ALL progress!)",
+            inline=False,
+        )
+        embed.add_field(
+            name="/nwnl_delete_account confirmation:delete forever",
+            value="PERMANENTLY DELETE your academy account (IRREVERSIBLE!)",
             inline=False,
         )
         embed.set_footer(text="Use the commands as shown. For more info, use /nwnl_banner_info <banner_id>.")

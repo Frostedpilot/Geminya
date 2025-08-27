@@ -12,22 +12,6 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
-    # --- Gift Code System ---
-    #
-    # Table: gift_codes
-    #   code TEXT PRIMARY KEY
-    #   reward_type TEXT -- 'quartz', 'gems', 'item'
-    #   reward_value INT -- amount or item_id
-    #   is_active BOOLEAN
-    #   usage_limit INT -- max redemptions (NULL for unlimited)
-    #   created_at TIMESTAMP
-    #
-    # Table: gift_code_redemptions
-    #   user_id TEXT
-    #   code TEXT
-    #   redeemed_at TIMESTAMP
-    #   PRIMARY KEY (user_id, code)
-
     async def get_gift_code(self, code: str) -> Optional[dict]:
         """Fetch a gift code by code string."""
         async with self.connection_pool.acquire() as conn:

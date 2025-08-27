@@ -673,14 +673,14 @@ class ShopCog(BaseCommand):
                     # 3★
                     if three_star_chars:
                         summary_embed.add_field(
-                            name="✨ 3★ RARE Characters",
+                            name="✨ 3★ LEGENDARY Characters",
                             value="\n".join(three_star_chars),
                             inline=False,
                         )
                     # 2★
                     if two_star_chars:
                         summary_embed.add_field(
-                            name="🟣 2★ COMMON Characters",
+                            name="🟣 2★ RARE Characters",
                             value="\n".join(two_star_chars),
                             inline=False,
                         )

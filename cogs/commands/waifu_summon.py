@@ -905,7 +905,7 @@ class WaifuSummonCog(BaseCommand):
             # Add 3★ characters field if any
             if three_star_chars:
                 final_summary.add_field(
-                    name="✨ 3★ RARE Characters",
+                    name="✨ 3★ LEGENDARY Characters",
                     value="\n".join(three_star_chars),
                     inline=False,
                 )
@@ -913,7 +913,7 @@ class WaifuSummonCog(BaseCommand):
             # Add 2★ characters field if any
             if two_star_chars:
                 final_summary.add_field(
-                    name="🟣 2★ COMMON Characters", 
+                    name="🟣 2★ RARE Characters", 
                     value="\n".join(two_star_chars),
                     inline=False,
                 )
