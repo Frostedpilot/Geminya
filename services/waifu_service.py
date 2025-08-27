@@ -543,17 +543,16 @@ class WaifuService:
             if not banner_items:
                 return {"success": False, "message": f"No waifus in this banner pool."}
             waifu_ids = [item["item_id"] for item in banner_items]
+            # Always use the global pool for guarantee logic
             waifus_by_rarity = {
-                r: [w for w in self._waifu_list if w["waifu_id"] in waifu_ids and w.get("rarity") == r]
+                r: [w for w in self._waifu_list if w.get("rarity") == r]
                 for r in [1, 2, 3]
             }
-            # For limited banners, always include all 1★ waifus in the 1★ pool
-            if banner_type == "limited":
-                all_one_star_waifus = [w for w in self._waifu_list if w.get("rarity") == 1]
-                waifu_ids_in_banner = set(w["waifu_id"] for w in waifus_by_rarity[1])
-                waifus_by_rarity[1] += [w for w in all_one_star_waifus if w["waifu_id"] not in waifu_ids_in_banner]
             rate_up_map = {item["item_id"]: item.get("rate_up") for item in banner_items}
         else:
+            banner_type = None
+            banner_items = []
+            waifu_ids = []
             waifus_by_rarity = {
                 r: [w for w in self._waifu_list if w.get("rarity") == r]
                 for r in [1, 2, 3]
