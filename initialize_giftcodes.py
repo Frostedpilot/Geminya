@@ -17,21 +17,21 @@ DEFAULT_GIFT_CODES = [
         "reward_type": "gems",
         "reward_value": 500,
         "is_active": True,
-        "usage_limit": 1,
+        "usage_limit": 99,
     },
     {
         "code": "FREEROBUX",
         "reward_type": "item",
         "reward_value": 6,
         "is_active": True,
-        "usage_limit": 10,
+        "usage_limit": 99,
     }
 ]
 
 async def initialize_giftcodes():
     import asyncpg
     with open('secrets.json', 'r') as f:
-        secrets = json.load(f)
+        secrets = json.load(f)  
     pg_config = {
         'host': secrets.get('POSTGRES_HOST', 'localhost'),
         'port': int(secrets.get('POSTGRES_PORT', 5432)),
