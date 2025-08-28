@@ -63,8 +63,8 @@ class WaifuSummonCog(BaseCommand):
         await ctx.defer()
         target_user = user if user is not None else ctx.author
         try:
-            # Get user's collection from database
-            collection = await self.services.database.get_user_collection(str(target_user.id))
+            # Get user's collection with star and shard info
+            collection = await self.services.waifu_service.get_user_collection_with_stars(str(target_user.id))
             if not collection:
                 embed = discord.Embed(
                     title="🏫 Empty Academy",
