@@ -715,11 +715,11 @@ class DatabaseService:
             return [dict(row) for row in rows]
 
     async def get_user_collection(self, discord_id: str) -> List[Dict[str, Any]]:
-        """Get all waifus in a user's collection (PostgreSQL), using waifu_id as identifier."""
+        """Get all waifus in a user's collection (PostgreSQL), using waifu_id as identifier. Includes series_id."""
         async with self.connection_pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id, u.discord_id
+                SELECT uw.*, w.name, w.series, w.series_id, w.rarity, w.image_url, w.waifu_id as waifu_id, u.discord_id
                 FROM user_waifus uw
                 JOIN waifus w ON uw.waifu_id = w.waifu_id
                 JOIN users u ON uw.user_id = u.id
