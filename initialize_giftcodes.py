@@ -25,6 +25,13 @@ DEFAULT_GIFT_CODES = [
         "reward_value": 6,
         "is_active": True,
         "usage_limit": 99,
+    },
+    {
+        "code": "IMGOINGTORESETDATABASE",
+        "reward_type": "gems",
+        "reward_value": 500,
+        "is_active": True,
+        "usage_limit": 99,
     }
 ]
 

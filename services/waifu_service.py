@@ -638,45 +638,44 @@ class WaifuService:
                     rarity_counts[1] -= 1
                     rarity_counts[2] += 1
 
-        # Determine which waifus are new for the user
-        waifu_ids = [w[0]["waifu_id"] for w in waifu_rarity_pairs]
+        # Get user's collection before the summon
         user_collection = await self.db.get_user_collection(discord_id)
         owned_ids = {w["waifu_id"] for w in user_collection}
-        new_waifu_ids = [wid for wid in waifu_ids if wid not in owned_ids]
 
-        # Batch add new waifus
-        if new_waifu_ids:
-            await self.db.add_waifus_to_user_batch(discord_id, new_waifu_ids)
-
-        # Set initial star level for all new waifus in one query
-        if new_waifu_ids:
-            user = await self.db.get_or_create_user(discord_id)
-            if not self.db.connection_pool:
-                raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
-            async with self.db.connection_pool.acquire() as conn:
-                for (waifu, rarity) in waifu_rarity_pairs:
-                    if waifu["waifu_id"] in new_waifu_ids:
-                        await conn.execute(
-                            """
-                            UPDATE user_waifus 
-                            SET current_star_level = $1 
-                            WHERE user_id = $2 AND waifu_id = $3
-                            """,
-                            rarity, user["id"], waifu["waifu_id"]
-                        )
-
-        # Now, handle the rest of the summon result logic (shards, upgrades, etc)
+        new_this_session = set()
+        new_waifu_ids = []
+        session_new_star_level = {}  # waifu_id -> rarity of first pull this session
+        session_new_shards = {}      # waifu_id -> shards accumulated in-session
+        session_new_upgrades = {}    # waifu_id -> list of upgrades performed in-session
+        session_new_quartz = {}      # waifu_id -> quartz gained in-session
+        summon_results = []
         shard_summary = {}
         upgrade_summary = []
+
         for (waifu, rarity) in waifu_rarity_pairs:
-            # Use the same logic as _handle_summon_result, but skip add_waifu_to_user
             waifu_id = waifu["waifu_id"]
-            if waifu_id in owned_ids:
-                # DUPLICATE: Give shards based on pulled rarity (not current star level)
+            if waifu_id not in owned_ids and waifu_id not in session_new_star_level:
+                # First time pulled in this session, treat as new
+                new_this_session.add(waifu_id)
+                new_waifu_ids.append(waifu_id)
+                session_new_star_level[waifu_id] = rarity
+                session_new_shards[waifu_id] = 0
+                session_new_upgrades[waifu_id] = []
+                session_new_quartz[waifu_id] = 0
+                summon_result = {
+                    "is_new": True,
+                    "is_duplicate": False,
+                    "current_star_level": rarity,
+                    "shards_gained": 0,
+                    "total_shards": 0,
+                    "quartz_gained": 0,
+                    "upgrades_performed": []
+                }
+            elif waifu_id in owned_ids:
+                # Already owned in DB, treat as dupe
                 user_collection_entry = next((w for w in user_collection if w["waifu_id"] == waifu_id), None)
-                if user_collection_entry is not None:
-                    current_star = user_collection_entry.get("current_star_level") or rarity
-                else:
+                current_star = user_collection_entry.get("current_star_level") if user_collection_entry else rarity
+                if current_star is None:
                     current_star = rarity
                 shard_reward = self.SHARD_REWARDS.get(rarity, 5)
                 if current_star >= self.MAX_STAR_LEVEL:
@@ -694,7 +693,7 @@ class WaifuService:
                     current_shards = await self.get_character_shards(discord_id, waifu_id)
                     new_shard_total = current_shards + shard_reward
                     await self.add_character_shards(discord_id, waifu_id, shard_reward)
-                    upgrade_result = await self._check_and_perform_auto_upgrades(discord_id, waifu_id, new_shard_total, current_star)
+                    upgrade_result = await self._check_and_perform_auto_upgrades(discord_id, waifu_id, new_shard_total, int(current_star))
                     summon_result = {
                         "is_new": False,
                         "is_duplicate": True,
@@ -705,15 +704,46 @@ class WaifuService:
                         "upgrades_performed": upgrade_result["upgrades_performed"]
                     }
             else:
-                # NEW: Already added above, just set up result
+                # Session-duplicate: pulled as new earlier in this session
+                current_star = session_new_star_level[waifu_id]
+                shard_reward = self.SHARD_REWARDS.get(rarity, 5)
+                # Simulate in-memory shard and upgrade logic
+                prev_shards = session_new_shards[waifu_id]
+                new_shard_total = prev_shards + shard_reward
+                upgrades_performed = []
+                final_star_level = current_star
+                remaining_shards = new_shard_total
+                quartz_gained = 0
+                # Simulate upgrades in-memory
+                while final_star_level < self.MAX_STAR_LEVEL:
+                    target_star_level = final_star_level + 1
+                    required_shards = self.UPGRADE_COSTS.get(target_star_level)
+                    if required_shards is None or remaining_shards < required_shards:
+                        break
+                    remaining_shards -= required_shards
+                    upgrades_performed.append({
+                        "from_star": final_star_level,
+                        "to_star": final_star_level + 1,
+                        "shards_used": required_shards
+                    })
+                    final_star_level += 1
+                # If max star reached, convert excess shards to quartz (simulate)
+                if final_star_level >= self.MAX_STAR_LEVEL and remaining_shards > 0:
+                    quartz_gained = remaining_shards
+                    remaining_shards = 0
+                # Update session tracking
+                session_new_shards[waifu_id] = remaining_shards
+                session_new_upgrades[waifu_id].extend(upgrades_performed)
+                session_new_star_level[waifu_id] = final_star_level
+                session_new_quartz[waifu_id] += quartz_gained
                 summon_result = {
-                    "is_new": True,
-                    "is_duplicate": False,
-                    "current_star_level": rarity,
-                    "shards_gained": 0,
-                    "total_shards": 0,
-                    "quartz_gained": 0,
-                    "upgrades_performed": []
+                    "is_new": False,
+                    "is_duplicate": True,
+                    "current_star_level": final_star_level,
+                    "shards_gained": shard_reward,
+                    "total_shards": remaining_shards,
+                    "quartz_gained": quartz_gained,
+                    "upgrades_performed": upgrades_performed
                 }
             # Update pity counter
             if rarity >= 3:
@@ -731,12 +761,41 @@ class WaifuService:
                     char_name = waifu["name"]
                     upgrade_info = f"{char_name}: {upgrade['from_star']}★ → {upgrade['to_star']}★"
                     upgrade_summary.append(upgrade_info)
-            results.append({
+            summon_results.append({
                 "waifu": waifu,
                 "rarity": rarity,
                 **summon_result
             })
+
+
+        # Batch add new waifus at the end
+        if new_waifu_ids:
+            await self.db.add_waifus_to_user_batch(discord_id, new_waifu_ids)
+            # Set initial star level and shards for all new waifus
+            user = await self.db.get_or_create_user(discord_id)
+            if not self.db.connection_pool:
+                raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
+            async with self.db.connection_pool.acquire() as conn:
+                for waifu_id in new_waifu_ids:
+                    rarity = session_new_star_level[waifu_id]
+                    shards = session_new_shards[waifu_id]
+                    upgrades = session_new_upgrades[waifu_id]
+                    quartz_gained = session_new_quartz[waifu_id]
+                    # Set star level and shards
+                    await conn.execute(
+                        """
+                        UPDATE user_waifus 
+                        SET current_star_level = $1, star_shards = $2 
+                        WHERE user_id = $3 AND waifu_id = $4
+                        """,
+                        rarity, shards, user["id"], waifu_id
+                    )
+                    # If any quartz was gained (from excess shards), add to user
+                    if quartz_gained > 0:
+                        await self.db.update_user_quartzs(discord_id, quartz_gained)
+
         new_waifus = [w for (w, _) in waifu_rarity_pairs if w["waifu_id"] in new_waifu_ids]
+        results = summon_results
 
         # Get final user state
         final_user = await self.db.get_or_create_user(discord_id)
