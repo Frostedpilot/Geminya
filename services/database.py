@@ -802,14 +802,38 @@ class DatabaseService:
             return result[-1] != '0'
 
     # Search methods
-    async def search_waifus(self, name: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Search for waifus by name (PostgreSQL)."""
+    async def search_waifus(self, waifu_name: str, limit: Optional[int] = None, series_name: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Search for waifus by name, and optionally by series name (PostgreSQL).
+        waifu_name is always required; series_name is optional.
+        Results are sorted by relevance to waifu_name (and series_name if provided).
+        """
         async with self.connection_pool.acquire() as conn:
-            query = "SELECT * FROM waifus WHERE name ILIKE $1 OR series ILIKE $2"
-            params = (f"%{name}%", f"%{name}%")
-            if limit:
-                query += " LIMIT $3"
-                params = params + (limit,)
+            # Always match waifu_name; optionally match series_name
+            if series_name:
+                query = (
+                    "SELECT *, "
+                    "LEAST(POSITION(LOWER($1) IN LOWER(name)), POSITION(LOWER($1) IN LOWER(series))) AS relevance "
+                    "FROM waifus "
+                    "WHERE (name ILIKE $2) AND (series ILIKE $3) "
+                    "ORDER BY relevance, name"
+                )
+                params = (waifu_name, f"%{waifu_name}%", f"%{series_name}%")
+                if limit:
+                    query += " LIMIT $4"
+                    params = params + (limit,)
+            else:
+                query = (
+                    "SELECT *, "
+                    "LEAST(POSITION(LOWER($1) IN LOWER(name)), POSITION(LOWER($1) IN LOWER(series))) AS relevance "
+                    "FROM waifus "
+                    "WHERE name ILIKE $2 OR series ILIKE $2 "
+                    "ORDER BY relevance, name"
+                )
+                params = (waifu_name, f"%{waifu_name}%")
+                if limit:
+                    query += " LIMIT $3"
+                    params = params + (limit,)
             rows = await conn.fetch(query, *params)
             return [dict(row) for row in rows]
 

@@ -852,33 +852,31 @@ class WaifuService:
             return []
 
     async def get_user_stats(self, discord_id: str) -> Dict[str, Any]:
-        """Get comprehensive user statistics for academy status display."""
+        """Get comprehensive user statistics for academy status display (optimized, no N+1 queries)."""
         try:
             # Get user data
             user = await self.db.get_or_create_user(discord_id)
-            
-            # Get user's collection
+
+            # Get user's collection (already includes current_star_level and rarity)
             collection = await self.db.get_user_collection(discord_id)
-            
+
             # Calculate stats
             total_waifus = len(collection)
             unique_waifus = len(set(waifu['waifu_id'] for waifu in collection))
-            
+
             # Calculate collection power and star distribution
             collection_power = 0
             star_distribution = {}
-            
+
             for waifu in collection:
-                waifu_id = waifu['waifu_id']
-                # Get current star level for this waifu
-                star_level = await self.get_character_star_level(discord_id, waifu_id)
-                
-                # Ensure minimum star level is 1
+                # Use current_star_level if present, else fallback to rarity
+                star_level = waifu.get('current_star_level')
+                if star_level is None:
+                    star_level = waifu.get('rarity', 1)
                 if star_level == 0:
                     star_level = 1
-                
+
                 # Calculate power based on star level (exponential growth)
-                # 1* = 100, 2* = 250, 3* = 500, 4* = 1000, 5* = 2000, etc.
                 if star_level == 1:
                     power = 100
                 elif star_level == 2:
@@ -888,30 +886,28 @@ class WaifuService:
                 elif star_level == 4:
                     power = 1000
                 elif star_level >= 5:
-                    # Exponential growth for 5+ stars
                     power = 2000 * (2 ** (star_level - 5))
                 else:
                     power = 100
-                    
+
                 collection_power += power
-                
+
                 # Count star distribution
                 if star_level in star_distribution:
                     star_distribution[star_level] += 1
                 else:
                     star_distribution[star_level] = 1
-            
+
             return {
                 "user": user,
                 "total_waifus": total_waifus,
                 "unique_waifus": unique_waifus,
                 "collection_power": collection_power,
-                "rarity_distribution": star_distribution  # Renamed for clarity
+                "rarity_distribution": star_distribution
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error getting user stats: {e}")
-            # Return default stats structure
             user = await self.db.get_or_create_user(discord_id)
             return {
                 "user": user,
