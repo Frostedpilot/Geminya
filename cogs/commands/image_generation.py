@@ -254,6 +254,9 @@ class ImageGenerationCog(BaseCommand):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
 
+            # Defer the response since image generation takes time
+            await interaction.response.defer()
+
             # Get the actual model ID
             model_id = image_models[model]
 
@@ -296,9 +299,9 @@ class ImageGenerationCog(BaseCommand):
                 embed.set_image(url=input_image_url)
 
             if files:
-                await interaction.response.send_message(embed=embed, files=files)
+                await interaction.edit_original_response(embed=embed, attachments=files)
             else:
-                await interaction.response.send_message(embed=embed)
+                await interaction.edit_original_response(embed=embed)
 
             # Prepare the request
             try:
@@ -371,12 +374,15 @@ class ImageGenerationCog(BaseCommand):
                 color=0xFF0000,
             )
 
-            if interaction.response.is_done():
-                await interaction.followup.send(embed=error_embed, ephemeral=True)
-            else:
-                await interaction.response.send_message(
-                    embed=error_embed, ephemeral=True
-                )
+            try:
+                if interaction.response.is_done():
+                    await interaction.followup.send(embed=error_embed, ephemeral=True)
+                else:
+                    await interaction.response.send_message(
+                        embed=error_embed, ephemeral=True
+                    )
+            except Exception as followup_error:
+                self.logger.error(f"Failed to send error message: {followup_error}")
 
     @app_commands.command(
         name="image_models", description="List available image generation models"

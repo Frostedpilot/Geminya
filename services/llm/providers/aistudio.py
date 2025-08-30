@@ -280,7 +280,11 @@ class AIStudioProvider(LLMProvider):
             google_tools = None
             if tools:
                 google_functions = self.convert_mcp_tools(tools)
-                google_tools = genai_types.Tool(function_declarations=google_functions)
+                google_tools = genai_types.Tool(
+                    function_declarations=google_functions,
+                    google_search=genai_types.GoogleSearch(),
+                    google_search_retrieval=genai_types.GoogleSearchRetrieval(),
+                )
 
             # Get the config
             additional_config = request.provider_specific or {}
