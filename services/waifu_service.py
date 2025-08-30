@@ -13,6 +13,21 @@ from services.database import DatabaseService
 
 
 class WaifuService:
+    async def clamp_pity_counter(self, discord_id: str):
+        """Ensure the user's pity counter never exceeds the 3★ pity cap."""
+        user = await self.db.get_or_create_user(discord_id)
+        pity = user.get("pity_counter", 0)
+        if pity > self.PITY_3_STAR:
+            if self.db.connection_pool:
+                async with self.db.connection_pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        UPDATE users SET pity_counter = $1 WHERE discord_id = $2
+                        """,
+                        self.PITY_3_STAR, discord_id
+                    )
+            else:
+                await self.db.update_pity_counter(discord_id, reset=True)
     # ... existing code ...
     """Service for managing waifu gacha system with star upgrades."""
 
@@ -28,7 +43,7 @@ class WaifuService:
 
     # SHARD REWARDS (based on current star level of pulled character)
     SHARD_REWARDS = {
-        3: 90,  # 3-star dupe = 90 shards
+        3: 50,  # 3-star dupe = 50 shards
         2: 20,  # 2-star dupe = 20 shards
         1: 5,   # 1-star dupe = 5 shards
     }
@@ -395,6 +410,8 @@ class WaifuService:
             await self.db.update_pity_counter(discord_id, reset=True)
         else:
             await self.db.update_pity_counter(discord_id)
+        # Clamp pity counter after update
+        await self.clamp_pity_counter(discord_id)
 
         # Check for automatic rank up after summon
         await self.check_and_update_rank(discord_id)
@@ -564,15 +581,18 @@ class WaifuService:
         for i in range(count):
             current_user = await self.db.get_or_create_user(discord_id)
             # Determine rarity
+            pity_reset_this_roll = False
             if pity_active and not pity_consumed:
                 natural_rarity = await self._determine_summon_rarity(current_user)
                 if natural_rarity == 3:
                     rarity = 3
                     pity_consumed = True
+                    pity_reset_this_roll = True
                     await self.db.update_pity_counter(discord_id, reset=True)
                 elif i == count - 1 or (i < count - 1 and (count - i) == (self.PITY_3_STAR - pity_count)):
                     rarity = 3
                     pity_consumed = True
+                    pity_reset_this_roll = True
                     await self.db.update_pity_counter(discord_id, reset=True)
                 else:
                     rarity = natural_rarity
@@ -580,7 +600,13 @@ class WaifuService:
                 rarity = await self._determine_summon_rarity(current_user)
                 if rarity == 3 and pity_active and not pity_consumed:
                     pity_consumed = True
+                    pity_reset_this_roll = True
                     await self.db.update_pity_counter(discord_id, reset=True)
+            # Only increment pity if not reset this roll
+            if not pity_reset_this_roll:
+                await self.db.update_pity_counter(discord_id)
+            # Clamp pity counter after update
+            await self.clamp_pity_counter(discord_id)
 
             # Banner pool selection logic
             weights = []
@@ -745,11 +771,7 @@ class WaifuService:
                     "quartz_gained": quartz_gained,
                     "upgrades_performed": upgrades_performed
                 }
-            # Update pity counter
-            if rarity >= 3:
-                await self.db.update_pity_counter(discord_id, reset=True)
-            else:
-                await self.db.update_pity_counter(discord_id)
+            # Pity counter already updated and clamped above per roll
             # Track shard gains and upgrades
             if summon_result["shards_gained"] > 0:
                 char_name = waifu["name"]
