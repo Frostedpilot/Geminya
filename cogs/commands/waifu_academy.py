@@ -225,44 +225,55 @@ class WaifuAcademyCog(BaseCommand):
                 str(ctx.author.id)
             )
 
-            from datetime import datetime, timezone
-            import time
+            from datetime import datetime, timezone, timedelta
+            import pytz
 
-            now = datetime.now(timezone.utc)
-            current_timestamp = int(now.timestamp())
-            
+            # Set timezone for UTC+7
+            tz = pytz.timezone('Asia/Bangkok')
+            now_utc = datetime.now(timezone.utc)
+            now_local = now_utc.astimezone(tz)
+            current_timestamp = int(now_utc.timestamp())
+
             # Get the last daily reset timestamp
             last_daily_reset = user.get("last_daily_reset", 0)
-            
-            # Calculate if 24 hours have passed since last claim
-            time_since_last_claim = current_timestamp - last_daily_reset
-            hours_since_claim = time_since_last_claim / 3600
-            
-            # Check if user can claim (24 hours = 86400 seconds)
-            if last_daily_reset > 0 and time_since_last_claim < 86400:
-                # Calculate remaining time
-                remaining_seconds = 86400 - time_since_last_claim
-                remaining_hours = int(remaining_seconds // 3600)
-                remaining_minutes = int((remaining_seconds % 3600) // 60)
-                
+
+            # Calculate the last and next reset times at 0h UTC+7
+            if last_daily_reset > 0:
+                last_reset_dt_utc = datetime.fromtimestamp(last_daily_reset, tz=timezone.utc)
+                last_reset_local = last_reset_dt_utc.astimezone(tz)
+                # The last reset's 0h UTC+7
+                last_reset_zero = last_reset_local.replace(hour=0, minute=0, second=0, microsecond=0)
+                if last_reset_local.hour >= 0:
+                    # If last claim was after 0h, next reset is next day 0h
+                    next_reset_local = last_reset_zero + timedelta(days=1)
+                else:
+                    next_reset_local = last_reset_zero
+                next_reset_utc = next_reset_local.astimezone(timezone.utc)
+                next_reset_ts = int(next_reset_utc.timestamp())
+            else:
+                # Never claimed before, allow claim
+                next_reset_ts = 0
+
+            if last_daily_reset > 0 and current_timestamp < next_reset_ts:
+                # Not yet time for next reset
+                seconds_left = next_reset_ts - current_timestamp
+                hours_left = int(seconds_left // 3600)
+                minutes_left = int((seconds_left % 3600) // 60)
                 embed = discord.Embed(
                     title="⏰ Daily Reward Already Claimed",
                     description=f"You've already claimed your daily rewards today!",
                     color=0xF39C12,
                 )
-                
                 embed.add_field(
                     name="⏳ Time Until Next Claim",
-                    value=f"{remaining_hours}h {remaining_minutes}m",
+                    value=f"{hours_left}h {minutes_left}m",
                     inline=True,
                 )
-                
                 embed.add_field(
                     name="💎 Current Crystals",
                     value=f"{user['sakura_crystals']:,}",
                     inline=True,
                 )
-                
                 embed.set_footer(text="Come back tomorrow for more rewards!")
                 await ctx.send(embed=embed)
                 return
@@ -274,8 +285,8 @@ class WaifuAcademyCog(BaseCommand):
             await self.services.waifu_service.db.update_user_crystals(
                 str(ctx.author.id), daily_crystals
             )
-            
-            # Update the last daily reset timestamp (no streak tracking)
+
+            # Set the reset timestamp to now (UTC)
             await self.services.waifu_service.db.update_daily_reset(
                 str(ctx.author.id), current_timestamp, 0  # 0 for streak since we're not using it
             )
@@ -286,27 +297,22 @@ class WaifuAcademyCog(BaseCommand):
                 description=f"Welcome back! You've earned your daily crystals!",
                 color=0x2ECC71,
             )
-
             embed.add_field(
                 name="💎 Crystals Earned",
                 value=f"**{daily_crystals}** crystals",
                 inline=True,
             )
-
             embed.add_field(
                 name="💎 Current Crystals",
                 value=f"{user['sakura_crystals'] + daily_crystals:,}",
                 inline=True,
             )
-
             embed.add_field(
                 name="⏰ Next Reward",
-                value="Available in 24 hours",
+                value="Available after 0:00 UTC+7",
                 inline=True,
             )
-
             embed.set_footer(text="Come back tomorrow for more rewards!")
-
             await ctx.send(embed=embed)
 
         except Exception as e:

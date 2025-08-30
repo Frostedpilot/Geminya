@@ -524,6 +524,7 @@ class WaifuService:
 
     # ==================== MULTI-SUMMON WITH NEW SYSTEM ====================
 
+
     async def perform_multi_summon(self, discord_id: str, banner_id: Optional[int] = None) -> Dict[str, Any]:
         """Perform multiple waifu summons with new star system - always 10 rolls. Guarantees at least one 2★ or higher per multi. Optionally use a banner pool."""
         count = 10  # Fixed to always be 10 rolls
@@ -542,13 +543,11 @@ class WaifuService:
         # Deduct the total cost upfront
         await self.db.update_user_crystals(discord_id, -total_cost)
 
-        # --- Improved Pity logic: pity is consumed as soon as a 3★ is pulled (naturally or via pity) ---
-        pity_count = user.get("pity_counter", 0)
-        pity_active = pity_count >= self.PITY_3_STAR
-        pity_consumed = False
-        results = []
-        rarity_counts = {1: 0, 2: 0, 3: 0}
+        # Use a local pity counter for this multi
+        pity_counter = user.get("pity_counter", 0)
         waifu_rarity_pairs = []
+        rarity_counts = {1: 0, 2: 0, 3: 0}
+        forced_3star_this_multi = False
 
         # Prepare waifu pool for this banner or default
         if banner_id is not None:
@@ -560,12 +559,10 @@ class WaifuService:
             if not banner_items:
                 return {"success": False, "message": f"No waifus in this banner pool."}
             waifu_ids = [item["item_id"] for item in banner_items]
-            # Always use the global pool for guarantee logic
             waifus_by_rarity = {
                 r: [w for w in self._waifu_list if w.get("rarity") == r]
                 for r in [1, 2, 3]
             }
-            rate_up_map = {item["item_id"]: item.get("rate_up") for item in banner_items}
         else:
             banner_type = None
             banner_items = []
@@ -574,39 +571,20 @@ class WaifuService:
                 r: [w for w in self._waifu_list if w.get("rarity") == r]
                 for r in [1, 2, 3]
             }
-            rate_up_map = {}
-
-
 
         for i in range(count):
-            current_user = await self.db.get_or_create_user(discord_id)
-            # Determine rarity
-            pity_reset_this_roll = False
-            if pity_active and not pity_consumed:
-                natural_rarity = await self._determine_summon_rarity(current_user)
-                if natural_rarity == 3:
-                    rarity = 3
-                    pity_consumed = True
-                    pity_reset_this_roll = True
-                    await self.db.update_pity_counter(discord_id, reset=True)
-                elif i == count - 1 or (i < count - 1 and (count - i) == (self.PITY_3_STAR - pity_count)):
-                    rarity = 3
-                    pity_consumed = True
-                    pity_reset_this_roll = True
-                    await self.db.update_pity_counter(discord_id, reset=True)
-                else:
-                    rarity = natural_rarity
+            # Determine rarity for this roll
+            if not forced_3star_this_multi and pity_counter >= self.PITY_3_STAR:
+                rarity = 3
+                forced_3star_this_multi = True
+                pity_counter = 0  # Reset local pity after forced 3★
             else:
-                rarity = await self._determine_summon_rarity(current_user)
-                if rarity == 3 and pity_active and not pity_consumed:
-                    pity_consumed = True
-                    pity_reset_this_roll = True
-                    await self.db.update_pity_counter(discord_id, reset=True)
-            # Only increment pity if not reset this roll
-            if not pity_reset_this_roll:
-                await self.db.update_pity_counter(discord_id)
-            # Clamp pity counter after update
-            await self.clamp_pity_counter(discord_id)
+                # Simulate user dict for _determine_summon_rarity
+                rarity = await self._determine_summon_rarity({"pity_counter": pity_counter})
+                if rarity == 3:
+                    pity_counter = 0  # Reset local pity after natural 3★
+                else:
+                    pity_counter += 1
 
             # Banner pool selection logic
             weights = []
@@ -629,7 +607,6 @@ class WaifuService:
                         available_waifus = pool
                         weights = [1] * len(available_waifus)
                 else:
-                    # For limited banners, always include all 1★ waifus in the 1★ pool
                     if banner_type == "limited" and rarity == 1:
                         pool = [w for w in self._waifu_list if w["waifu_id"] in waifu_ids and w.get("rarity") == 1]
                         all_one_star_waifus = [w for w in self._waifu_list if w.get("rarity") == 1]
@@ -649,6 +626,23 @@ class WaifuService:
             selected_waifu = random.choices(available_waifus, weights=weights, k=1)[0]
             waifu_rarity_pairs.append((selected_waifu, rarity))
             rarity_counts[rarity] += 1
+
+        # After all rolls, update the user's pity counter in the DB to match local
+        # Clamp to max
+        if pity_counter > self.PITY_3_STAR:
+            pity_counter = self.PITY_3_STAR
+        if self.db.connection_pool:
+            async with self.db.connection_pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE users SET pity_counter = $1 WHERE discord_id = $2
+                    """,
+                    pity_counter, discord_id
+                )
+        else:
+            await self.db.update_pity_counter(discord_id, reset=True)
+
+        # ...existing code for result processing...
 
         # --- 2★ Guarantee: If no 2★ or 3★ was pulled, upgrade a random 1★ to 2★ ---
         if rarity_counts[2] == 0 and rarity_counts[3] == 0:
