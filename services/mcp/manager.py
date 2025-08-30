@@ -421,6 +421,7 @@ class MCPClientManager:
                 )
 
                 final_response = await self.llm_manager._generate_with_provider(request)
+                self.logger.debug(f"Final response generated: {final_response.content}")
                 return {"final_text": final_response.content}
 
             return {

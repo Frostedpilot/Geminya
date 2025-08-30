@@ -20,6 +20,9 @@ from .models import (
     QWEN_3_235B_A22B_2507,
     DOLPHIN_MISTRAL_24B,
     MISTRAL_NEMO,
+    ZAI_GLM_4_5_AIR,
+    GEMINI_2_5_FLASH_LITE_GG,
+    GEMINI_2_5_FLASH_GG,
 )
 
 load_dotenv()
@@ -77,10 +80,10 @@ class Config:
         default_factory=lambda: {
             "GEMINYA": DEEPSEEK_V3_0324,
             "NIGLER": DOLPHIN_MISTRAL_24B,
-            "DEV": DEEPSEEK_V3_0324,
+            "DEV": GEMINI_2_5_FLASH_LITE_GG,
         }
     )
-    default_tool_model: str = DEEPSEEK_V3_0324
+    default_tool_model: str = GEMINI_2_5_FLASH_GG
     fall_back_models: Dict[str, str] = field(
         default_factory=lambda: {
             "GEMINYA": DEEPSEEK_V3_0324_PAID,
@@ -90,7 +93,7 @@ class Config:
     )
     fall_back_model: str = DEEPSEEK_V3_0324_PAID
     fall_back_tool_model: str = QWEN_3_235B_A22B_2507
-    check_model: str = DOLPHIN_MISTRAL_24B
+    check_model: str = ZAI_GLM_4_5_AIR
 
     default_personas: Dict[str, str] = field(
         default_factory=lambda: {
@@ -391,13 +394,11 @@ class Config:
         mal_client_id = secrets.get("MAL_CLIENT_ID", "")
         mal_client_secret = secrets.get("MAL_CLIENT_SECRET", "")
 
-
         # Spotify credentials
         spotify_username = secrets.get("SPOTIFY_USERNAME", "")
         spotify_password = secrets.get("SPOTIFY_PASSWORD", "")
         spotify_client_id = secrets.get("SPOTIFY_CLIENT_ID", "")
         spotify_client_secret = secrets.get("SPOTIFY_CLIENT_SECRET", "")
-
 
         # Database credentials from secrets (PostgreSQL only)
         postgres_host = secrets.get("POSTGRES_HOST", "")
@@ -405,7 +406,6 @@ class Config:
         postgres_user = secrets.get("POSTGRES_USER", "")
         postgres_password = secrets.get("POSTGRES_PASSWORD", "")
         postgres_database = secrets.get("POSTGRES_DB", "")
-
 
         if not discord_tokens:
             raise ConfigError("DISCORD_BOT_TOKEN not found in secrets file")
@@ -417,6 +417,7 @@ class Config:
         if config_path.exists():
             try:
                 import yaml
+
                 with open(config_path, "r", encoding="utf-8") as f:
                     config_data = yaml.safe_load(f) or {}
             except ImportError:

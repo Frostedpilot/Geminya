@@ -91,8 +91,9 @@ class OpenRouterProvider(LLMProvider):
                 api_request["max_tokens"] = request.max_tokens
 
             # Add tools if provided
-            if request.tools:
-                api_request["tools"] = request.tools
+            if request.tools and isinstance(request.tools[0], Tool):
+                tools = self.convert_mcp_tools(request.tools)
+                api_request["tools"] = tools
 
             # Add provider-specific parameters
             api_request.update(request.provider_specific)
@@ -352,24 +353,17 @@ class OpenRouterProvider(LLMProvider):
                 properties = {}
                 required = []
 
-                if hasattr(tool, "inputSchema") and tool.inputSchema:
-                    if "properties" in tool.inputSchema:
-                        properties = tool.inputSchema["properties"]
-                    if "required" in tool.inputSchema:
-                        required_field = tool.inputSchema["required"]
-                        # Handle both list and string cases
-                        if isinstance(required_field, list):
-                            required = required_field
-                        elif isinstance(required_field, str):
-                            required = [required_field]
-                        else:
-                            required = []
+                name = tool.name
+                description = tool.description
+                if tool.inputSchema and "properties" in tool.inputSchema:
+                    properties = tool.inputSchema["properties"]
+                    required = tool.inputSchema.get("required", [])
 
-                converted_tool = {
+                tool_dict = {
                     "type": "function",
                     "function": {
-                        "name": tool.name,
-                        "description": tool.description or "",
+                        "name": name,
+                        "description": description,
                         "parameters": {
                             "type": "object",
                             "properties": properties,
@@ -377,26 +371,83 @@ class OpenRouterProvider(LLMProvider):
                         },
                     },
                 }
-                tools.append(converted_tool)
+
+                self.logger.debug(
+                    f"Converted tool {tool.name} to OpenAI format: {tool_dict}"
+                )
+
+                if not self._verify_tool_dict(tool_dict):
+                    self.logger.warning(f"Invalid tool format for tool {tool.name}")
+                    self.logger.warning(f"Tool dict: {tool_dict}")
+
+                tools.append(tool_dict)
 
             except Exception:
-                # Fallback to basic tool format
-                fallback_tool = {
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": getattr(tool, "description", ""),
-                        "parameters": {
-                            "type": "object",
-                            "properties": {},
-                            "required": [],
-                        },
-                    },
-                }
-                tools.append(fallback_tool)
+                self.logger.error(f"Error converting tool {tool.name}", exc_info=True)
+                continue
 
         self.logger.debug(f"Converted {len(tools)} MCP tools to OpenAI format")
         return tools
+
+    def _verify_tool_dict(self, tool_dict: Dict[str, Any]) -> bool:
+        # First verify the properties field
+        try:
+            props = set()
+            properties = tool_dict["function"]["parameters"]["properties"]
+            for prop_name, prop_info in properties.items():
+                props.add(prop_name)
+                type_info = prop_info.get("type")
+
+                # Type should be one of pydantic normal types
+                if type_info.lower() not in {
+                    "string",
+                    "integer",
+                    "boolean",
+                    "array",
+                    "object",
+                }:
+                    self.logger.warning(
+                        f"Invalid type for property '{prop_name}': {type_info}"
+                    )
+
+                if type_info.lower() == "array":
+                    # If array, items must be in prop info
+                    items_info = prop_info.get("items")
+                    if not items_info:
+                        self.logger.warning(
+                            f"Array property '{prop_name}' is missing 'items' field"
+                        )
+
+                if type_info.lower() == "object":
+                    # If object, properties must be in prop info
+                    properties_info = prop_info.get("properties")
+                    if not properties_info:
+                        self.logger.warning(
+                            f"Object property '{prop_name}' is missing 'properties' field"
+                        )
+
+                description_info = prop_info.get("description")
+                if not description_info or not isinstance(description_info, str):
+                    self.logger.warning(
+                        f"Property '{prop_name}' is missing 'description' field"
+                    )
+
+            required_fields = tool_dict["function"]["parameters"].get("required", [])
+            # Required fields must be in prop info
+            for field in required_fields:
+                if field not in props:
+                    self.logger.warning(
+                        f"Required property '{field}' is missing from '{prop_name}'"
+                    )
+
+        except KeyError:
+            self.logger.error("Tool dict missing required 'properties' field")
+            return False
+        except Exception as e:
+            self.logger.error(f"Error accessing 'properties' field: {e}")
+            return False
+
+        return True
 
     def _get_jailbreak_prompt(self) -> str:
         """Retrieve the jailbreak prompt for the model."""
