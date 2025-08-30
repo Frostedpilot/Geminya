@@ -21,6 +21,7 @@ from .models import (
     DOLPHIN_MISTRAL_24B,
     MISTRAL_NEMO,
     ZAI_GLM_4_5_AIR,
+    GEMINI_2_5_FLASH_LITE_GG,
 )
 
 load_dotenv()
@@ -78,7 +79,7 @@ class Config:
         default_factory=lambda: {
             "GEMINYA": DEEPSEEK_V3_0324,
             "NIGLER": DOLPHIN_MISTRAL_24B,
-            "DEV": DEEPSEEK_V3_0324,
+            "DEV": GEMINI_2_5_FLASH_LITE_GG,
         }
     )
     default_tool_model: str = ZAI_GLM_4_5_AIR
