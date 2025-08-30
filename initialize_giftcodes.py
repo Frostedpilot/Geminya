@@ -39,6 +39,13 @@ DEFAULT_GIFT_CODES = [
         "reward_value": 2000,
         "is_active": True,
         "usage_limit": 99,
+    },
+    {
+        "code": "FREEPITY",
+        "reward_type": "gems",
+        "reward_value": 500,
+        "is_active": True,
+        "usage_limit": 99,
     }
 ]
 
