@@ -30,6 +30,19 @@ class AIStudioProvider(LLMProvider):
         super().__init__("aistudio", config, logger)
         self.client: Optional[Client] = None
 
+        self._retriable_errors = [
+            genai_types.FinishReason.MALFORMED_FUNCTION_CALL,
+            genai_types.FinishReason.BLOCKLIST,
+            genai_types.FinishReason.PROHIBITED_CONTENT,
+            genai_types.FinishReason.SPII,
+        ]
+
+        self._retriable_codes = [
+            429,  # Too Many Requests
+            500,  # Internal Server Error
+            503,  # Service Unavailable
+        ]
+
     async def initialize(self):
         try:
             # Get the api key from the config
@@ -294,7 +307,9 @@ class AIStudioProvider(LLMProvider):
             self.logger.debug(f"AI Studio response text: {response_text}")
             tool_calls = []
             if (
-                hasattr(response.candidates[0], "content")
+                response.candidates
+                and len(response.candidates) > 0
+                and hasattr(response.candidates[0], "content")
                 and response.candidates[0].content
             ):
                 for part in response.candidates[0].content.parts:
@@ -315,6 +330,27 @@ class AIStudioProvider(LLMProvider):
 
             if not (response.text or tool_calls):
                 self.logger.warning(f"No content or tool calls in response: {response}")
+
+                # Check if candidates exist and have finish_reason
+                if response.candidates and len(response.candidates) > 0:
+                    finish_reason = response.candidates[0].finish_reason
+                    if finish_reason in self._retriable_errors:
+                        raise RetriableError("aistudio", str(finish_reason))
+
+                # Check if content was blocked
+                if hasattr(response, "prompt_feedback") and response.prompt_feedback:
+                    if (
+                        hasattr(response.prompt_feedback, "block_reason")
+                        and response.prompt_feedback.block_reason
+                    ):
+                        block_reason = response.prompt_feedback.block_reason
+                        self.logger.warning(
+                            f"Content blocked by AI Studio: {block_reason}"
+                        )
+                        raise RetriableError(
+                            "aistudio", f"Content blocked: {block_reason}"
+                        )
+
                 raise ProviderError("aistudio", "No response from API")
 
             llmresponse = LLMResponse(
@@ -332,6 +368,17 @@ class AIStudioProvider(LLMProvider):
             return llmresponse
 
         except Exception as e:
+
+            if isinstance(e, RetriableError):
+                # Forward that upstream
+                raise RetriableError("aistudio", str(e)) from e
+
+            # else, maybe a http code error
+            error_str = str(e).lower()
+            for code in self._retriable_codes:
+                if str(code) in error_str:
+                    raise RetriableError("aistudio", str(e)) from e
+
             raise ProviderError("aistudio", str(e)) from e
 
     async def generate_image(self, request: ImageRequest) -> ImageResponse:

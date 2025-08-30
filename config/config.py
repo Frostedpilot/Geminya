@@ -22,6 +22,7 @@ from .models import (
     MISTRAL_NEMO,
     ZAI_GLM_4_5_AIR,
     GEMINI_2_5_FLASH_LITE_GG,
+    GEMINI_2_5_FLASH_GG,
 )
 
 load_dotenv()
@@ -82,7 +83,7 @@ class Config:
             "DEV": GEMINI_2_5_FLASH_LITE_GG,
         }
     )
-    default_tool_model: str = ZAI_GLM_4_5_AIR
+    default_tool_model: str = GEMINI_2_5_FLASH_GG
     fall_back_models: Dict[str, str] = field(
         default_factory=lambda: {
             "GEMINYA": DEEPSEEK_V3_0324_PAID,
@@ -92,7 +93,7 @@ class Config:
     )
     fall_back_model: str = DEEPSEEK_V3_0324_PAID
     fall_back_tool_model: str = QWEN_3_235B_A22B_2507
-    check_model: str = DOLPHIN_MISTRAL_24B
+    check_model: str = ZAI_GLM_4_5_AIR
 
     default_personas: Dict[str, str] = field(
         default_factory=lambda: {
