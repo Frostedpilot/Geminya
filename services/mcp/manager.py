@@ -416,7 +416,7 @@ class MCPClientManager:
 
                 request = LLMRequest(
                     messages=final_messages,
-                    model=self.state_manager.get_model(server_id=server_id),
+                    model=self.state_manager.get_tool_model(server_id=server_id),
                     temperature=0.7,
                 )
 
