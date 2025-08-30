@@ -16,6 +16,8 @@ MISTRAL_NEMO = "openrouter/mistralai/mistral-nemo"
 DOLPHIN_MISTRAL_24B = (
     "openrouter/cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
 )
+DEEPSEEK_V3_1 = "openrouter/deepseek/deepseek-chat-v3.1:free"
+ZAI_GLM_4_5_AIR = "openrouter/z-ai/glm-4.5-air:free"
 GEMINI_2_5_FLASH_IMAGE_PREVIEW = "openrouter/google/gemini-2.5-flash-image-preview:free"
 
 GEMINI_2_5_FLASH_GG = "aistudio/gemini-2.5-flash"
@@ -25,6 +27,7 @@ GEMINI_2_5_PRO_GG = "aistudio/gemini-2.5-pro"
 # Model display name constants
 DEEPSEEK_V3_NAME = "DeepSeek V3 0324"
 DEEPSEEK_V3_PAID_NAME = "DeepSeek V3 0324 (paid)"
+DEEPSEEK_V3_1_NAME = "DeepSeek V3.1"
 KIMI_K2_NAME = "Kimi K2"
 DEEPSEEK_CHIMERA_NAME = "DeepSeek Chimera"
 DEEPSEEK_R1_NAME = "DeepSeek R1 0528"
@@ -32,6 +35,7 @@ GEMINI_2_5_FLASH_NAME = "Gemini 2.5 Flash"
 QWEN_3_235B_NAME = "Qwen 3 235B A22B Instruct 2507"
 MISTRAL_NEMO_NAME = "Mistral Nemo"
 DOLPHIN_MISTRAL_24B_NAME = "Venice Uncensored"
+ZAI_GLM_4_5_AIR_NAME = "Z-AI GLM 4.5 Air"
 GEMINI_2_5_FLASH_IMAGE_PREVIEW_NAME = "Gemini 2.5 Flash Image Preview"
 
 GEMINI_2_5_FLASH_GG_NAME = "Gemini 2.5 Flash (Aistudio)"
@@ -42,12 +46,14 @@ GEMINI_2_5_PRO_GG_NAME = "Gemini 2.5 Pro (Aistudio)"
 MODEL_NAMES = {
     DEEPSEEK_V3_NAME: DEEPSEEK_V3_0324,
     DEEPSEEK_V3_PAID_NAME: DEEPSEEK_V3_0324_PAID,
+    DEEPSEEK_V3_1_NAME: DEEPSEEK_V3_1,
     KIMI_K2_NAME: KIMI_K2,
     DEEPSEEK_CHIMERA_NAME: DEEPSEEK_CHIMERA,
     DEEPSEEK_R1_NAME: DEEPSEEK_R1_0528,
     GEMINI_2_5_FLASH_NAME: GEMINI_2_5_FLASH,
     QWEN_3_235B_NAME: QWEN_3_235B_A22B_2507,
     MISTRAL_NEMO_NAME: MISTRAL_NEMO,
+    ZAI_GLM_4_5_AIR_NAME: ZAI_GLM_4_5_AIR,
     GEMINI_2_5_FLASH_IMAGE_PREVIEW_NAME: GEMINI_2_5_FLASH_IMAGE_PREVIEW,
     GEMINI_2_5_FLASH_GG_NAME: GEMINI_2_5_FLASH_GG,
     GEMINI_2_5_FLASH_LITE_GG_NAME: GEMINI_2_5_FLASH_LITE_GG,
@@ -73,6 +79,24 @@ MODEL_INFOS: Dict[str, ModelInfo] = {
         supports_tools=True,
         cost_per_million_tokens={"in": 0.18, "out": 0.72},
         description="DeepSeek V3, a 685B-parameter, mixture-of-experts model, is the latest iteration of the flagship chat model family from the DeepSeek team. It succeeds the DeepSeek V3 model and performs really well on a variety of tasks.",
+    ),
+    DEEPSEEK_V3_1_NAME: ModelInfo(
+        id=DEEPSEEK_V3_1,
+        name="DeepSeek V3.1",
+        context_length=64000,
+        provider="openrouter",
+        supports_tools=True,
+        cost_per_million_tokens={"in": 0.00, "out": 0.00},
+        description="DeepSeek-V3.1 is a large hybrid reasoning model (671B parameters, 37B active) that supports both thinking and non-thinking modes via prompt templates. It extends the DeepSeek-V3 base with a two-phase long-context training process, reaching up to 128K tokens, and uses FP8 microscaling for efficient inference. Users can control the reasoning behaviour with the reasoning enabled boolean. Learn more in our docs. The model improves tool use, code generation, and reasoning efficiency, achieving performance comparable to DeepSeek-R1 on difficult benchmarks while responding more quickly. It supports structured tool calling, code agents, and search agents, making it suitable for research, coding, and agentic workflows. It succeeds the DeepSeek V3-0324 model and performs well on a variety of tasks.",
+    ),
+    ZAI_GLM_4_5_AIR_NAME: ModelInfo(
+        id=ZAI_GLM_4_5_AIR,
+        name="Z-AI GLM 4.5 Air",
+        provider="openrouter",
+        context_length=131072,
+        supports_tools=True,
+        cost_per_million_tokens={"in": 0.00, "out": 0.00},
+        description="Z-AI GLM 4.5 Air is a state-of-the-art language model designed for high-performance tasks. With its advanced architecture and extensive training, it excels in various applications, including natural language understanding, text generation, and more.",
     ),
     KIMI_K2_NAME: ModelInfo(
         id=KIMI_K2,
