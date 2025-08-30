@@ -416,11 +416,12 @@ class MCPClientManager:
 
                 request = LLMRequest(
                     messages=final_messages,
-                    model=self.state_manager.get_model(server_id=server_id),
+                    model=self.state_manager.get_tool_model(server_id=server_id),
                     temperature=0.7,
                 )
 
                 final_response = await self.llm_manager._generate_with_provider(request)
+                self.logger.debug(f"Final response generated: {final_response.content}")
                 return {"final_text": final_response.content}
 
             return {
