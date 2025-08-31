@@ -1150,18 +1150,29 @@ class WaifuSummonCog(BaseCommand):
         name="nwnl_profile", description="👤 View detailed profile of a waifu with star information"
     )
     @discord.app_commands.describe(
-        waifu_name="Name of the waifu to search (required)",
+        waifu_name="Name of the waifu to search (optional)",
         series_name="Series name to filter by (optional)"
     )
     @discord.app_commands.autocomplete(waifu_name=waifu_name_autocomplete)
-    async def nwnl_profile(self, ctx: commands.Context, *, waifu_name: str, series_name: Optional[str] = None):
+    async def nwnl_profile(self, ctx: commands.Context, *, waifu_name: Optional[str] = None, series_name: Optional[str] = None):
         """Display all matching waifu profiles with star system information, using a paginator. Optionally filter by series name."""
         await ctx.defer()
         try:
+            if not waifu_name and not series_name:
+                embed = discord.Embed(
+                    title="ℹ️ Input Required",
+                    description="Please provide at least one of `waifu_name` or `series_name` to view a profile.\nExample: `/nwnl_profile waifu_name:Rem` or `/nwnl_profile series_name:Re:Zero`.",
+                    color=0x3498DB,
+                )
+                await ctx.send(embed=embed)
+                return
+
             # Search for all matching waifus, optionally filtering by series
-            search_results = await self.services.database.search_waifus(waifu_name, 20, series_name=series_name)
+            search_results = await self.services.database.search_waifus(waifu_name or "", 20, series_name=series_name)
             if not search_results:
-                desc = f"No waifu found matching '{waifu_name}'"
+                desc = "No waifu found"
+                if waifu_name:
+                    desc += f" matching '{waifu_name}'"
                 if series_name:
                     desc += f" in series '{series_name}'"
                 desc += ". Try a different name or check spelling!"

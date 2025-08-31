@@ -66,7 +66,7 @@ DEFAULT_SHOP_ITEMS = [
     {
         "name": "1★ Selectix Ticket",
         "description": "Choose any 1★ character of your choice.",
-        "price": 50,
+        "price": 25,
         "category": "tickets",
         "item_type": "selectix_ticket",
         "item_data": {

@@ -931,27 +931,28 @@ class DatabaseService:
             return result[-1] != '0'
 
     # Search methods
-    async def search_waifus(self, waifu_name: str, limit: Optional[int] = None, series_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def search_waifus(self, waifu_name: Optional[str] = None, limit: Optional[int] = None, series_name: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Search for waifus by name, and optionally by series name (PostgreSQL).
-        waifu_name is always required; series_name is optional.
-        Results are sorted by relevance to waifu_name (and series_name if provided).
+        Search for waifus by name and/or series name (PostgreSQL).
+        At least one of waifu_name or series_name must be provided.
+        Results are sorted by relevance if waifu_name is provided.
         """
+        if not waifu_name and not series_name:
+            raise ValueError("At least one of waifu_name or series_name must be provided.")
         async with self.connection_pool.acquire() as conn:
-            # Always match waifu_name; optionally match series_name
-            if series_name:
+            if waifu_name and series_name:
                 query = (
                     "SELECT *, "
                     "LEAST(POSITION(LOWER($1) IN LOWER(name)), POSITION(LOWER($1) IN LOWER(series))) AS relevance "
                     "FROM waifus "
-                    "WHERE (name ILIKE $2) AND (series ILIKE $3) "
+                    "WHERE name ILIKE $2 AND series ILIKE $3 "
                     "ORDER BY relevance, name"
                 )
                 params = (waifu_name, f"%{waifu_name}%", f"%{series_name}%")
                 if limit:
                     query += " LIMIT $4"
                     params = params + (limit,)
-            else:
+            elif waifu_name:
                 query = (
                     "SELECT *, "
                     "LEAST(POSITION(LOWER($1) IN LOWER(name)), POSITION(LOWER($1) IN LOWER(series))) AS relevance "
@@ -962,6 +963,17 @@ class DatabaseService:
                 params = (waifu_name, f"%{waifu_name}%")
                 if limit:
                     query += " LIMIT $3"
+                    params = params + (limit,)
+            else:  # Only series_name
+                query = (
+                    "SELECT *, 0 AS relevance "
+                    "FROM waifus "
+                    "WHERE series ILIKE $1 "
+                    "ORDER BY name"
+                )
+                params = (f"%{series_name}%",)
+                if limit:
+                    query += " LIMIT $2"
                     params = params + (limit,)
             rows = await conn.fetch(query, *params)
             return [dict(row) for row in rows]
