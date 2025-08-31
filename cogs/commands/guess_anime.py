@@ -581,6 +581,34 @@ class GuessAnimeCog(BaseCommand):
             color=0x3498db
         )
         await interaction.response.send_message(embed=embed)
+
+        # --- Daily Mission: Play a Game ---
+        try:
+            services = self.services
+            db = services.database
+            user = interaction.user
+            from datetime import datetime, timezone
+            today_date = datetime.now(timezone.utc).date()
+            mission = await db.get_or_create_mission({
+                "name": "Play a Game!",
+                "description": "Play any of the three games (anidle, guess anime, guess character) today.",
+                "type": "play_game",
+                "target_count": 1,
+                "reward_type": "gems",
+                "reward_amount": 200,
+                "difficulty": "easy",
+                "is_active": True
+            })
+            progress = await db.get_user_mission_progress(str(user.id), mission["id"], today_date)
+            if not progress or (not progress["completed"] or not progress["claimed"]):
+                await db.update_user_mission_progress(str(user.id), mission["id"], today_date)
+                progress = await db.get_user_mission_progress(str(user.id), mission["id"], today_date)
+                if progress and progress["completed"] and not progress["claimed"]:
+                    claimed = await db.claim_user_mission_reward(str(user.id), mission["id"], today_date)
+                    if claimed:
+                        await interaction.followup.send(f"🎉 Daily Mission Complete! You earned 200 gems for playing a game today.", ephemeral=True)
+        except Exception as e:
+            self.logger.error(f"Daily mission error: {e}")
         
         try:
             # Fetch random anime from Shikimori
@@ -677,6 +705,7 @@ class GuessAnimeCog(BaseCommand):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
+
         
         # Make the guess
         anime_name_clean = anime_name.strip()

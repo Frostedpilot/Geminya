@@ -12,6 +12,135 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+    async def get_all_active_daily_missions(self) -> list:
+        """Fetch all active daily missions."""
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM daily_missions WHERE is_active = TRUE")
+            return [dict(row) for row in rows]
+
+    async def get_all_user_mission_progress_for_date(self, discord_id: str, date) -> list:
+        """Fetch all user mission progress for a given date. Date should be a datetime.date object."""
+        async with self.connection_pool.acquire() as conn:
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                return []
+            user_id = user_row["id"]
+            rows = await conn.fetch(
+                "SELECT * FROM user_mission_progress WHERE user_id = $1 AND date = $2",
+                user_id, date
+            )
+            return [dict(row) for row in rows]
+    # --- Daily Mission Helpers ---
+    async def get_or_create_mission(self, mission: dict) -> dict:
+        """Fetch a mission by type and name, or create it if not present. Mission is a dict with all fields."""
+        async with self.connection_pool.acquire() as conn:
+            # Try to find by type and name (unique enough for daily missions)
+            mission_row = await conn.fetchrow(
+                "SELECT * FROM daily_missions WHERE type = $1 AND name = $2 AND is_active = TRUE LIMIT 1",
+                mission["type"], mission["name"]
+            )
+            if mission_row:
+                return dict(mission_row)
+            # Create the mission if not present
+            row = await conn.fetchrow(
+                """
+                INSERT INTO daily_missions (name, description, type, target_count, reward_type, reward_amount, difficulty, is_active)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                RETURNING *
+                """,
+                mission["name"],
+                mission["description"],
+                mission["type"],
+                mission["target_count"],
+                mission["reward_type"],
+                mission["reward_amount"],
+                mission.get("difficulty", "easy"),
+                mission.get("is_active", True)
+            )
+            return dict(row)
+
+    async def get_user_mission_progress(self, discord_id: str, mission_id: int, date) -> Optional[dict]:
+        """Fetch the user's mission progress for a given mission and date. Date should be a datetime.date object."""
+        async with self.connection_pool.acquire() as conn:
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                raise ValueError(f"User {discord_id} not found")
+            user_id = user_row["id"]
+            progress = await conn.fetchrow(
+                "SELECT * FROM user_mission_progress WHERE user_id = $1 AND mission_id = $2 AND date = $3",
+                user_id, mission_id, date
+            )
+            return dict(progress) if progress else None
+
+    async def update_user_mission_progress(self, discord_id: str, mission_id: int, date) -> dict:
+        """Increment progress for the user's mission, mark as completed if target met. Date should be a datetime.date object."""
+        async with self.connection_pool.acquire() as conn:
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                raise ValueError(f"User {discord_id} not found")
+            user_id = user_row["id"]
+            mission = await conn.fetchrow("SELECT * FROM daily_missions WHERE id = $1", mission_id)
+            if not mission:
+                raise ValueError(f"Mission {mission_id} not found")
+            target_count = mission["target_count"]
+            # Upsert progress
+            progress = await conn.fetchrow(
+                "SELECT * FROM user_mission_progress WHERE user_id = $1 AND mission_id = $2 AND date = $3",
+                user_id, mission_id, date
+            )
+            if not progress:
+                # Insert new progress
+                completed = True if target_count <= 1 else False
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO user_mission_progress (user_id, mission_id, current_progress, completed, claimed, date)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING *
+                    """,
+                    user_id, mission_id, 1, completed, False, date
+                )
+                return dict(row)
+            else:
+                # Update progress
+                new_progress = progress["current_progress"] + 1
+                completed = new_progress >= target_count
+                row = await conn.fetchrow(
+                    """
+                    UPDATE user_mission_progress
+                    SET current_progress = $1, completed = $2
+                    WHERE id = $3
+                    RETURNING *
+                    """,
+                    new_progress, completed, progress["id"]
+                )
+                return dict(row)
+
+    async def claim_user_mission_reward(self, discord_id: str, mission_id: int, date) -> bool:
+        """Mark the mission as claimed and grant the reward if not already claimed. Date should be a datetime.date object."""
+        async with self.connection_pool.acquire() as conn:
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                raise ValueError(f"User {discord_id} not found")
+            user_id = user_row["id"]
+            progress = await conn.fetchrow(
+                "SELECT * FROM user_mission_progress WHERE user_id = $1 AND mission_id = $2 AND date = $3",
+                user_id, mission_id, date
+            )
+            if not progress or not progress["completed"] or progress["claimed"]:
+                return False
+            # Mark as claimed
+            await conn.execute(
+                "UPDATE user_mission_progress SET claimed = TRUE WHERE id = $1",
+                progress["id"]
+            )
+            # Grant reward
+            mission = await conn.fetchrow("SELECT * FROM daily_missions WHERE id = $1", mission_id)
+            if mission and mission["reward_type"] == "gems":
+                await conn.execute(
+                    "UPDATE users SET sakura_crystals = sakura_crystals + $1 WHERE discord_id = $2",
+                    mission["reward_amount"], discord_id
+                )
+            return True
     async def get_gift_code(self, code: str) -> Optional[dict]:
         """Fetch a gift code by code string."""
         async with self.connection_pool.acquire() as conn:

@@ -837,17 +837,32 @@ class WaifuService:
     # ==================== UTILITY METHODS ====================
 
     async def get_user_collection_with_stars(self, discord_id: str) -> List[Dict[str, Any]]:
-        """Get user's collection with star levels and shard information."""
+        """Get user's collection with star levels and shard information (optimized, no N+1 queries)."""
         try:
             collection = await self.db.get_user_collection(discord_id)
-            
-            # Enhance each entry with shard information
+            if not collection:
+                return []
+
+            waifu_ids = [waifu["waifu_id"] for waifu in collection]
+            user = await self.db.get_or_create_user(discord_id)
+            shard_map = {}
+            if waifu_ids and self.db.connection_pool:
+                async with self.db.connection_pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        """
+                        SELECT waifu_id, star_shards
+                        FROM user_waifus
+                        WHERE user_id = $1 AND waifu_id = ANY($2::int[])
+                        """,
+                        user["id"], waifu_ids
+                    )
+                    shard_map = {row["waifu_id"]: row["star_shards"] for row in rows}
+
             enhanced_collection = []
             for waifu in collection:
                 waifu_id = waifu["waifu_id"]
                 current_star = waifu.get("current_star_level") or waifu["rarity"]
-                shards = await self.get_character_shards(discord_id, waifu_id)
-                # Calculate upgrade info
+                shards = shard_map.get(waifu_id, 0)
                 next_star = current_star + 1 if current_star < self.MAX_STAR_LEVEL else None
                 shards_needed = self.UPGRADE_COSTS.get(next_star, 0) if next_star else 0
                 enhanced_waifu = {
@@ -860,9 +875,8 @@ class WaifuService:
                     "is_max_star": current_star >= self.MAX_STAR_LEVEL
                 }
                 enhanced_collection.append(enhanced_waifu)
-            
+
             return enhanced_collection
-            
         except Exception as e:
             self.logger.error(f"Error getting enhanced collection: {e}")
             return []

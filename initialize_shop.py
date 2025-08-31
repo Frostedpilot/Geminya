@@ -31,7 +31,7 @@ DEFAULT_SHOP_ITEMS = [
     },
     {
         "name": "2★ Series Ticket",
-        "description": "Choose a series and receive a random 2★ or higher character from that series.",
+        "description": "Choose a series and receive a random 2★ character from that series.",
         "price": 100,
         "category": "tickets",
         "item_type": "series_ticket",
@@ -59,6 +59,23 @@ DEFAULT_SHOP_ITEMS = [
         "effects": {
             "choose_series": True,
             "guarantee_rarity": 3
+        },
+        "stock_limit": -1,
+        "is_active": True
+    },
+    {
+        "name": "1★ Selectix Ticket",
+        "description": "Choose any 1★ character of your choice.",
+        "price": 50,
+        "category": "tickets",
+        "item_type": "selectix_ticket",
+        "item_data": {
+            "rarity": "rare",
+            "currency_type": "quartzs"
+        },
+        "effects": {
+            "choose_character": True,
+            "guarantee_rarity": 1
         },
         "stock_limit": -1,
         "is_active": True

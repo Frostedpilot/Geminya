@@ -7,6 +7,80 @@ from services.container import ServiceContainer
 
 
 class WaifuAcademyCog(BaseCommand):
+    @commands.hybrid_command(
+        name="nwnl_missions",
+        description="📅 View all daily missions and your progress"
+    )
+    async def nwnl_missions(self, ctx: commands.Context):
+        """Show all daily missions and if the user has completed them."""
+        await ctx.defer()
+        try:
+            db = self.services.waifu_service.db
+            discord_id = str(ctx.author.id)
+            from datetime import datetime, timezone
+            today = datetime.now(timezone.utc).date()
+
+            # Fetch all active daily missions
+            missions = await db.get_all_active_daily_missions()
+            if not missions:
+                embed = discord.Embed(
+                    title="No Daily Missions",
+                    description="There are currently no active daily missions.",
+                    color=0xF39C12,
+                )
+                await ctx.send(embed=embed)
+                return
+
+            # Fetch all user mission progress for today
+            progress_rows = await db.get_all_user_mission_progress_for_date(discord_id, today)
+            progress_map = {row["mission_id"]: row for row in progress_rows}
+
+            embed = discord.Embed(
+                title="📅 Daily Missions",
+                description=f"Here are your daily missions for today:",
+                color=0x3498DB,
+            )
+
+            for mission in missions:
+                mission_id = mission["id"]
+                name = mission["name"]
+                desc = mission["description"]
+                target = mission["target_count"]
+                reward = f"{mission['reward_amount']} {mission['reward_type']}"
+                progress = progress_map.get(mission_id)
+                if progress:
+                    current = progress["current_progress"]
+                    completed = progress["completed"]
+                    claimed = progress["claimed"]
+                else:
+                    current = 0
+                    completed = False
+                    claimed = False
+
+                # Status emoji
+                if claimed:
+                    status = "✅ Claimed"
+                elif completed:
+                    status = "🎁 Claimable"
+                else:
+                    status = f"❌ {current}/{target}"
+
+                embed.add_field(
+                    name=f"{name} [{status}]",
+                    value=f"{desc}\n**Reward:** {reward}",
+                    inline=False,
+                )
+
+            embed.set_footer(text="Complete missions to earn rewards! Claim in the relevant game or mission command.")
+            await ctx.send(embed=embed)
+        except Exception as e:
+            self.logger.error(f"Error displaying missions: {e}")
+            embed = discord.Embed(
+                title="❌ Mission Error",
+                description="Unable to display missions. Please try again later!",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
     def __init__(self, bot: commands.Bot, services: ServiceContainer):
         super().__init__(bot, services)
 
