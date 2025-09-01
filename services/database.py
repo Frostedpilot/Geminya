@@ -12,6 +12,35 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+    async def update_waifu(self, waifu_id: int, waifu_data: Dict[str, Any]) -> bool:
+        """Update an existing waifu in the database by waifu_id (PostgreSQL)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            # Build update statement dynamically
+            fields = []
+            values = []
+            for key in [
+                "name", "series_id", "series", "genre", "element", "rarity", "image_url", "about", "base_stats", "birthday", "favorite_gifts", "special_dialogue"
+            ]:
+                if key in waifu_data:
+                    fields.append(f"{key} = ${len(values)+1}")
+                    if key == "base_stats":
+                        values.append(json.dumps(waifu_data.get("base_stats", {})))
+                    elif key == "favorite_gifts":
+                        values.append(json.dumps(waifu_data.get("favorite_gifts", [])))
+                    elif key == "special_dialogue":
+                        values.append(json.dumps(waifu_data.get("special_dialogue", {})))
+                    else:
+                        values.append(waifu_data[key])
+            if not fields:
+                return False
+            values.append(waifu_id)
+            query = f"""
+                UPDATE waifus SET {', '.join(fields)} WHERE waifu_id = $${len(values)}
+            """
+            result = await conn.execute(query, *values)
+            return result.startswith("UPDATE")
     async def get_all_active_daily_missions(self) -> list:
         """Fetch all active daily missions."""
         async with self.connection_pool.acquire() as conn:

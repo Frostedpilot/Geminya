@@ -170,11 +170,12 @@ class PostgresUploader:
                         continue
                     existing = await self.db_service.get_waifu_by_waifu_id(waifu_id)
                     if existing:
-                        logger.info(f"  Character {char_name} already exists in database (WAIFU ID: {waifu_id})")
-                        continue
-                    await self.db_service.add_waifu(character)
-                    successful_uploads += 1
-                    logger.info(f"  ✅ Successfully uploaded {char_name}")
+                        await self.db_service.update_waifu(waifu_id, character)
+                        logger.info(f"  Updated existing character: {char_name} (WAIFU ID: {waifu_id})")
+                    else:
+                        await self.db_service.add_waifu(character)
+                        successful_uploads += 1
+                        logger.info(f"  ✅ Successfully uploaded {char_name}")
                 except Exception as e:
                     failed_uploads += 1
                     logger.error(f"  ❌ Failed to upload {char_name}: {e}")
