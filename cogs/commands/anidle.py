@@ -915,7 +915,11 @@ class AnidleCog(BaseCommand):
             db = services.database
             user = interaction.user
             from datetime import datetime, timezone
-            today_date = datetime.now(timezone.utc).date()
+            import pytz
+            tz = pytz.timezone('Asia/Bangkok')
+            now_utc = datetime.now(timezone.utc)
+            now_local = now_utc.astimezone(tz)
+            today_date = now_local.date()
             mission = await db.get_or_create_mission({
                 "name": "Play a Game!",
                 "description": "Play any of the three games (anidle, guess anime, guess character) today.",

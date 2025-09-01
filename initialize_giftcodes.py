@@ -46,6 +46,13 @@ DEFAULT_GIFT_CODES = [
         "reward_value": 500,
         "is_active": True,
         "usage_limit": 99,
+    },
+    {
+        "code": "EUAOP",
+        "reward_type": "gems",
+        "reward_value": 100,
+        "is_active": True,
+        "usage_limit": 99,
     }
 ]
 

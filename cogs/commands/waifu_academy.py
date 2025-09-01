@@ -18,7 +18,11 @@ class WaifuAcademyCog(BaseCommand):
             db = self.services.waifu_service.db
             discord_id = str(ctx.author.id)
             from datetime import datetime, timezone
-            today = datetime.now(timezone.utc).date()
+            import pytz
+            tz = pytz.timezone('Asia/Bangkok')
+            now_utc = datetime.now(timezone.utc)
+            now_local = now_utc.astimezone(tz)
+            today = now_local.date()
 
             # Fetch all active daily missions
             missions = await db.get_all_active_daily_missions()
