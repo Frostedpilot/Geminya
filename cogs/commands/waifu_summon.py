@@ -1282,7 +1282,41 @@ class WaifuSummonCog(BaseCommand):
                         if waifu.get("image_url"):
                             embed.set_thumbnail(url=waifu["image_url"])  # Use thumbnail for more compact layout
                         
-                        # Top row - compact stats
+                        # Top row - rarity, status, and element
+                        embed.add_field(name="⭐ Base Rarity", value="⭐" * waifu["rarity"], inline=True)
+                        
+                        # Status field with star progress
+                        if user_waifu:
+                            status_value = f"**Owned** ({'⭐' * current_star} {current_star}★)"
+                            if star_progress:
+                                # Extract key star progress info for compact display
+                                if "READY TO UPGRADE!" in star_progress:
+                                    status_value += "\n🔥 **Ready to upgrade!**"
+                                elif "MAX STAR" in star_progress:
+                                    status_value += "\n✨ **Max Star**"
+                                else:
+                                    # Show current shards progress
+                                    import re
+                                    shard_match = re.search(r'(\d+)/(\d+)', star_progress)
+                                    if shard_match:
+                                        current_shards, required_shards = shard_match.groups()
+                                        status_value += f"\n🌟 {current_shards}/{required_shards} shards"
+                            if user_waifu.get("custom_nickname"):
+                                status_value += f"\n🏷️ {user_waifu['custom_nickname']}"
+                        else:
+                            status_value = "**Not Collected**\nUse `/nwnl_summon`"
+                        embed.add_field(name="❓ Status & Progress", value=status_value, inline=True)
+                        
+                        # Element type in the third position of top row
+                        elem_type = waifu.get("elemental_type")
+                        if elem_type:
+                            if isinstance(elem_type, list):
+                                elem_type = ", ".join(elem_type)
+                            embed.add_field(name="🔮 Element", value=elem_type, inline=True)
+                        else:
+                            embed.add_field(name="🔮 Element", value="Unknown", inline=True)
+                        
+                        # Second row - compact stats
                         stats = waifu.get("stats")
                         if stats:
                             if isinstance(stats, dict):
@@ -1295,22 +1329,22 @@ class WaifuSummonCog(BaseCommand):
                                 embed.add_field(name="📈 Stats (2)", value=right_stats or "None", inline=True)
                             else:
                                 embed.add_field(name="📈 Stats", value=str(stats), inline=True)
+                                embed.add_field(name="📈 Stats (2)", value="—", inline=True)  # Empty placeholder
+                        else:
+                            embed.add_field(name="📈 Stats", value="No stats available", inline=True)
+                            embed.add_field(name="📈 Stats (2)", value="—", inline=True)  # Empty placeholder
                         
-                        # Element type in the third position of top row
-                        elem_type = waifu.get("elemental_type")
-                        if elem_type:
-                            if isinstance(elem_type, list):
-                                elem_type = ", ".join(elem_type)
-                            embed.add_field(name="🔮 Element", value=elem_type, inline=True)
+                        # Third field in second row for spacing
+                        embed.add_field(name="⚡ Combat Info", value=combat_stats or "Not available", inline=True)
                         
-                        # Second row - potency and resistances
+                        # Third row - potency and resistances  
                         potency = waifu.get("potency")
                         if potency:
                             if isinstance(potency, dict):
                                 potency_str = "\n".join(f"**{k}:** {v}" for k, v in potency.items())
                             else:
                                 potency_str = str(potency)
-                            embed.add_field(name="🎭 Potency", value=potency_str, inline=True)
+                            embed.add_field(name="💥 Potency", value=potency_str, inline=True)
                         
                         resist = waifu.get("elemental_resistances")
                         if resist:
@@ -1320,14 +1354,14 @@ class WaifuSummonCog(BaseCommand):
                                 resist_str = str(resist)
                             embed.add_field(name="🛡️ Resistances", value=resist_str, inline=True)
                         
-                        # Third position of second row - gifts
+                        # Third position of third row - gifts
                         gifts = waifu.get("favorite_gifts")
                         if gifts:
                             if isinstance(gifts, list):
                                 gifts = ", ".join(gifts)
                             embed.add_field(name="🎁 Gifts", value=gifts, inline=True)
                         
-                        # Third row - special dialogue (full width if exists)
+                        # Fourth row - special dialogue (full width if exists)
                         dialogue = waifu.get("special_dialogue")
                         if dialogue:
                             if isinstance(dialogue, dict):
