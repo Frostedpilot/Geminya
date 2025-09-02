@@ -1000,9 +1000,9 @@ class WaifuSummonCog(BaseCommand):
 
                 if three_star_count >= 2:  # Multiple 3★ = old multiple 5★
                     special_content = (
-                        "🌟�⭐ **MIRACLE MULTI-SUMMON!** ⭐💫🌟\n"
+                        "🌟💫⭐ **MIRACLE MULTI-SUMMON!** ⭐💫🌟\n"
                         f"🎆🎇✨ **{three_star_count} LEGENDARY WAIFUS!** ✨🎇🎆\n"
-                        "�👑 The academy is blessed with divine fortune! 👑💎\n\n"
+                        "💎👑 The academy is blessed with divine fortune! 👑💎\n\n"
                         + special_content
                     )
                 elif three_star_count == 1 and two_star_count >= 1:  # 3★ + 2★ = old 5★ + 4★
@@ -1209,70 +1209,142 @@ class WaifuSummonCog(BaseCommand):
                     self.collection_dict = collection_dict
                     self.waifu_service = waifu_service
                     self.idx = 0
+                    self.page = 1  # 1 = main, 2 = stats
 
                 def build_embed(self, waifu, user_waifu, current_star, star_progress=None, combat_stats=None):
-                    description = waifu.get("about") or waifu.get("personality_profile") or "A mysterious character..."
-                    embed = discord.Embed(
-                        title=f"👤 {waifu['name']}",
-                        description=description,
-                        color=rarity_colors.get(current_star, 0x95A5A6),
-                    )
-                    embed.add_field(name="🎭 Series", value=waifu["series"], inline=True)
-                    embed.add_field(name="🏷️ Genre", value=waifu.get("genre", "Unknown"), inline=True)
-                    # Use new schema field 'elemental_type' (list or string)
-                    elem_type = waifu.get("elemental_type", "Unknown")
-                    if isinstance(elem_type, list):
-                        elem_type = ", ".join(elem_type) if elem_type else "Unknown"
-                    embed.add_field(name="🔮 Element", value=elem_type, inline=True)
-                    embed.add_field(name="⭐ Base Rarity", value="⭐" * waifu["rarity"], inline=True)
-                    if waifu.get("mal_id"):
-                        embed.add_field(name="🔗 MAL ID", value=str(waifu["mal_id"]), inline=True)
-                    if waifu.get("birthday"):
-                        embed.add_field(name="🎂 Birthday", value=str(waifu["birthday"]), inline=True)
-                    if user_waifu:
-                        embed.add_field(name="🌟 Star Progress", value=star_progress or "Loading...", inline=True)
-                        embed.add_field(
-                            name="⚡ Combat Stats",
-                            value=combat_stats or f"**Power:** Loading...\n"
-                            f"**Bond Level:** {user_waifu.get('bond_level', 1)}\n"
-                            f"**Conversations:** {user_waifu.get('total_conversations', 0)}",
-                            inline=True,
+                    if self.page == 1:
+                        description = waifu.get("about") or waifu.get("personality_profile") or "A mysterious character..."
+                        embed = discord.Embed(
+                            title=f"👤 {waifu['name']}",
+                            description=description,
+                            color=rarity_colors.get(current_star, 0x95A5A6),
                         )
-                        if user_waifu.get("custom_nickname"):
+                        embed.add_field(name="🎭 Series", value=waifu["series"], inline=True)
+                        embed.add_field(name="🏷️ Genre", value=waifu.get("genre", "Unknown"), inline=True)
+                        elem_type = waifu.get("elemental_type", "Unknown")
+                        if isinstance(elem_type, list):
+                            elem_type = ", ".join(elem_type) if elem_type else "Unknown"
+                        embed.add_field(name="🔮 Element", value=elem_type, inline=True)
+                        embed.add_field(name="⭐ Base Rarity", value="⭐" * waifu["rarity"], inline=True)
+                        if waifu.get("mal_id"):
+                            embed.add_field(name="🔗 MAL ID", value=str(waifu["mal_id"]), inline=True)
+                        if waifu.get("birthday"):
+                            embed.add_field(name="🎂 Birthday", value=str(waifu["birthday"]), inline=True)
+                        if user_waifu:
+                            embed.add_field(name="🌟 Star Progress", value=star_progress or "Loading...", inline=True)
                             embed.add_field(
-                                name="🏷️ Nickname",
-                                value=user_waifu["custom_nickname"],
+                                name="⚡ Combat Stats",
+                                value=combat_stats or f"**Power:** Loading...\n"
+                                f"**Bond Level:** {user_waifu.get('bond_level', 1)}\n"
+                                f"**Conversations:** {user_waifu.get('total_conversations', 0)}",
                                 inline=True,
                             )
-                        obtained_at = user_waifu.get("obtained_at")
-                        if obtained_at:
-                            if isinstance(obtained_at, str):
+                            if user_waifu.get("custom_nickname"):
                                 embed.add_field(
-                                    name="📅 Obtained",
-                                    value=f"<t:{int(obtained_at)}:R>" if obtained_at.isdigit() else "Unknown",
+                                    name="🏷️ Nickname",
+                                    value=user_waifu["custom_nickname"],
                                     inline=True,
                                 )
-                            else:
-                                timestamp = int(obtained_at.timestamp()) if hasattr(obtained_at, 'timestamp') else 0
-                                embed.add_field(
-                                    name="📅 Obtained",
-                                    value=f"<t:{timestamp}:R>",
-                                    inline=True,
-                                )
+                            obtained_at = user_waifu.get("obtained_at")
+                            if obtained_at:
+                                if isinstance(obtained_at, str):
+                                    embed.add_field(
+                                        name="📅 Obtained",
+                                        value=f"<t:{int(obtained_at)}:R>" if obtained_at.isdigit() else "Unknown",
+                                        inline=True,
+                                    )
+                                else:
+                                    timestamp = int(obtained_at.timestamp()) if hasattr(obtained_at, 'timestamp') else 0
+                                    embed.add_field(
+                                        name="📅 Obtained",
+                                        value=f"<t:{timestamp}:R>",
+                                        inline=True,
+                                    )
+                        else:
+                            embed.add_field(
+                                name="❓ Status",
+                                value="Not in your collection\nUse `/nwnl_summon` to try getting them!",
+                                inline=True,
+                            )
+                        if waifu.get("image_url"):
+                            embed.set_image(url=waifu["image_url"])
+                        if user_waifu:
+                            footer_text = f"ID: {waifu['waifu_id']} • Auto upgrades with shards • /nwnl_collection to view all"
+                        else:
+                            footer_text = f"ID: {waifu['waifu_id']} • Use /nwnl_summon to try collecting • /nwnl_collection to view owned"
+                        embed.set_footer(text=f"{footer_text} • Match {self.idx+1}/{len(self.waifus)}")
+                        return embed
                     else:
-                        embed.add_field(
-                            name="❓ Status",
-                            value="Not in your collection\nUse `/nwnl_summon` to try getting them!",
-                            inline=True,
+                        embed = discord.Embed(
+                            title=f"📊 {waifu['name']} — Stats & Details",
+                            color=rarity_colors.get(current_star, 0x95A5A6),
                         )
-                    if waifu.get("image_url"):
-                        embed.set_image(url=waifu["image_url"])
-                    if user_waifu:
-                        footer_text = f"ID: {waifu['waifu_id']} • Auto upgrades with shards • /nwnl_collection to view all"
-                    else:
-                        footer_text = f"ID: {waifu['waifu_id']} • Use /nwnl_summon to try collecting • /nwnl_collection to view owned"
-                    embed.set_footer(text=f"{footer_text} • Match {self.idx+1}/{len(self.waifus)}")
-                    return embed
+                        if waifu.get("image_url"):
+                            embed.set_thumbnail(url=waifu["image_url"])  # Use thumbnail for more compact layout
+                        
+                        # Top row - compact stats
+                        stats = waifu.get("stats")
+                        if stats:
+                            if isinstance(stats, dict):
+                                # Split stats into two columns for square layout
+                                stat_items = list(stats.items())
+                                half = len(stat_items) // 2 + len(stat_items) % 2
+                                left_stats = "\n".join(f"**{k}:** {v}" for k, v in stat_items[:half])
+                                right_stats = "\n".join(f"**{k}:** {v}" for k, v in stat_items[half:])
+                                embed.add_field(name="📈 Stats (1)", value=left_stats or "None", inline=True)
+                                embed.add_field(name="📈 Stats (2)", value=right_stats or "None", inline=True)
+                            else:
+                                embed.add_field(name="📈 Stats", value=str(stats), inline=True)
+                        
+                        # Element type in the third position of top row
+                        elem_type = waifu.get("elemental_type")
+                        if elem_type:
+                            if isinstance(elem_type, list):
+                                elem_type = ", ".join(elem_type)
+                            embed.add_field(name="🔮 Element", value=elem_type, inline=True)
+                        
+                        # Second row - potency and resistances
+                        potency = waifu.get("potency")
+                        if potency:
+                            if isinstance(potency, dict):
+                                potency_str = "\n".join(f"**{k}:** {v}" for k, v in potency.items())
+                            else:
+                                potency_str = str(potency)
+                            embed.add_field(name="🎭 Potency", value=potency_str, inline=True)
+                        
+                        resist = waifu.get("elemental_resistances")
+                        if resist:
+                            if isinstance(resist, dict):
+                                resist_str = "\n".join(f"**{k}:** {v}" for k, v in resist.items())
+                            else:
+                                resist_str = str(resist)
+                            embed.add_field(name="🛡️ Resistances", value=resist_str, inline=True)
+                        
+                        # Third position of second row - gifts
+                        gifts = waifu.get("favorite_gifts")
+                        if gifts:
+                            if isinstance(gifts, list):
+                                gifts = ", ".join(gifts)
+                            embed.add_field(name="🎁 Gifts", value=gifts, inline=True)
+                        
+                        # Third row - special dialogue (full width if exists)
+                        dialogue = waifu.get("special_dialogue")
+                        if dialogue:
+                            if isinstance(dialogue, dict):
+                                # Limit dialogue to prevent overflow
+                                dialogue_items = list(dialogue.items())[:3]  # Max 3 dialogue entries
+                                dialogue_str = "\n".join(f"**{k}:** {v[:100]}{'...' if len(v) > 100 else ''}" for k, v in dialogue_items)
+                            else:
+                                dialogue_str = str(dialogue)[:200] + ("..." if len(str(dialogue)) > 200 else "")
+                            embed.add_field(name="💬 Special Dialogue", value=dialogue_str, inline=False)
+                        
+                        embed.set_footer(text=f"ID: {waifu['waifu_id']} • Page 2/2 • Match {self.idx+1}/{len(self.waifus)}")
+                        return embed
+                @discord.ui.button(label="Switch Page", style=discord.ButtonStyle.secondary, row=0)
+                async def switch_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.page = 2 if self.page == 1 else 1
+                    embed = await self.get_embed()
+                    await interaction.response.edit_message(embed=embed, view=self)
 
                 async def get_embed(self):
                     waifu = self.waifus[self.idx]

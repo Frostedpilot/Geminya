@@ -227,7 +227,7 @@ def main():
 if __name__ == "__main__":
     success = main()
     print("\n" + "="*60)
-    print("� CHARACTER EDITOR")
+    print("CHARACTER EDITOR")
     print("="*60)
     print("Processed characters from data/characters_mal.csv")
     print("Output: data/character_sql.csv with essential columns:")

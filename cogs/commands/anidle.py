@@ -1129,7 +1129,7 @@ class AnidleCog(BaseCommand):
         total_guesses = len(game.guesses) + game.hint_penalty
         
         embed = discord.Embed(
-            title="� Poster Hint!",
+            title="🖼️ Poster Hint!",
             description=f"Here's the poster for the anime you're looking for!\n**Penalty**: +10 guesses (Total: {total_guesses}/{game.max_guesses})",
             color=0xFFD700
         )
