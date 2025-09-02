@@ -107,6 +107,18 @@ class CharacterFinalProcessor:
         # Select only the required columns (plus about and new fields if present)
         df_clean = df[output_columns].copy()
         # Clean and validate data
+        # Remove _x000D_, x000D, and similar artifacts from all string columns
+        import re
+        def clean_str(val):
+            if isinstance(val, str):
+                # Remove _x000D_, x000D, \r, and similar artifacts
+                val = re.sub(r'(_)?x000D(_)?', '\n', val)
+                val = re.sub(r'\n+', '\n', val)
+                return val.strip()
+            return val
+        for col in df_clean.select_dtypes(include=['object']).columns:
+            df_clean[col] = df_clean[col].apply(clean_str)
+
         # Remove rows with missing essential data
         df_clean = df_clean.dropna(subset=['waifu_id', 'name', 'rarity'])
         # Ensure waifu_id is integer

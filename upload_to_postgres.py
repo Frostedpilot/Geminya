@@ -74,7 +74,7 @@ class PostgresUploader:
                 reader = csv.DictReader(f)
                 for row in reader:
                     # Convert JSON fields back to Python objects for new schema
-                    for col in ['stats', 'elemental_type', 'archetype', 'potency', 'elemental_resistances', 'favorite_gifts', 'special_dialogue']:
+                    for col in ['stats', 'elemental_type', 'potency', 'elemental_resistances', 'favorite_gifts', 'special_dialogue']:
                         if col in row and row[col]:
                             try:
                                 row[col] = json.loads(row[col])

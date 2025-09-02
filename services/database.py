@@ -228,6 +228,19 @@ class DatabaseService:
                 # Record redemption
                 await conn.execute("INSERT INTO gift_code_redemptions (user_id, code, redeemed_at) VALUES ($1, $2, $3)", user_id, code, datetime.utcnow())
                 return "success"
+    def _parse_waifu_json_fields(self, waifu: dict) -> dict:
+        import json
+        json_fields = [
+            'stats', 'elemental_type', 'potency', 'elemental_resistances', 'favorite_gifts', 'special_dialogue'
+        ]
+        for field in json_fields:
+            if field in waifu and waifu[field] is not None and isinstance(waifu[field], str):
+                try:
+                    waifu[field] = json.loads(waifu[field])
+                except Exception:
+                    pass
+        return waifu
+
     async def get_waifus_by_series_id(self, series_id: int) -> List[Dict[str, Any]]:
         """Get all waifus belonging to a given series_id, including series name as 'series'."""
         if not self.connection_pool:
@@ -243,7 +256,7 @@ class DatabaseService:
                 """,
                 series_id
             )
-            return [dict(row) for row in rows]
+            return [self._parse_waifu_json_fields(dict(row)) for row in rows]
 
     async def get_waifus_by_rarity_and_series(self, rarity: int, series_id: int, limit: int = 100) -> List[Dict[str, Any]]:
         """Get waifus by rarity and series (PostgreSQL), including series name as 'series'."""
@@ -258,7 +271,7 @@ class DatabaseService:
                 """,
                 rarity, series_id, limit
             )
-            return [dict(row) for row in rows]
+            return [self._parse_waifu_json_fields(dict(row)) for row in rows]
 
     async def get_waifu_by_id_and_rarity(self, waifu_id: int, rarity: int) -> Optional[Dict[str, Any]]:
         """Get a waifu by waifu_id and rarity (PostgreSQL), including series name as 'series'."""
@@ -272,7 +285,7 @@ class DatabaseService:
                 """,
                 waifu_id, rarity
             )
-            return dict(row) if row else None
+            return self._parse_waifu_json_fields(dict(row)) if row else None
     async def get_series_by_id(self, series_id: int) -> Optional[Dict[str, Any]]:
         """Get a series by its primary key (series_id)."""
         if not self.connection_pool:
@@ -420,7 +433,7 @@ class DatabaseService:
             )
             return dict(row) if row else None
     async def add_waifus_to_user_batch(self, discord_id: str, waifu_ids: List[int]) -> List[Dict[str, Any]]:
-        """Batch add multiple waifus to a user's collection, skipping already-owned waifus. Returns full waifu+user_waifu data for all added."""
+        """Batch add multiple waifus to a user's collection, skipping already-owned waifus. Returns full waifu+user_waifu data for all added. Parses waifu JSON fields."""
         if not waifu_ids:
             return []
         async with self.connection_pool.acquire() as conn:
@@ -448,14 +461,15 @@ class DatabaseService:
             all_ids = list(set(waifu_ids))
             rows = await conn.fetch(
                 """
-                SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id
+                SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id,
+                       w.stats, w.elemental_type, w.potency, w.elemental_resistances, w.favorite_gifts, w.special_dialogue
                 FROM user_waifus uw
                 JOIN waifus w ON uw.waifu_id = w.waifu_id
                 WHERE uw.user_id = $1 AND uw.waifu_id = ANY($2::int[])
                 """,
                 user_id, all_ids
             )
-            return [dict(row) for row in rows]
+            return [self._parse_waifu_json_fields(dict(row)) for row in rows]
     """Service for managing the Waifu Academy database with PostgreSQL only."""
 
     def __init__(self, config: "Config"):
@@ -850,7 +864,7 @@ class DatabaseService:
                 waifu_id
             )
             if row:
-                return dict(row)
+                return self._parse_waifu_json_fields(dict(row))
             return None
 
     async def test_connection(self) -> bool:
@@ -875,14 +889,15 @@ class DatabaseService:
                 """,
                 rarity, limit
             )
-            return [dict(row) for row in rows]
+            return [self._parse_waifu_json_fields(dict(row)) for row in rows]
 
     async def get_user_collection(self, discord_id: str) -> List[Dict[str, Any]]:
-        """Get all waifus in a user's collection (PostgreSQL), using waifu_id as identifier. Includes series_id."""
+        """Get all waifus in a user's collection (PostgreSQL), using waifu_id as identifier. Includes series_id. Parses waifu JSON fields."""
         async with self.connection_pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT uw.*, w.name, w.series, w.series_id, w.rarity, w.image_url, w.waifu_id as waifu_id, u.discord_id
+                SELECT uw.*, w.name, w.series, w.series_id, w.rarity, w.image_url, w.waifu_id as waifu_id, u.discord_id,
+                       w.stats, w.elemental_type, w.potency, w.elemental_resistances, w.favorite_gifts, w.special_dialogue
                 FROM user_waifus uw
                 JOIN waifus w ON uw.waifu_id = w.waifu_id
                 JOIN users u ON uw.user_id = u.id
@@ -891,10 +906,10 @@ class DatabaseService:
                 """,
                 discord_id
             )
-            return [dict(row) for row in rows]
+            return [self._parse_waifu_json_fields(dict(row)) for row in rows]
 
     async def add_waifu_to_user(self, discord_id: str, waifu_id: int) -> Dict[str, Any]:
-        """Add a waifu to a user's collection, handling constellation system (PostgreSQL), using waifu_id as identifier."""
+        """Add a waifu to a user's collection, handling constellation system (PostgreSQL), using waifu_id as identifier. Parses waifu JSON fields."""
         async with self.connection_pool.acquire() as conn:
             user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
             if not user_row:
@@ -907,14 +922,15 @@ class DatabaseService:
             if existing:
                 row = await conn.fetchrow(
                     """
-                    SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id
+                    SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id,
+                           w.stats, w.elemental_type, w.potency, w.elemental_resistances, w.favorite_gifts, w.special_dialogue
                     FROM user_waifus uw
                     JOIN waifus w ON uw.waifu_id = w.waifu_id
                     WHERE uw.id = $1
                     """,
                     existing["id"]
                 )
-                return dict(row) if row else {}
+                return self._parse_waifu_json_fields(dict(row)) if row else {}
             else:
                 new_id_row = await conn.fetchrow(
                     """
@@ -927,14 +943,15 @@ class DatabaseService:
                 new_id = new_id_row["id"] if new_id_row else None
                 row = await conn.fetchrow(
                     """
-                    SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id
+                    SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id,
+                           w.stats, w.elemental_type, w.potency, w.elemental_resistances, w.favorite_gifts, w.special_dialogue
                     FROM user_waifus uw
                     JOIN waifus w ON uw.waifu_id = w.waifu_id
                     WHERE uw.id = $1
                     """,
                     new_id
                 )
-                return dict(row) if row else {}
+                return self._parse_waifu_json_fields(dict(row)) if row else {}
 
     # Currency methods
     async def update_user_crystals(self, discord_id: str, amount: int) -> bool:
@@ -969,7 +986,7 @@ class DatabaseService:
         """
         Search for waifus by name and/or series name (PostgreSQL).
         At least one of waifu_name or series_name must be provided.
-        Results are sorted by relevance if waifu_name is provided.
+        Results are sorted by relevance if waifu_name is provided. Parses waifu JSON fields.
         """
         if not waifu_name and not series_name:
             raise ValueError("At least one of waifu_name or series_name must be provided.")
@@ -1010,7 +1027,7 @@ class DatabaseService:
                     query += " LIMIT $2"
                     params = params + (limit,)
             rows = await conn.fetch(query, *params)
-            return [dict(row) for row in rows]
+            return [self._parse_waifu_json_fields(dict(row)) for row in rows]
 
     # Pity system
     async def update_pity_counter(self, discord_id: str, reset: bool = False) -> bool:
