@@ -481,10 +481,13 @@ class WaifuSummonCog(BaseCommand):
             # Character details (no about text)
             embed.add_field(name="Character", value=f"**{waifu['name']}**", inline=True)
             embed.add_field(name="Series", value=waifu.get("series", "Unknown"), inline=True)
-            embed.add_field(name="Element",
-                            value=f"{waifu.get('element', 'Unknown')} 🔮",
-                            inline=True,
-                            )            
+            # Use new schema field 'elemental_type' (list or string)
+            elem_type = waifu.get("elemental_type", "Unknown")
+            if isinstance(elem_type, list):
+                elem_type = ", ".join(elem_type) if elem_type else "Unknown"
+            embed.add_field(name="🔮 Element",
+                            value=elem_type,
+                            inline=True)
             embed.add_field(
                 name="Current Star Level",
                 value=f"{'⭐' * summon_result['current_star_level']} ({summon_result['current_star_level']}★)",
@@ -773,8 +776,9 @@ class WaifuSummonCog(BaseCommand):
                         )
                         embed.add_field(name="Series", value=waifu.get("series", "Unknown"), inline=True)
                         embed.add_field(
-                            name="Element",
-                            value=f"{waifu.get('element', 'Unknown')} 🔮",
+                            # Use new schema field 'elemental_type' (list or string)
+                            name="🔮 Element",
+                            value=", ".join(waifu["elemental_type"]) if isinstance(waifu.get("elemental_type"), list) and waifu.get("elemental_type") else waifu.get("elemental_type", "Unknown"),
                             inline=True,
                         )
                         embed.add_field(
@@ -1215,7 +1219,11 @@ class WaifuSummonCog(BaseCommand):
                     )
                     embed.add_field(name="🎭 Series", value=waifu["series"], inline=True)
                     embed.add_field(name="🏷️ Genre", value=waifu.get("genre", "Unknown"), inline=True)
-                    embed.add_field(name="🔮 Element", value=waifu.get("element", "Unknown"), inline=True)
+                    # Use new schema field 'elemental_type' (list or string)
+                    elem_type = waifu.get("elemental_type", "Unknown")
+                    if isinstance(elem_type, list):
+                        elem_type = ", ".join(elem_type) if elem_type else "Unknown"
+                    embed.add_field(name="🔮 Element", value=elem_type, inline=True)
                     embed.add_field(name="⭐ Base Rarity", value="⭐" * waifu["rarity"], inline=True)
                     if waifu.get("mal_id"):
                         embed.add_field(name="🔗 MAL ID", value=str(waifu["mal_id"]), inline=True)

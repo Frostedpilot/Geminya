@@ -18,7 +18,7 @@ class CharacterFinalProcessor:
     """Process cleaned Excel file for the new star system."""
 
     def __init__(self):
-        self.input_file = os.path.join("data", "characters_cleaned.xlsx")
+        self.input_file = os.path.join("data", "characters_with_stats.csv")
         self.anime_input_file = os.path.join("data", "anime_mal.xlsx")
         self.character_output_file = os.path.join("data", "character_final.csv")
         self.anime_output_file = os.path.join("data", "anime_final.csv")
@@ -40,49 +40,20 @@ class CharacterFinalProcessor:
             return None
 
     def load_excel_data(self) -> Optional[pd.DataFrame]:
-        """Load the cleaned Excel file."""
+        """Load the character data from CSV file."""
         try:
-            logger.info(f"Loading Excel file: {self.input_file}")
-            df = pd.read_excel(self.input_file)
-            logger.info(f"✅ Loaded {len(df)} characters from Excel file")
+            logger.info(f"Loading character CSV file: {self.input_file}")
+            df = pd.read_csv(self.input_file)
+            logger.info(f"✅ Loaded {len(df)} characters from CSV file")
             logger.info(f"📋 Columns: {list(df.columns)}")
             return df
         except FileNotFoundError:
-            logger.error(f"❌ Excel file {self.input_file} not found!")
+            logger.error(f"❌ Character CSV file {self.input_file} not found!")
             return None
         except Exception as e:
-            logger.error(f"❌ Error loading Excel file: {e}")
+            logger.error(f"❌ Error loading character CSV file: {e}")
             return None
 
-    def determine_element(self, about: str, series: str, name: str) -> str:
-        about = about.lower()
-        series = series.lower()
-        name = name.lower()
-        if any(word in about for word in ["magic", "witch", "spell", "mage", "wizard", "sorcerer"]):
-            return "magic"
-        if any(word in about for word in ["fire", "flame", "burn", "hot", "heat", "dragon"]):
-            return "fire"
-        if any(word in about for word in ["water", "sea", "ocean", "river", "ice", "snow", "cold"]):
-            return "water"
-        if any(word in about for word in ["earth", "stone", "rock", "mountain", "forest", "nature"]):
-            return "earth"
-        if any(word in about for word in ["wind", "air", "sky", "cloud", "flying", "bird"]):
-            return "air"
-        if any(word in about for word in ["light", "holy", "divine", "angel", "pure", "bright"]):
-            return "light"
-        if any(word in about for word in ["dark", "shadow", "demon", "evil", "death", "vampire"]):
-            return "dark"
-        return "neutral"
-
-    def generate_base_stats(self, name: str, about: str, waifu_id: int, favorites: int) -> dict:
-        base = 50
-        popularity_bonus = min(favorites // 100, 30)
-        return {
-            "attack": base + popularity_bonus + (hash(name) % 21 - 10),
-            "defense": base + popularity_bonus + (hash(name[::-1]) % 21 - 10),
-            "speed": base + popularity_bonus + (hash(about[:10]) % 21 - 10),
-            "hp": base + popularity_bonus + (hash(str(waifu_id)) % 21 - 10)
-        }
 
     def generate_favorite_gifts(self, about: str) -> list:
         about = about.lower()
@@ -107,7 +78,7 @@ class CharacterFinalProcessor:
         return favorite_gifts[:5]
 
     def validate_and_clean_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Validate and clean the DataFrame for the new star system, including about column."""
+        """Validate and clean the DataFrame for the new star system, including about column and new waifu fields if present."""
         logger.info("🧹 Validating and cleaning data...")
         original_count = len(df)
         # Required columns for upload_to_mysql.py compatibility
@@ -123,8 +94,17 @@ class CharacterFinalProcessor:
             return pd.DataFrame()
         # Add about column if present in input
         about_present = 'about' in df.columns
-        output_columns = required_columns + (['about'] if about_present else [])
-        # Select only the required columns (plus about if present)
+        # Add new waifu fields if present in input
+        new_waifu_fields = [
+            'stats',
+            'elemental_type',
+            'archetype',
+            'potency',
+            'elemental_resistances',
+        ]
+        extra_columns = [col for col in new_waifu_fields if col in df.columns]
+        output_columns = required_columns + (['about'] if about_present else []) + extra_columns
+        # Select only the required columns (plus about and new fields if present)
         df_clean = df[output_columns].copy()
         # Clean and validate data
         # Remove rows with missing essential data
@@ -204,14 +184,13 @@ class CharacterFinalProcessor:
                 logger.info(f"    {rarity}★: {count} characters ({percentage:.1f}%)")
 
     def save_final_csvs(self, df_char: pd.DataFrame, df_anime: pd.DataFrame) -> bool:
-        """Save the final processed character and anime data to CSV, including new series fields."""
+        """Save the final processed character and anime data to CSV, including new waifu fields."""
         try:
             logger.info(f"💾 Saving anime/series data to {self.anime_output_file}")
             anime_column_order = [
                 'series_id', 'name', 'english_name', 'image_link',
                 'studios', 'genres', 'synopsis', 'favorites', 'members', 'score'
             ]
-            # Fill missing columns if not present
             for col in anime_column_order:
                 if col not in df_anime.columns:
                     df_anime[col] = '' if col not in ['favorites', 'members', 'score'] else 0
@@ -225,11 +204,11 @@ class CharacterFinalProcessor:
             char_column_order = ['waifu_id', 'name', 'series', 'series_id', 'genre', 'rarity', 'image_url', 'favorites']
             if 'about' in df_char.columns:
                 char_column_order.append('about')
-            # Add new transformation columns
-            char_column_order += ['element', 'base_stats', 'favorite_gifts', 'special_dialogue']
+            # Add new waifu fields
+            char_column_order += ['stats', 'elemental_type', 'archetype', 'potency', 'elemental_resistances', 'favorite_gifts', 'special_dialogue']
             df_char_final = df_char[char_column_order]
             # Convert dict/list columns to JSON strings for CSV
-            for col in ['base_stats', 'favorite_gifts', 'special_dialogue']:
+            for col in ['stats', 'elemental_type', 'archetype', 'potency', 'elemental_resistances', 'favorite_gifts', 'special_dialogue']:
                 df_char_final[col] = df_char_final[col].apply(lambda x: x if isinstance(x, str) else __import__('json').dumps(x))
             df_char_final.to_csv(self.character_output_file, index=False, encoding='utf-8')
             logger.info(f"✅ Saved {len(df_char_final)} characters to {self.character_output_file}")
@@ -254,6 +233,10 @@ class CharacterFinalProcessor:
             if df_char_clean.empty:
                 logger.error("❌ No valid character data after cleaning!")
                 return False
+
+            # --- No need to parse JSON columns; just pass them through as strings ---
+            # (If present, these columns are preserved as-is from input to output)
+
             # Clean and deduplicate anime/series data
             # Map anime_mal.xlsx columns to expected names and new fields
             df_anime['name'] = df_anime['title'].astype(str).str.strip()
@@ -280,10 +263,12 @@ class CharacterFinalProcessor:
             df_char_clean['series_id'] = df_char_clean['series_id'].astype(int)
             # Add transformation columns for each character
             logger.info("🛠️ Generating transformation columns for each character...")
-            df_char_clean['element'] = df_char_clean.apply(
-                lambda row: self.determine_element(row.get('about', ''), row.get('series', ''), row.get('name', '')), axis=1)
-            df_char_clean['base_stats'] = df_char_clean.apply(
-                lambda row: self.generate_base_stats(row.get('name', ''), row.get('about', ''), row.get('waifu_id', 0), row.get('favorites', 0)), axis=1)
+            # If these columns exist in the input, use them; otherwise, set to defaults
+            df_char_clean['stats'] = df_char_clean['stats'] if 'stats' in df_char_clean.columns else [{} for _ in range(len(df_char_clean))]
+            df_char_clean['elemental_type'] = df_char_clean['elemental_type'] if 'elemental_type' in df_char_clean.columns else [[] for _ in range(len(df_char_clean))]
+            df_char_clean['archetype'] = df_char_clean['archetype'] if 'archetype' in df_char_clean.columns else ['' for _ in range(len(df_char_clean))]
+            df_char_clean['potency'] = df_char_clean['potency'] if 'potency' in df_char_clean.columns else [{} for _ in range(len(df_char_clean))]
+            df_char_clean['elemental_resistances'] = df_char_clean['elemental_resistances'] if 'elemental_resistances' in df_char_clean.columns else [{} for _ in range(len(df_char_clean))]
             df_char_clean['favorite_gifts'] = df_char_clean.apply(
                 lambda row: self.generate_favorite_gifts(row.get('about', '')), axis=1)
             df_char_clean['special_dialogue'] = [{} for _ in range(len(df_char_clean))]

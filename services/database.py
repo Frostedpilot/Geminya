@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 class DatabaseService:
     async def update_waifu(self, waifu_id: int, waifu_data: Dict[str, Any]) -> bool:
-        """Update an existing waifu in the database by waifu_id (PostgreSQL)."""
+        """Update an existing waifu in the database by waifu_id (PostgreSQL) for new schema."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         async with self.connection_pool.acquire() as conn:
@@ -21,23 +21,21 @@ class DatabaseService:
             fields = []
             values = []
             for key in [
-                "name", "series_id", "series", "genre", "element", "rarity", "image_url", "about", "base_stats", "birthday", "favorite_gifts", "special_dialogue"
+                "name", "series_id", "series", "genre", "rarity", "image_url", "about", "stats", "elemental_type", "archetype", "potency", "elemental_resistances", "birthday", "favorite_gifts", "special_dialogue"
             ]:
                 if key in waifu_data:
                     fields.append(f"{key} = ${len(values)+1}")
-                    if key == "base_stats":
-                        values.append(json.dumps(waifu_data.get("base_stats", {})))
-                    elif key == "favorite_gifts":
-                        values.append(json.dumps(waifu_data.get("favorite_gifts", [])))
-                    elif key == "special_dialogue":
-                        values.append(json.dumps(waifu_data.get("special_dialogue", {})))
+                    if key in ["stats", "potency", "elemental_resistances"]:
+                        values.append(json.dumps(waifu_data.get(key, {})))
+                    elif key in ["favorite_gifts", "special_dialogue", "elemental_type"]:
+                        values.append(json.dumps(waifu_data.get(key, [])))
                     else:
                         values.append(waifu_data[key])
             if not fields:
                 return False
             values.append(waifu_id)
             query = f"""
-                UPDATE waifus SET {', '.join(fields)} WHERE waifu_id = $${len(values)}
+                UPDATE waifus SET {', '.join(fields)} WHERE waifu_id = ${len(values)}
             """
             result = await conn.execute(query, *values)
             return result.startswith("UPDATE")
@@ -546,11 +544,14 @@ class DatabaseService:
                 series_id INTEGER REFERENCES series(series_id) ON DELETE SET NULL,
                 series VARCHAR(255) NOT NULL,
                 genre VARCHAR(100) NOT NULL,
-                element VARCHAR(50),
                 rarity INTEGER NOT NULL CHECK (rarity >= 1 AND rarity <= 3),
                 image_url TEXT,
                 about TEXT,
-                base_stats TEXT,
+                stats TEXT,
+                elemental_type TEXT,
+                archetype TEXT,
+                potency TEXT,
+                elemental_resistances TEXT,
                 birthday DATE,
                 favorite_gifts TEXT,
                 special_dialogue TEXT,
@@ -804,28 +805,32 @@ class DatabaseService:
 
     # Waifu-related methods
     async def add_waifu(self, waifu_data: Dict[str, Any]) -> int:
-        """Add a new waifu to the database (PostgreSQL), including series_id as a foreign key and about field."""
+        """Add a new waifu to the database (PostgreSQL), using new schema fields."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         async with self.connection_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
                 INSERT INTO waifus (
-                    name, series_id, series, genre, element, rarity, image_url, about, waifu_id,
-                    base_stats, birthday, favorite_gifts, special_dialogue
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                    name, series_id, series, genre, rarity, image_url, about, waifu_id,
+                    stats, elemental_type, archetype, potency, elemental_resistances,
+                    birthday, favorite_gifts, special_dialogue
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
                 RETURNING waifu_id
                 """,
                 waifu_data["name"],
                 waifu_data["series_id"],
                 waifu_data["series"],
                 waifu_data.get("genre", "Unknown"),
-                waifu_data.get("element"),
                 waifu_data["rarity"],
                 waifu_data.get("image_url"),
                 waifu_data.get("about", None),
                 waifu_data.get("waifu_id"),
-                json.dumps(waifu_data.get("base_stats", {})),
+                json.dumps(waifu_data.get("stats", {})),
+                json.dumps(waifu_data.get("elemental_type", [])),
+                waifu_data.get("archetype", None),
+                json.dumps(waifu_data.get("potency", {})),
+                json.dumps(waifu_data.get("elemental_resistances", {})),
                 waifu_data.get("birthday"),
                 json.dumps(waifu_data.get("favorite_gifts", [])),
                 json.dumps(waifu_data.get("special_dialogue", {})),

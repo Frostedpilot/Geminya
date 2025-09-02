@@ -67,14 +67,14 @@ class PostgresUploader:
             await self.db_service.close()
 
     def load_characters(self) -> List[Dict[str, Any]]:
-        """Load characters from character_final.csv."""
+        """Load characters from character_final.csv with new waifu fields."""
         characters = []
         try:
             with open(self.character_file, 'r', encoding='utf-8', newline='') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
-                    # Convert JSON fields back to Python objects
-                    for col in ['base_stats', 'favorite_gifts', 'special_dialogue']:
+                    # Convert JSON fields back to Python objects for new schema
+                    for col in ['stats', 'elemental_type', 'archetype', 'potency', 'elemental_resistances', 'favorite_gifts', 'special_dialogue']:
                         if col in row and row[col]:
                             try:
                                 row[col] = json.loads(row[col])
