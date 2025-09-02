@@ -71,8 +71,11 @@ class WaifuService:
         self._waifu_list = []  # In-memory waifu list from CSV
 
     def _load_waifus_from_csv(self, csv_path: str):
-        import csv
+        import csv, json
         waifus = []
+        json_fields = [
+            'stats', 'elemental_type', 'potency', 'elemental_resistances', 'favorite_gifts', 'special_dialogue'
+        ]
         try:
             with open(csv_path, encoding='utf-8') as f:
                 reader = csv.DictReader(f)
@@ -97,6 +100,13 @@ class WaifuService:
                             row['rarity'] = None
                     else:
                         row['rarity'] = None
+                    # Parse JSON fields
+                    for field in json_fields:
+                        if field in row and row[field] not in (None, '', 'null'):
+                            try:
+                                row[field] = json.loads(row[field])
+                            except Exception:
+                                pass
                     # Only add waifu if waifu_id is valid
                     if valid and row['waifu_id'] is not None:
                         waifus.append(row)
