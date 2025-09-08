@@ -352,13 +352,6 @@ class WaifuService:
                 "success": False,
                 "message": f"Not enough Sakura Crystals! You need {self.SUMMON_COST} but have {user['sakura_crystals']}.",
             }
-
-        # Determine rarity using new gacha rates
-        rarity = await self._determine_summon_rarity(user)
-
-        available_waifus = []
-        weights = []
-        # Banner gacha
         if banner_id is not None:
             banner = await self.db.get_banner(banner_id)
             if not banner:
@@ -368,6 +361,14 @@ class WaifuService:
             if not is_active:
                 return {"success": False, "message": f"The banner '{banner.get('name')}' is currently not active."}
 
+        # Determine rarity using new gacha rates
+        rarity = await self._determine_summon_rarity(user)
+
+        available_waifus = []
+        weights = []
+        # Banner gacha
+        if banner_id is not None:
+            banner = await self.db.get_banner(banner_id)
             banner_type = banner.get("type", "standard")
             banner_items = await self.db.get_banner_items(banner_id)
             waifu_ids = [item["item_id"] for item in banner_items]
@@ -555,16 +556,6 @@ class WaifuService:
                 "message": f"Not enough Sakura Crystals! You need {total_cost} but have {user['sakura_crystals']}.",
             }
 
-        # Deduct the total cost upfront
-        await self.db.update_user_crystals(discord_id, -total_cost)
-
-        # Use a local pity counter for this multi
-        pity_counter = user.get("pity_counter", 0)
-        waifu_rarity_pairs = []
-        rarity_counts = {1: 0, 2: 0, 3: 0}
-        forced_3star_this_multi = False
-
-        # Prepare waifu pool for this banner or default
         if banner_id is not None:
             banner = await self.db.get_banner(banner_id)
             if not banner:
@@ -591,7 +582,16 @@ class WaifuService:
                 r: [w for w in self._waifu_list if w.get("rarity") == r]
                 for r in [1, 2, 3]
             }
+        
+        # Deduct the total cost upfront
+        await self.db.update_user_crystals(discord_id, -total_cost)
 
+        # Use a local pity counter for this multi
+        pity_counter = user.get("pity_counter", 0)
+        waifu_rarity_pairs = []
+        rarity_counts = {1: 0, 2: 0, 3: 0}
+        forced_3star_this_multi = False
+        
         for i in range(count):
             # Determine rarity for this roll
             if not forced_3star_this_multi and pity_counter >= self.PITY_3_STAR:
