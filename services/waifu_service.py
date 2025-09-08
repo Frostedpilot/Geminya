@@ -885,7 +885,6 @@ class WaifuService:
                     "is_max_star": current_star >= self.MAX_STAR_LEVEL
                 }
                 enhanced_collection.append(enhanced_waifu)
-
             return enhanced_collection
         except Exception as e:
             self.logger.error(f"Error getting enhanced collection: {e}")

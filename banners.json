@@ -6,7 +6,7 @@
     "start_time": "2025-08-26 00:00:00",
     "end_time": "2025-09-01 23:59:59",
     "description": "Initial rate-up banner with increased drop rates for select series!",
-    "is_active": true,
+    "is_active": false,
     "waifu_ids": [],
     "series_ids": [31,75,109,19]
   },
@@ -28,7 +28,7 @@
     "start_time": "2025-08-26 00:00:00",
     "end_time": "2025-09-01 23:59:59",
     "description": "Have fun getting all Sunshine characters before finding others!",
-    "is_active": true,
+    "is_active": false,
     "waifu_ids": [],
     "series_ids": [75,76,77,74]
   },
@@ -39,7 +39,7 @@
     "start_time": "2025-08-26 00:00:00",
     "end_time": "2025-09-01 23:59:59",
     "description": "You are a lolicon",
-    "is_active": true,
+    "is_active": false,
     "waifu_ids": [94941,82525,136728,54151,105177,142987,46163,155554,164022,24515,144048,4628],
     "series_ids": []
   },
@@ -50,7 +50,7 @@
     "start_time": "2025-08-26 00:00:00",
     "end_time": "2025-09-01 23:59:59",
     "description": "Nam Cuong",
-    "is_active": true,
+    "is_active": false,
     "waifu_ids": [],
     "series_ids": [49,53,112,132,8,17,50,109,125,143]
   }

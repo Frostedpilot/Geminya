@@ -80,7 +80,7 @@ class WaifuSummonCog(BaseCommand):
             if series_id is not None:
                 filtered_collection = [w for w in collection if w.get("series_id") == series_id]
             # Always sort by star level (desc), then name
-            sorted_collection = sorted(filtered_collection, key=lambda w: (-w.get("current_star_level", w["rarity"]), w["name"]))
+            sorted_collection = sorted(filtered_collection, key=lambda w: (-w.get("current_star_level", w["rarity"]), -w["character_shards"], w["name"]))
 
             class CollectionPaginator(discord.ui.View):
                 def __init__(self, ctx, waifus, user, series_id):

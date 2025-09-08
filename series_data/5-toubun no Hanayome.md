@@ -5,7 +5,7 @@
 1.  **Quintuplet Combination**
     *   **Description:** The five sisters combine their efforts, creating a multifaceted attack that leaves the enemy bewildered.
     *   **Target:** All enemies.
-    *   **Effect Breakdown:** Each living "5-toubun no Hanayome" ally attacks a random enemy for 60% of their primary damage stat (`atk` or `mag`). Each hit has a 20% chance to apply a random debuff ('atk' down, 'vit' down, 'spd' down) for 2 turns.
+    *   **Effect Breakdown:** Each living "5-toubun no Hanayome" ally attacks a random enemy for 60% of their primary damage stat (`atk` or `mag`). Each hit has a 20% chance to apply a random debuff (Weaken (Minor), Expose (Minor), Slow (Minor)) for 2 turns.
     *   **Acquisition:** Acquired through a specific series event during a run.
 
 2.  **Final Exam Cram Session**

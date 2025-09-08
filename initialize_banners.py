@@ -10,6 +10,8 @@ import csv
 from collections import defaultdict
 from services.database import DatabaseService
 from config import Config
+import json as _json
+
 
 BANNER_JSON = 'banners.json'
 CHARACTER_CSV = 'data/character_final.csv'
@@ -94,7 +96,6 @@ async def main():
         if isinstance(end_time, str):
             end_time = datetime.strptime(end_time, dt_format)
         # Store series_ids as a JSON string for DB compatibility
-        import json as _json
         banner_data = {
             'name': banner['name'],
             'type': banner['type'],
@@ -114,6 +115,52 @@ async def main():
                 rate_up = True
             await db.add_banner_item(banner_id, wid, rate_up=rate_up)
 
+    # --- Add special banners ---
+    import random
+    from datetime import datetime, timedelta
+    dt_format = "%Y-%m-%d %H:%M:%S"
+    now = datetime.now()
+    future = now + timedelta(days=30)
+
+    # 1. Random Series Rate-Up Banner
+    all_series_ids = list(waifus_by_series.keys())
+    random_series_ids = random.sample(all_series_ids, min(5, len(all_series_ids)))
+    series_waifu_ids = set()
+    for sid in random_series_ids:
+        series_waifu_ids.update(waifus_by_series[sid])
+    banner_data = {
+        'name': 'Random Series Rate-Up Banner',
+        'type': 'rate-up',
+        'start_time': now,
+        'end_time': future,
+        'description': f'Rate-up for 5 random anime series: {random_series_ids}',
+        'is_active': True,
+    }
+    banner_id = await db.create_banner(banner_data)
+    print(f"Inserted special banner: Random Series Rate-Up Banner (ID: {banner_id})")
+    for wid in series_waifu_ids:
+        await db.add_banner_item(banner_id, wid, rate_up=True)
+
+    # 2. Random Character Rate-Up Banner (10 random 3★ and 10 random 2★)
+    waifus_3star = [w['waifu_id'] for w in waifus if w['rarity'] == 3]
+    waifus_2star = [w['waifu_id'] for w in waifus if w['rarity'] == 2]
+    random_3star = random.sample(waifus_3star, min(10, len(waifus_3star)))
+    random_2star = random.sample(waifus_2star, min(10, len(waifus_2star)))
+    rate_up_waifus = set(random_3star + random_2star)
+    all_waifu_ids = set(w['waifu_id'] for w in waifus)
+    banner_data = {
+        'name': 'Random Character Rate-Up Banner',
+        'type': 'rate-up',
+        'start_time': now,
+        'end_time': future,
+        'description': f'Rate-up for 10 random 3★ and 10 random 2★ characters.',
+        'is_active': True,
+        'series_ids': "[]",
+    }
+    banner_id = await db.create_banner(banner_data)
+    print(f"Inserted special banner: Random Character Rate-Up Banner (ID: {banner_id})")
+    for wid in rate_up_waifus:
+        await db.add_banner_item(banner_id, wid, rate_up=True)
     await db.close()
     print("Banner tables reinitialized from banners.json.")
 
