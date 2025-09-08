@@ -363,6 +363,11 @@ class WaifuService:
             banner = await self.db.get_banner(banner_id)
             if not banner:
                 return {"success": False, "message": f"Banner not found."}
+            
+            is_active = banner.get('is_active', False)
+            if not is_active:
+                return {"success": False, "message": f"The banner '{banner.get('name')}' is currently not active."}
+
             banner_type = banner.get("type", "standard")
             banner_items = await self.db.get_banner_items(banner_id)
             waifu_ids = [item["item_id"] for item in banner_items]
@@ -564,6 +569,11 @@ class WaifuService:
             banner = await self.db.get_banner(banner_id)
             if not banner:
                 return {"success": False, "message": f"Banner not found."}
+            
+            is_active = banner.get('is_active', False)
+            if not is_active:
+                return {"success": False, "message": f"The banner '{banner.get('name')}' is currently not active."}
+
             banner_type = banner.get("type", "standard")
             banner_items = await self.db.get_banner_items(banner_id)
             if not banner_items:

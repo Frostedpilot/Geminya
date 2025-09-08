@@ -135,6 +135,7 @@ async def main():
         'end_time': future,
         'description': f'Rate-up for 5 random anime series: {random_series_ids}',
         'is_active': True,
+        'series_ids': _json.dumps(random_series_ids),
     }
     banner_id = await db.create_banner(banner_data)
     print(f"Inserted special banner: Random Series Rate-Up Banner (ID: {banner_id})")
