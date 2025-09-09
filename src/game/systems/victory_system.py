@@ -293,9 +293,56 @@ class VictorySystem:
     
     def _check_objective_condition(self, condition: VictoryCondition) -> Optional[BattleResult]:
         """Check if objective victory condition is met"""
-        # Objective conditions would be implemented based on specific battle objectives
-        # For now, return None (not implemented)
-        return None
+        # Check for specific battle objectives
+        if not hasattr(self, 'battle_objectives') or not self.battle_objectives:
+            return None
+            
+        try:
+            for objective in self.battle_objectives:
+                objective_type = objective.get('type')
+                
+                if objective_type == 'eliminate_target':
+                    target_id = objective.get('target_id')
+                    if target_id:
+                        target = self._find_character_by_id(target_id)
+                        if target and not target.is_alive():
+                            return BattleResult(
+                                outcome=BattleOutcome.VICTORY,
+                                winning_team=self._get_player_team(),
+                                reason=f"Eliminated target: {target.name}",
+                                turn_count=self.turn_counter,
+                                battle_stats={}
+                            )
+                
+                elif objective_type == 'survive_turns':
+                    required_turns = objective.get('turns', 10)
+                    if self.turn_counter >= required_turns:
+                        return BattleResult(
+                            outcome=BattleOutcome.VICTORY,
+                            winning_team=self._get_player_team(),
+                            reason=f"Survived {required_turns} turns",
+                            turn_count=self.turn_counter,
+                            battle_stats={}
+                        )
+                        
+                elif objective_type == 'protect_ally':
+                    ally_id = objective.get('ally_id')
+                    if ally_id:
+                        ally = self._find_character_by_id(ally_id)
+                        if ally and not ally.is_alive():
+                            return BattleResult(
+                                outcome=BattleOutcome.DEFEAT,
+                                winning_team=self._get_enemy_team(),
+                                reason=f"Failed to protect: {ally.name}",
+                                turn_count=self.turn_counter,
+                                battle_stats={}
+                            )
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Error checking objective conditions: {e}")
+            return None
     
     def _check_custom_condition(self, condition: VictoryCondition) -> Optional[BattleResult]:
         """Check if custom victory condition is met"""

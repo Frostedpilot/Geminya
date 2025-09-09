@@ -387,18 +387,73 @@ class BattleContext:
     
     def _serialize_character_state(self, character: 'Character') -> Dict[str, Any]:
         """Serialize character state for snapshots"""
-        # This would need to be implemented based on the character structure
-        # For now, return a placeholder
-        return {
-            'character_id': character.character_id,
-            'placeholder': 'Character serialization not implemented'
-        }
+        try:
+            return {
+                'character_id': character.character_id,
+                'name': character.name,
+                'current_hp': character.current_hp,
+                'max_hp': character.max_hp,
+                'stats': character.stats.to_dict() if hasattr(character.stats, 'to_dict') else {},
+                'status_effects': [
+                    {
+                        'effect_type': effect.effect_type,
+                        'duration': effect.duration,
+                        'value': getattr(effect, 'value', 0),
+                        'stacks': getattr(effect, 'stacks', 1)
+                    } for effect in character.effects.active_effects
+                ] if hasattr(character, 'effects') and character.effects else [],
+                'skill_cooldowns': {
+                    skill_id: cooldown for skill_id, cooldown in character.skill_cooldowns.items()
+                } if hasattr(character, 'skill_cooldowns') else {},
+                'position': character.position if hasattr(character, 'position') else {'x': 0, 'y': 0},
+                'team_id': character.team_id,
+                'is_alive': character.is_alive()
+            }
+        except Exception as e:
+            logger.warning(f"Failed to serialize character {character.character_id}: {e}")
+            return {
+                'character_id': character.character_id,
+                'error': f'Serialization failed: {str(e)}'
+            }
     
     def _restore_character_state(self, character: 'Character', state: Dict[str, Any]):  # pylint: disable=unused-argument
         """Restore character state from snapshot data"""
-        # This would need to be implemented based on the character structure
-        # For now, this is a placeholder
-        logger.debug("Restoring character %s state (placeholder)", character.character_id)
+        try:
+            if 'error' in state:
+                logger.warning(f"Cannot restore character {character.character_id}: {state['error']}")
+                return
+            
+            # Restore HP
+            if 'current_hp' in state:
+                character.current_hp = state['current_hp']
+            
+            # Restore status effects
+            if 'status_effects' in state and hasattr(character, 'effects'):
+                character.effects.clear_all_effects()
+                for effect_data in state['status_effects']:
+                    try:
+                        # Reconstruct effect (simplified)
+                        character.effects.add_effect(
+                            effect_type=effect_data.get('effect_type', 'unknown'),
+                            duration=effect_data.get('duration', 1),
+                            value=effect_data.get('value', 0),
+                            stacks=effect_data.get('stacks', 1)
+                        )
+                    except Exception as e:
+                        logger.warning(f"Failed to restore effect {effect_data}: {e}")
+            
+            # Restore skill cooldowns
+            if 'skill_cooldowns' in state and hasattr(character, 'skill_cooldowns'):
+                character.skill_cooldowns.update(state['skill_cooldowns'])
+            
+            # Restore position
+            if 'position' in state and hasattr(character, 'position'):
+                character.position = state['position']
+                
+            logger.debug(f"Successfully restored character {character.character_id} state")
+            
+        except Exception as e:
+            logger.error(f"Failed to restore character {character.character_id} state: {e}")
     
     def _is_character_active(self, character: 'Character') -> bool:  # pylint: disable=unused-argument
         """Check if a character is still active in battle"""

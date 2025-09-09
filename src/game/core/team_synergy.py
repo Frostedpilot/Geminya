@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
 import logging
+import json
 
 from ..components.stats_component import StatModifier, StatType, ModifierType
 
@@ -49,179 +50,115 @@ class TeamSynergySystem:
         logger.info("Initialized team synergy system with %d series", len(self.series_synergies))
     
     def _initialize_series_synergies(self):
-        """Initialize all series synergies from the design document"""
+        """Load series synergies from the team_synergies.json file"""
+        try:
+            with open('data/team_synergies.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Process each team synergy
+            for series_id, synergy_data in data['team_synergies'].items():
+                try:
+                    # Create synergy bonuses for each tier
+                    tier_1_data = synergy_data['bonuses']['tier_1']
+                    tier_2_data = synergy_data['bonuses']['tier_2']
+                    tier_3_data = synergy_data['bonuses']['tier_3']
+                    
+                    tier_1_bonus = SynergyBonus(
+                        bonus_type=tier_1_data['bonus_type'],
+                        target_stat=tier_1_data.get('target_stat'),
+                        value=tier_1_data.get('value', 0.0),
+                        effect_name=tier_1_data.get('effect_name'),
+                        description=tier_1_data['description'],
+                        duration=tier_1_data.get('duration')
+                    )
+                    
+                    tier_2_bonus = SynergyBonus(
+                        bonus_type=tier_2_data['bonus_type'],
+                        target_stat=tier_2_data.get('target_stat'),
+                        value=tier_2_data.get('value', 0.0),
+                        effect_name=tier_2_data.get('effect_name'),
+                        description=tier_2_data['description'],
+                        duration=tier_2_data.get('duration')
+                    )
+                    
+                    tier_3_bonus = SynergyBonus(
+                        bonus_type=tier_3_data['bonus_type'],
+                        target_stat=tier_3_data.get('target_stat'),
+                        value=tier_3_data.get('value', 0.0),
+                        effect_name=tier_3_data.get('effect_name'),
+                        description=tier_3_data['description'],
+                        duration=tier_3_data.get('duration')
+                    )
+                    
+                    # Create tier requirements
+                    tier_reqs = synergy_data['tier_requirements']
+                    required_characters = {
+                        SynergyTier.TIER_1: tier_reqs['tier_1'],
+                        SynergyTier.TIER_2: tier_reqs['tier_2'],
+                        SynergyTier.TIER_3: tier_reqs['tier_3']
+                    }
+                    
+                    # Create SeriesSynergy object
+                    synergy = SeriesSynergy(
+                        series_id=series_id,
+                        series_name=synergy_data['series_name'],
+                        tier_1_bonus=tier_1_bonus,
+                        tier_2_bonus=tier_2_bonus,
+                        tier_3_bonus=tier_3_bonus,
+                        required_characters=required_characters
+                    )
+                    
+                    self.series_synergies[series_id] = synergy
+                    
+                except KeyError as e:
+                    logger.warning("Missing key in synergy data for %s: %s", series_id, e)
+                    continue
+                    
+            logger.info("Loaded %d series synergies from JSON", len(self.series_synergies))
+            
+        except FileNotFoundError:
+            logger.error("Team synergies file not found: data/team_synergies.json")
+            self._create_fallback_synergies()
+        except json.JSONDecodeError as e:
+            logger.error("Invalid JSON in team synergies file: %s", e)
+            self._create_fallback_synergies()
+        except KeyError as e:
+            logger.error("Missing key in team synergies file: %s", e)
+            self._create_fallback_synergies()
+    
+    def _create_fallback_synergies(self):
+        """Create basic fallback synergies if JSON loading fails"""
+        logger.warning("Creating fallback team synergies")
         
-        synergies = [
-            # K-On! Series
-            SeriesSynergy(
-                series_id="k_on",
-                series_name="K-On!",
-                tier_1_bonus=SynergyBonus(
-                    bonus_type="stat_modifier",
-                    target_stat="spd",
-                    value=0.10,
-                    description="+10% SPD for all allies."
-                ),
-                tier_2_bonus=SynergyBonus(
-                    bonus_type="stat_modifier",
-                    target_stat="mag",
-                    value=0.10,
-                    description="+10% MAG for all allies."
-                ),
-                tier_3_bonus=SynergyBonus(
-                    bonus_type="status_effect",
-                    effect_name="regen",
-                    duration=2,
-                    description="All allies gain a small 'Regen' effect for the first 2 rounds."
-                ),
-                required_characters={
-                    SynergyTier.TIER_1: 2,
-                    SynergyTier.TIER_2: 4,
-                    SynergyTier.TIER_3: 6
-                }
+        # Basic fallback synergies for critical series
+        fallback_synergy = SeriesSynergy(
+            series_id="konosuba",
+            series_name="Konosuba",
+            tier_1_bonus=SynergyBonus(
+                bonus_type="stat_modifier",
+                target_stat="lck",
+                value=0.20,
+                description="+20% LCK for all allies."
             ),
-            
-            # Re:Zero Series
-            SeriesSynergy(
-                series_id="re_zero",
-                series_name="Re:Zero",
-                tier_1_bonus=SynergyBonus(
-                    bonus_type="stat_modifier",
-                    target_stat="spr",
-                    value=0.15,
-                    description="+15% SPR for all allies."
-                ),
-                tier_2_bonus=SynergyBonus(
-                    bonus_type="special_ability",
-                    effect_name="death_prevention",
-                    description="The first time an ally would be defeated, their HP is set to 1 instead (once per battle)."
-                ),
-                tier_3_bonus=SynergyBonus(
-                    bonus_type="stat_modifier",
-                    target_stat="lck",
-                    value=0.10,
-                    description="+10% LCK for all allies."
-                ),
-                required_characters={
-                    SynergyTier.TIER_1: 2,
-                    SynergyTier.TIER_2: 4,
-                    SynergyTier.TIER_3: 6
-                }
+            tier_2_bonus=SynergyBonus(
+                bonus_type="special_ability",
+                effect_name="cooldown_chance",
+                value=0.05,
+                description="All skills have a 5% chance to not go on cooldown."
             ),
-            
-            # Konosuba Series
-            SeriesSynergy(
-                series_id="konosuba",
-                series_name="Konosuba",
-                tier_1_bonus=SynergyBonus(
-                    bonus_type="stat_modifier",
-                    target_stat="lck",
-                    value=0.20,
-                    description="+20% LCK for all allies."
-                ),
-                tier_2_bonus=SynergyBonus(
-                    bonus_type="special_ability",
-                    effect_name="cooldown_chance",
-                    value=0.05,
-                    description="All skills have a 5% chance to not go on cooldown."
-                ),
-                tier_3_bonus=SynergyBonus(
-                    bonus_type="special_ability",
-                    effect_name="random_battle_effects",
-                    description="At the start of the battle, apply one random buff to all allies and one random debuff to all enemies."
-                ),
-                required_characters={
-                    SynergyTier.TIER_1: 2,
-                    SynergyTier.TIER_2: 4,
-                    SynergyTier.TIER_3: 6
-                }
+            tier_3_bonus=SynergyBonus(
+                bonus_type="special_ability",
+                effect_name="random_battle_effects",
+                description="At the start of the battle, apply one random buff to all allies and one random debuff to all enemies."
             ),
-            
-            # Attack on Titan Series
-            SeriesSynergy(
-                series_id="attack_on_titan",
-                series_name="Attack on Titan",
-                tier_1_bonus=SynergyBonus(
-                    bonus_type="stat_modifier",
-                    target_stat="atk",
-                    value=0.15,
-                    description="+15% ATK for all allies."
-                ),
-                tier_2_bonus=SynergyBonus(
-                    bonus_type="stat_modifier",
-                    target_stat="vit",
-                    value=0.10,
-                    description="+10% VIT for all allies."
-                ),
-                tier_3_bonus=SynergyBonus(
-                    bonus_type="special_ability",
-                    effect_name="titan_transformation",
-                    description="When an ally drops below 25% HP, they gain +25% ATK and +25% SPD for 3 turns."
-                ),
-                required_characters={
-                    SynergyTier.TIER_1: 2,
-                    SynergyTier.TIER_2: 4,
-                    SynergyTier.TIER_3: 6
-                }
-            ),
-            
-            # Demon Slayer Series
-            SeriesSynergy(
-                series_id="demon_slayer",
-                series_name="Demon Slayer",
-                tier_1_bonus=SynergyBonus(
-                    bonus_type="stat_modifier",
-                    target_stat="spd",
-                    value=0.12,
-                    description="+12% SPD for all allies."
-                ),
-                tier_2_bonus=SynergyBonus(
-                    bonus_type="special_ability",
-                    effect_name="breathing_technique",
-                    description="Critical hits restore 5% HP to the attacker."
-                ),
-                tier_3_bonus=SynergyBonus(
-                    bonus_type="special_ability",
-                    effect_name="demon_slayer_mark",
-                    description="All allies immune to poison and burn effects."
-                ),
-                required_characters={
-                    SynergyTier.TIER_1: 2,
-                    SynergyTier.TIER_2: 4,
-                    SynergyTier.TIER_3: 6
-                }
-            ),
-            
-            # Jujutsu Kaisen Series
-            SeriesSynergy(
-                series_id="jujutsu_kaisen",
-                series_name="Jujutsu Kaisen",
-                tier_1_bonus=SynergyBonus(
-                    bonus_type="stat_modifier",
-                    target_stat="mag",
-                    value=0.15,
-                    description="+15% MAG for all allies."
-                ),
-                tier_2_bonus=SynergyBonus(
-                    bonus_type="special_ability",
-                    effect_name="cursed_energy",
-                    description="Magical attacks have a 10% chance to apply 'Curse' debuff."
-                ),
-                tier_3_bonus=SynergyBonus(
-                    bonus_type="special_ability",
-                    effect_name="domain_expansion",
-                    description="Once per battle, all allies can act twice in a single turn."
-                ),
-                required_characters={
-                    SynergyTier.TIER_1: 2,
-                    SynergyTier.TIER_2: 4,
-                    SynergyTier.TIER_3: 6
-                }
-            )
-        ]
+            required_characters={
+                SynergyTier.TIER_1: 2,
+                SynergyTier.TIER_2: 4,
+                SynergyTier.TIER_3: 6
+            }
+        )
         
-        for synergy in synergies:
-            self.series_synergies[synergy.series_id] = synergy
+        self.series_synergies["konosuba"] = fallback_synergy
     
     def calculate_team_synergies(self, team_characters: List[Dict[str, Any]]) -> Dict[str, List[SynergyBonus]]:
         """Calculate active synergy bonuses for a team"""

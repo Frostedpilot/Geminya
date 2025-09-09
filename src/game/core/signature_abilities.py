@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
 import logging
+import json
 
 from ..components.stats_component import StatModifier, StatType, ModifierType
 
@@ -16,10 +17,8 @@ logger = logging.getLogger(__name__)
 
 class SignatureType(Enum):
     """Types of signature abilities"""
-    ULTIMATE = "ultimate"        # Active ultimate skill
-    PASSIVE = "passive"          # Passive trait
-    AWAKENING = "awakening"      # Triggered ability
-    SPECIAL = "special"          # Unique mechanic
+    SKILL = "skill"              # Triggered signature skills (once per game)
+    PASSIVE = "passive"          # Always-on passive traits
 
 class TriggerCondition(Enum):
     """Conditions that trigger signature abilities"""
@@ -28,6 +27,8 @@ class TriggerCondition(Enum):
     HP_THRESHOLD = "hp_threshold"
     ALLY_DEATH = "ally_death"
     ENEMY_DEATH = "enemy_death"
+    ENEMY_DODGE = "enemy_dodge"
+    ALLY_DEFEATED_BY_CRIT = "ally_defeated_by_crit"
     CRITICAL_HIT = "critical_hit"
     SKILL_USE = "skill_use"
     DAMAGE_TAKEN = "damage_taken"
@@ -70,271 +71,161 @@ class SignatureAbilitiesSystem:
         logger.info("Initialized signature abilities system with %d abilities", len(self.abilities))
     
     def _initialize_signature_abilities(self):
-        """Initialize signature abilities for various characters"""
+        """Load signature abilities from the character_abilities.json file"""
+        try:
+            with open('data/character_abilities.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Helper function to convert string enums
+            def get_signature_type(type_str: str) -> SignatureType:
+                # Map from JSON type to our enum
+                if type_str == "triggered_skill":
+                    return SignatureType.SKILL
+                elif type_str in ["turn_start_trigger", "conditional_stats", "immunity_and_quirk", "round_end_trigger"]:
+                    return SignatureType.PASSIVE
+                else:
+                    return SignatureType.SKILL  # Default fallback
+            
+            def get_trigger_condition(trigger_str: str) -> TriggerCondition:
+                mapping = {
+                    "hp_threshold": TriggerCondition.HP_THRESHOLD,
+                    "enemy_dodge": TriggerCondition.ENEMY_DODGE,
+                    "ally_defeated": TriggerCondition.ALLY_DEATH,
+                    "ally_defeated_by_crit": TriggerCondition.ALLY_DEFEATED_BY_CRIT,
+                    "turn_start": TriggerCondition.TURN_START,
+                    "turn_end": TriggerCondition.TURN_END,
+                    "critical_hit": TriggerCondition.CRITICAL_HIT,
+                    "skill_use": TriggerCondition.SKILL_USE,
+                    "damage_taken": TriggerCondition.DAMAGE_TAKEN,
+                    "manual_activate": TriggerCondition.MANUAL_ACTIVATE
+                }
+                return mapping.get(trigger_str, TriggerCondition.MANUAL_ACTIVATE)
+            
+            # Process each character's abilities
+            for character_id, char_data in data.items():
+                # Process signature skills
+                for skill_data in char_data.get('signature_abilities', []):
+                    try:
+                        # Create effects list
+                        effects = []
+                        for effect_data in skill_data.get('effects', []):
+                            effect = SignatureEffect(
+                                effect_type=effect_data.get('effect_type', 'special'),
+                                target_type=effect_data.get('target_type', 'self'),
+                                value=effect_data.get('base_damage', effect_data.get('scaling_multiplier', effect_data.get('magnitude', 0.0))),
+                                duration=effect_data.get('duration'),
+                                stat_affected=effect_data.get('stat_affected'),
+                                scaling_stat=effect_data.get('scaling'),
+                                description=effect_data.get('description', skill_data.get('description', ''))
+                            )
+                            effects.append(effect)
+                        
+                        # Create signature skill
+                        ability = SignatureAbility(
+                            ability_id=skill_data['ability_id'],
+                            character_id=character_id,
+                            name=skill_data['name'],
+                            signature_type=SignatureType.SKILL,  # All in signature_abilities are skills
+                            description=skill_data['description'],
+                            effects=effects,
+                            trigger_condition=get_trigger_condition(skill_data.get('trigger_condition', 'manual_activate')),
+                            cooldown=skill_data.get('cooldown', -1),  # -1 means once per game
+                            cost=skill_data.get('cost', 0),
+                            trigger_value=skill_data.get('trigger_value', 0.0),
+                            rarity=skill_data.get('rarity', 'common')
+                        )
+                        
+                        self.abilities[ability.ability_id] = ability
+                        
+                        # Map character to abilities
+                        if character_id not in self.character_abilities:
+                            self.character_abilities[character_id] = []
+                        self.character_abilities[character_id].append(ability.ability_id)
+                        
+                    except KeyError as e:
+                        logger.warning("Missing key in signature skill data for %s: %s", character_id, e)
+                        continue
+                
+                # Process signature passives
+                for passive_data in char_data.get('signature_passives', []):
+                    try:
+                        # Create effects list
+                        effects = []
+                        for effect_data in passive_data.get('effects', []):
+                            effect = SignatureEffect(
+                                effect_type=effect_data.get('effect_type', 'stat_modifier'),
+                                target_type=effect_data.get('target_type', 'self'),
+                                value=effect_data.get('value', effect_data.get('effect_magnitude', 0.0)),
+                                duration=effect_data.get('duration'),
+                                stat_affected=effect_data.get('stat_affected'),
+                                scaling_stat=None,
+                                description=effect_data.get('description', passive_data.get('description', ''))
+                            )
+                            effects.append(effect)
+                        
+                        # Create signature passive
+                        ability = SignatureAbility(
+                            ability_id=passive_data['passive_id'],
+                            character_id=character_id,
+                            name=passive_data['name'],
+                            signature_type=SignatureType.PASSIVE,  # All in signature_passives are passives
+                            description=passive_data['description'],
+                            effects=effects,
+                            trigger_condition=TriggerCondition.TURN_START,  # Default for passives
+                            cooldown=0,  # Passives don't have cooldowns
+                            cost=0,
+                            trigger_value=0.0,
+                            rarity=passive_data.get('rarity', 'common')
+                        )
+                        
+                        self.abilities[ability.ability_id] = ability
+                        
+                        # Map character to abilities
+                        if character_id not in self.character_abilities:
+                            self.character_abilities[character_id] = []
+                        self.character_abilities[character_id].append(ability.ability_id)
+                        
+                    except KeyError as e:
+                        logger.warning("Missing key in signature passive data for %s: %s", character_id, e)
+                        continue
+                        
+            logger.info("Loaded %d signature abilities from JSON", len(self.abilities))
+            
+        except FileNotFoundError:
+            logger.error("Character abilities file not found: data/character_abilities.json")
+            self._create_fallback_abilities()
+        except json.JSONDecodeError as e:
+            logger.error("Invalid JSON in character abilities file: %s", e)
+            self._create_fallback_abilities()
+        except KeyError as e:
+            logger.error("Missing key in character abilities file: %s", e)
+            self._create_fallback_abilities()
+    
+    def _create_fallback_abilities(self):
+        """Create basic fallback abilities if JSON loading fails"""
+        logger.warning("Creating fallback signature abilities")
         
-        # Example signature abilities from different anime series
-        abilities = [
-            # Attack on Titan - Eren Jaeger
-            SignatureAbility(
-                ability_id="titan_transformation",
-                character_id="eren_jaeger",
-                name="Titan Transformation",
-                signature_type=SignatureType.AWAKENING,
-                description="Transform into Attack Titan when HP falls below 25%",
-                effects=[
-                    SignatureEffect(
-                        effect_type="stat_buff",
-                        target_type="self",
-                        stat_affected="atk",
-                        value=1.5,
-                        duration=5,
-                        description="ATK increased by 150% for 5 turns"
-                    ),
-                    SignatureEffect(
-                        effect_type="stat_buff",
-                        target_type="self",
-                        stat_affected="hp",
-                        value=0.5,
-                        description="Restore 50% HP"
-                    )
-                ],
-                trigger_condition=TriggerCondition.HP_THRESHOLD,
-                trigger_value=0.25,
-                cooldown=10,
-                rarity="legendary"
-            ),
-            
-            # Re:Zero - Subaru Natsuki
-            SignatureAbility(
-                ability_id="return_by_death",
-                character_id="subaru_natsuki",
-                name="Return by Death",
-                signature_type=SignatureType.SPECIAL,
-                description="Revive with full HP when killed, gaining knowledge of enemy patterns",
-                effects=[
-                    SignatureEffect(
-                        effect_type="special",
-                        target_type="self",
-                        description="Revive with full HP"
-                    ),
-                    SignatureEffect(
-                        effect_type="stat_buff",
-                        target_type="self",
-                        stat_affected="int",
-                        value=0.3,
-                        duration=99,
-                        description="Permanent +30% INT from gained knowledge"
-                    )
-                ],
-                trigger_condition=TriggerCondition.HP_THRESHOLD,
-                trigger_value=0.0,  # When HP reaches 0
-                cooldown=1,  # Can only be used once per battle
-                rarity="mythic"
-            ),
-            
-            # Demon Slayer - Tanjiro Kamado
-            SignatureAbility(
-                ability_id="hinokami_kagura",
-                character_id="tanjiro_kamado",
-                name="Hinokami Kagura",
-                signature_type=SignatureType.ULTIMATE,
-                description="Unleash the power of sun breathing",
-                effects=[
-                    SignatureEffect(
-                        effect_type="damage",
-                        target_type="all_enemies",
-                        value=300.0,
-                        scaling_stat="atk",
-                        description="Deal 300% ATK damage to all enemies"
-                    ),
-                    SignatureEffect(
-                        effect_type="stat_buff",
-                        target_type="self",
-                        stat_affected="spd",
-                        value=0.5,
-                        duration=3,
-                        description="SPD increased by 50% for 3 turns"
-                    )
-                ],
-                trigger_condition=TriggerCondition.MANUAL_ACTIVATE,
-                cooldown=5,
-                cost=50,
-                rarity="legendary"
-            ),
-            
-            # K-On! - Yui Hirasawa
-            SignatureAbility(
-                ability_id="musical_inspiration",
-                character_id="yui_hirasawa",
-                name="Musical Inspiration",
-                signature_type=SignatureType.PASSIVE,
-                description="Inspire allies with music, boosting their performance",
-                effects=[
-                    SignatureEffect(
-                        effect_type="stat_buff",
-                        target_type="all_allies",
-                        stat_affected="int",
-                        value=0.15,
-                        description="All allies gain +15% INT"
-                    ),
-                    SignatureEffect(
-                        effect_type="stat_buff",
-                        target_type="all_allies",
-                        stat_affected="lck",
-                        value=0.20,
-                        description="All allies gain +20% LCK"
-                    )
-                ],
-                trigger_condition=TriggerCondition.TURN_START,
-                rarity="common"
-            ),
-            
-            # Jujutsu Kaisen - Satoru Gojo
-            SignatureAbility(
-                ability_id="unlimited_void",
-                character_id="satoru_gojo",
-                name="Unlimited Void",
-                signature_type=SignatureType.ULTIMATE,
-                description="Trap enemies in infinite information space",
-                effects=[
-                    SignatureEffect(
-                        effect_type="status_effect",
-                        target_type="all_enemies",
-                        description="Stun all enemies for 2 turns"
-                    ),
-                    SignatureEffect(
-                        effect_type="damage",
-                        target_type="all_enemies",
-                        value=500.0,
-                        scaling_stat="mag",
-                        description="Deal 500% MAG damage to all enemies"
-                    )
-                ],
-                trigger_condition=TriggerCondition.MANUAL_ACTIVATE,
-                cooldown=8,
-                cost=80,
-                rarity="mythic"
-            ),
-            
-            # Konosuba - Megumin
-            SignatureAbility(
-                ability_id="explosion_magic",
-                character_id="megumin",
-                name="Explosion Magic",
-                signature_type=SignatureType.ULTIMATE,
-                description="Ultimate explosion magic that drains all mana",
-                effects=[
-                    SignatureEffect(
-                        effect_type="damage",
-                        target_type="all_enemies",
-                        value=800.0,
-                        scaling_stat="mag",
-                        description="Deal 800% MAG damage to all enemies"
-                    ),
-                    SignatureEffect(
-                        effect_type="status_effect",
-                        target_type="self",
-                        description="Become exhausted (cannot act next turn)"
-                    )
-                ],
-                trigger_condition=TriggerCondition.MANUAL_ACTIVATE,
-                cooldown=3,
-                cost=100,  # All mana
-                rarity="legendary"
-            ),
-            
-            # Generic abilities for common archetypes
-            SignatureAbility(
-                ability_id="berserker_rage",
-                character_id="generic_berserker",
-                name="Berserker Rage",
-                signature_type=SignatureType.AWAKENING,
-                description="Enter berserk state when heavily damaged",
-                effects=[
-                    SignatureEffect(
-                        effect_type="stat_buff",
-                        target_type="self",
-                        stat_affected="atk",
-                        value=0.75,
-                        duration=4,
-                        description="ATK increased by 75% for 4 turns"
-                    ),
-                    SignatureEffect(
-                        effect_type="stat_buff",
-                        target_type="self",
-                        stat_affected="spd",
-                        value=0.50,
-                        duration=4,
-                        description="SPD increased by 50% for 4 turns"
-                    )
-                ],
-                trigger_condition=TriggerCondition.HP_THRESHOLD,
-                trigger_value=0.30,
-                cooldown=6,
-                rarity="rare"
-            ),
-            
-            SignatureAbility(
-                ability_id="mage_mastery",
-                character_id="generic_mage",
-                name="Arcane Mastery",
-                signature_type=SignatureType.PASSIVE,
-                description="Deep understanding of magical arts",
-                effects=[
-                    SignatureEffect(
-                        effect_type="stat_buff",
-                        target_type="self",
-                        stat_affected="mag",
-                        value=0.25,
-                        description="MAG increased by 25%"
-                    ),
-                    SignatureEffect(
-                        effect_type="stat_buff",
-                        target_type="self",
-                        stat_affected="spr",
-                        value=0.20,
-                        description="SPR increased by 20%"
-                    )
-                ],
-                trigger_condition=TriggerCondition.TURN_START,
-                rarity="common"
-            ),
-            
-            SignatureAbility(
-                ability_id="guardian_shield",
-                character_id="generic_tank",
-                name="Guardian's Shield",
-                signature_type=SignatureType.AWAKENING,
-                description="Protect allies when they are in danger",
-                effects=[
-                    SignatureEffect(
-                        effect_type="stat_buff",
-                        target_type="all_allies",
-                        stat_affected="vit",
-                        value=0.40,
-                        duration=3,
-                        description="All allies gain +40% VIT for 3 turns"
-                    ),
-                    SignatureEffect(
-                        effect_type="special",
-                        target_type="all_allies",
-                        description="Redirect next attack to self"
-                    )
-                ],
-                trigger_condition=TriggerCondition.ALLY_DEATH,
-                cooldown=5,
-                rarity="rare"
-            )
-        ]
+        # Basic fallback ability
+        fallback_ability = SignatureAbility(
+            ability_id="emergency_skill",
+            character_id="generic",
+            name="Emergency Skill",
+            signature_type=SignatureType.SKILL,
+            description="Basic emergency ability when JSON loading fails",
+            effects=[
+                SignatureEffect(
+                    effect_type="damage",
+                    target_type="enemy",
+                    value=100.0,
+                    description="Deal basic damage"
+                )
+            ],
+            trigger_condition=TriggerCondition.MANUAL_ACTIVATE,
+            cooldown=-1,
+            rarity="common"
+        )
         
-        # Register abilities
-        for ability in abilities:
-            self.abilities[ability.ability_id] = ability
-            
-            # Map character to abilities
-            if ability.character_id not in self.character_abilities:
-                self.character_abilities[ability.character_id] = []
-            self.character_abilities[ability.character_id].append(ability.ability_id)
+        self.abilities["emergency_skill"] = fallback_ability
     
     def assign_signature_ability(self, character_id: str, ability_id: str) -> bool:
         """Assign a signature ability to a character"""
@@ -563,7 +454,7 @@ class SignatureAbilitiesSystem:
         available = []
         
         for ability in character_abilities:
-            if (ability.signature_type == SignatureType.ULTIMATE and 
+            if (ability.signature_type == SignatureType.SKILL and 
                 ability.trigger_condition == TriggerCondition.MANUAL_ACTIVATE and
                 not self._is_on_cooldown(character_id, ability.ability_id)):
                 available.append(ability)

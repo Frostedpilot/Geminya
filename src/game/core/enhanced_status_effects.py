@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
+import json
 from abc import ABC, abstractmethod
 
 from ..components.stats_component import StatModifier, StatType, ModifierType
@@ -226,21 +227,213 @@ class SpecialStatusEffect(StatusEffect):
     """Status effect with custom behavior"""
     
     def __init__(self, effect_id: str, name: str, description: str,
-                 effect_function: Callable, **kwargs):
+                 special_type: str, **kwargs):
         super().__init__(effect_id, name, description, StatusEffectType.SPECIAL, **kwargs)
-        self.effect_function = effect_function
+        self.special_type = special_type
     
     def apply_effect(self, target, instance: StatusEffectInstance, battle_context) -> Dict[str, Any]:
-        """Apply custom effect"""
-        return self.effect_function(target, instance, battle_context)
+        """Apply special effect based on type"""
+        if self.special_type == "prevent_actions":
+            return self._apply_stun_effect(target, instance, battle_context)
+        elif self.special_type == "target_switch":
+            return self._apply_charm_effect(target, instance, battle_context)
+        elif self.special_type == "action_restriction":
+            return self._apply_berserk_effect(target, instance, battle_context)
+        elif self.special_type == "status_immunity":
+            return self._apply_immunity_effect(target, instance, battle_context)
+        else:
+            return {"effect": "unknown_special", "active": True}
+    
+    def _apply_stun_effect(self, target, instance: StatusEffectInstance, battle_context) -> Dict[str, Any]:
+        """Stun prevents all actions"""
+        # Mark character as stunned in their status
+        if hasattr(target, 'combat_status'):
+            target.combat_status['stunned'] = True
+            target.combat_status['can_act'] = False
+            target.combat_status['prevented_actions'] = ['skill', 'attack', 'item']
+        
+        return {
+            "effect": "stun",
+            "stunned": True,
+            "actions_prevented": True,
+            "message": f"{target.character_id} is stunned and cannot act!"
+        }
+    
+    def _apply_charm_effect(self, target, instance: StatusEffectInstance, battle_context) -> Dict[str, Any]:
+        """Charm makes target attack allies instead of enemies"""
+        if hasattr(target, 'combat_status'):
+            target.combat_status['charmed'] = True
+            target.combat_status['target_override'] = 'allies'
+            
+            # Notify battle system that targeting is reversed
+            if battle_context and 'battle_system' in battle_context:
+                battle_system = battle_context['battle_system']
+                if hasattr(battle_system, 'set_target_override'):
+                    battle_system.set_target_override(target.character_id, 'allies')
+        
+        return {
+            "effect": "charm",
+            "charmed": True,
+            "target_switch": "allies",
+            "message": f"{target.character_id} is charmed and will attack allies!"
+        }
+    
+    def _apply_berserk_effect(self, target, instance: StatusEffectInstance, battle_context) -> Dict[str, Any]:
+        """Berserk forces attack actions only, but increases damage"""
+        if hasattr(target, 'combat_status'):
+            target.combat_status['berserked'] = True
+            target.combat_status['action_restriction'] = 'attack_only'
+            target.combat_status['allowed_actions'] = ['attack']
+            
+            # Add damage bonus for being berserked
+            if hasattr(target, 'stats'):
+                modifier = StatModifier(
+                    modifier_id=f"berserk_damage_{instance.source_id}",
+                    stat_type=StatType.ATK,
+                    modifier_type=ModifierType.PERCENTAGE,
+                    value=0.50,  # +50% attack damage while berserked
+                    source=f"status_effect_{self.effect_id}",
+                    layer=5,
+                    duration=instance.remaining_duration
+                )
+                target.stats.add_modifier(modifier)
+        
+        return {
+            "effect": "berserk",
+            "berserked": True,
+            "action_restriction": "attack_only",
+            "damage_bonus": 0.50,
+            "message": f"{target.character_id} is berserked and can only attack!"
+        }
+    
+    def _apply_immunity_effect(self, target, instance: StatusEffectInstance, battle_context) -> Dict[str, Any]:
+        """Immunity prevents new status effects from being applied"""
+        if hasattr(target, 'combat_status'):
+            target.combat_status['status_immune'] = True
+            target.combat_status['immune_to'] = 'all_status_effects'
+        
+        return {
+            "effect": "immunity",
+            "immune": True,
+            "status_immunity": True,
+            "message": f"{target.character_id} is immune to status effects!"
+        }
     
     def on_apply(self, target, instance: StatusEffectInstance, battle_context) -> Dict[str, Any]:
-        """Custom application logic"""
-        return {"applied": True, "message": f"{target.character_id} is affected by {self.name}"}
+        """Initialize combat status when special effect is applied"""
+        # Ensure target has combat_status attribute
+        if not hasattr(target, 'combat_status'):
+            target.combat_status = {}
+        
+        # Apply the effect immediately
+        result = self.apply_effect(target, instance, battle_context)
+        
+        return {
+            "applied": True,
+            "special_type": self.special_type,
+            "initial_effect": result,
+            "message": f"{target.character_id} is affected by {self.name}"
+        }
     
     def on_remove(self, target, instance: StatusEffectInstance, battle_context) -> Dict[str, Any]:
-        """Custom removal logic"""
-        return {"removed": True, "message": f"{target.character_id} recovers from {self.name}"}
+        """Clean up special effect when removed"""
+        if hasattr(target, 'combat_status'):
+            # Remove specific status flags
+            if self.special_type == "prevent_actions":
+                target.combat_status.pop('stunned', None)
+                target.combat_status.pop('can_act', None)
+                target.combat_status.pop('prevented_actions', None)
+                target.combat_status['can_act'] = True  # Restore ability to act
+            
+            elif self.special_type == "target_switch":
+                target.combat_status.pop('charmed', None)
+                target.combat_status.pop('target_override', None)
+                
+                # Notify battle system to clear target override
+                if battle_context and 'battle_system' in battle_context:
+                    battle_system = battle_context['battle_system']
+                    if hasattr(battle_system, 'clear_target_override'):
+                        battle_system.clear_target_override(target.character_id)
+            
+            elif self.special_type == "action_restriction":
+                target.combat_status.pop('berserked', None)
+                target.combat_status.pop('action_restriction', None)
+                target.combat_status.pop('allowed_actions', None)
+                
+                # Remove berserk damage bonus
+                if hasattr(target, 'stats'):
+                    modifier_id = f"berserk_damage_{instance.source_id}"
+                    target.stats.remove_modifier(modifier_id)
+            
+            elif self.special_type == "status_immunity":
+                target.combat_status.pop('status_immune', None)
+                target.combat_status.pop('immune_to', None)
+        
+        return {
+            "removed": True,
+            "special_type": self.special_type,
+            "message": f"{target.character_id} recovers from {self.name}"
+        }
+
+class AllStatsModifierStatusEffect(StatusEffect):
+    """Special status effect that modifies all stats simultaneously"""
+    
+    def __init__(self, effect_id: str, name: str, description: str,
+                 modifier_value: float, modifier_type: ModifierType = ModifierType.PERCENTAGE,
+                 **kwargs):
+        super().__init__(effect_id, name, description, StatusEffectType.SPECIAL, **kwargs)
+        self.modifier_value = modifier_value
+        self.modifier_type = modifier_type
+    
+    def apply_effect(self, target, instance: StatusEffectInstance, battle_context) -> Dict[str, Any]:
+        """All stats modifier is applied via stat modifiers, no per-turn action needed"""
+        return {"effect": "all_stats_modifier_active", "value": self.modifier_value}
+    
+    def on_apply(self, target, instance: StatusEffectInstance, battle_context) -> Dict[str, Any]:
+        """Add stat modifiers for all stats when effect is applied"""
+        if hasattr(target, 'stats'):
+            modifier_value = self.modifier_value * instance.current_intensity
+            applied_modifiers = []
+            
+            # Apply to all relevant stats
+            stats_to_modify = [StatType.ATK, StatType.MAG, StatType.VIT, StatType.SPR, 
+                             StatType.INT, StatType.SPD, StatType.LCK]
+            
+            for stat_type in stats_to_modify:
+                modifier = StatModifier(
+                    modifier_id=f"allstats_{instance.effect_id}_{stat_type.value}_{instance.source_id}",
+                    stat_type=stat_type,
+                    modifier_type=self.modifier_type,
+                    value=modifier_value,
+                    source=f"status_effect_{self.effect_id}",
+                    layer=5,  # Status effects have very high priority
+                    duration=instance.remaining_duration
+                )
+                target.stats.add_modifier(modifier)
+                applied_modifiers.append(stat_type.value)
+            
+            return {
+                "applied": True,
+                "modifier_ids": applied_modifiers,
+                "stats_affected": applied_modifiers,
+                "value": modifier_value
+            }
+        return {"applied": False, "reason": "no_stats_component"}
+    
+    def on_remove(self, target, instance: StatusEffectInstance, battle_context) -> Dict[str, Any]:
+        """Remove all stat modifiers when effect expires"""
+        if hasattr(target, 'stats'):
+            removed_modifiers = []
+            stats_to_modify = [StatType.ATK, StatType.MAG, StatType.VIT, StatType.SPR, 
+                             StatType.INT, StatType.SPD, StatType.LCK]
+            
+            for stat_type in stats_to_modify:
+                modifier_id = f"allstats_{instance.effect_id}_{stat_type.value}_{instance.source_id}"
+                if target.stats.remove_modifier(modifier_id):
+                    removed_modifiers.append(stat_type.value)
+            
+            return {"removed": True, "modifier_ids": removed_modifiers}
+        return {"removed": False}
 
 class StatusEffectSystem:
     """Manages all status effects in the game"""
@@ -249,14 +442,219 @@ class StatusEffectSystem:
         self.effect_definitions: Dict[str, StatusEffect] = {}
         self.active_effects: Dict[str, List[StatusEffectInstance]] = {}  # character_id -> effects
         self.turn_counter = 0
+        self._character_cache: Dict[str, Any] = {}  # Cache characters to maintain state
+        self.battle_context = None  # Initialize battle context
+        self.character_registry = None  # Initialize character registry
+        self.battle_system = None  # Initialize battle system
         self._initialize_status_effects()
         logger.info("Initialized status effect system with %d effects", len(self.effect_definitions))
     
     def _initialize_status_effects(self):
-        """Initialize all status effect definitions"""
+        """Load status effects from the status_effects.json file"""
+        try:
+            with open('data/status_effects.json', 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            effects = []
+            
+            # Helper function to convert string enums
+            def get_stacking_rule(rule_str: str) -> StackingRule:
+                mapping = {
+                    "no_stack": StackingRule.NO_STACK,
+                    "stack_duration": StackingRule.STACK_DURATION,
+                    "stack_intensity": StackingRule.STACK_INTENSITY,
+                    "stack_both": StackingRule.STACK_BOTH,
+                    "independent": StackingRule.INDEPENDENT
+                }
+                return mapping.get(rule_str, StackingRule.NO_STACK)
+            
+            def get_priority(priority_str: str) -> StatusPriority:
+                mapping = {
+                    "low": StatusPriority.LOW,
+                    "normal": StatusPriority.NORMAL,
+                    "high": StatusPriority.HIGH,
+                    "critical": StatusPriority.CRITICAL,
+                    "absolute": StatusPriority.ABSOLUTE
+                }
+                return mapping.get(priority_str, StatusPriority.NORMAL)
+            
+            def get_stat_type(stat_str: str) -> StatType:
+                mapping = {
+                    "atk": StatType.ATK,
+                    "vit": StatType.VIT,
+                    "spd": StatType.SPD,
+                    "mag": StatType.MAG,
+                    "spr": StatType.SPR,
+                    "lck": StatType.LCK
+                }
+                return mapping.get(stat_str, StatType.ATK)
+            
+            def get_modifier_type(modifier_str: str) -> ModifierType:
+                mapping = {
+                    "percentage": ModifierType.PERCENTAGE,
+                    "flat": ModifierType.FLAT
+                }
+                return mapping.get(modifier_str, ModifierType.PERCENTAGE)
+            
+            # Process buffs (stat modifier effects)
+            for effect_id, effect_data in data['status_effects']['buffs'].items():
+                try:
+                    stat_mod = effect_data['stat_modifier']
+                    effect = StatModifierStatusEffect(
+                        effect_id=effect_id,
+                        name=effect_data['name'],
+                        description=effect_data['description'],
+                        stat_type=get_stat_type(stat_mod['stat_type']),
+                        modifier_value=stat_mod['modifier_value'],
+                        modifier_type=get_modifier_type(stat_mod.get('modifier_type', 'percentage')),
+                        duration=effect_data['duration'],
+                        stacking_rule=get_stacking_rule(effect_data.get('stacking_rule', 'no_stack')),
+                        max_stacks=effect_data.get('max_stacks', 1),
+                        priority=get_priority(effect_data.get('priority', 'normal'))
+                    )
+                    effects.append(effect)
+                except KeyError as e:
+                    logger.warning("Missing key in buff data for %s: %s", effect_id, e)
+                    continue
+            
+            # Process debuffs (stat modifier effects)
+            for effect_id, effect_data in data['status_effects']['debuffs'].items():
+                try:
+                    if 'stat_modifier' in effect_data:
+                        stat_mod = effect_data['stat_modifier']
+                        effect = StatModifierStatusEffect(
+                            effect_id=effect_id,
+                            name=effect_data['name'],
+                            description=effect_data['description'],
+                            stat_type=get_stat_type(stat_mod['stat_type']),
+                            modifier_value=stat_mod['modifier_value'],
+                            modifier_type=get_modifier_type(stat_mod.get('modifier_type', 'percentage')),
+                            duration=effect_data['duration'],
+                            stacking_rule=get_stacking_rule(effect_data.get('stacking_rule', 'no_stack')),
+                            max_stacks=effect_data.get('max_stacks', 1),
+                            priority=get_priority(effect_data.get('priority', 'normal'))
+                        )
+                        effects.append(effect)
+                except KeyError as e:
+                    logger.warning("Missing key in debuff data for %s: %s", effect_id, e)
+                    continue
+            
+            # Process damage over time effects
+            for effect_id, effect_data in data['status_effects']['damage_over_time'].items():
+                try:
+                    effect = DamageOverTimeStatusEffect(
+                        effect_id=effect_id,
+                        name=effect_data['name'],
+                        description=effect_data['description'],
+                        damage_per_turn=effect_data['damage_per_turn'],
+                        scaling_stat=effect_data.get('scaling_stat'),
+                        duration=effect_data['duration'],
+                        stacking_rule=get_stacking_rule(effect_data.get('stacking_rule', 'no_stack')),
+                        max_stacks=effect_data.get('max_stacks', 1),
+                        priority=get_priority(effect_data.get('priority', 'normal'))
+                    )
+                    effects.append(effect)
+                except KeyError as e:
+                    logger.warning("Missing key in DOT data for %s: %s", effect_id, e)
+                    continue
+            
+            # Process healing over time effects
+            for effect_id, effect_data in data['status_effects']['heal_over_time'].items():
+                try:
+                    effect = HealOverTimeStatusEffect(
+                        effect_id=effect_id,
+                        name=effect_data['name'],
+                        description=effect_data['description'],
+                        heal_per_turn=effect_data['heal_per_turn'],
+                        scaling_stat=effect_data.get('scaling_stat'),
+                        duration=effect_data['duration'],
+                        stacking_rule=get_stacking_rule(effect_data.get('stacking_rule', 'no_stack')),
+                        max_stacks=effect_data.get('max_stacks', 1),
+                        priority=get_priority(effect_data.get('priority', 'normal'))
+                    )
+                    effects.append(effect)
+                except KeyError as e:
+                    logger.warning("Missing key in HOT data for %s: %s", effect_id, e)
+                    continue
+            
+            # Process special effects with enhanced implementations
+            for effect_id, effect_data in data['status_effects']['special_effects'].items():
+                try:
+                    # Handle special effects that have stat modifiers (like inspiration)
+                    if 'stat_modifier' in effect_data:
+                        stat_mod = effect_data['stat_modifier']
+                        if stat_mod['stat_type'] == 'all_stats':
+                            # Use the new AllStatsModifierStatusEffect for inspiration-type effects
+                            effect = AllStatsModifierStatusEffect(
+                                effect_id=effect_id,
+                                name=effect_data['name'],
+                                description=effect_data['description'],
+                                modifier_value=stat_mod['modifier_value'],
+                                modifier_type=get_modifier_type(stat_mod.get('modifier_type', 'percentage')),
+                                duration=effect_data['duration'],
+                                stacking_rule=get_stacking_rule(effect_data.get('stacking_rule', 'no_stack')),
+                                max_stacks=effect_data.get('max_stacks', 1),
+                                priority=get_priority(effect_data.get('priority', 'normal'))
+                            )
+                            effects.append(effect)
+                        else:
+                            # Regular single-stat modifier
+                            effect = StatModifierStatusEffect(
+                                effect_id=effect_id,
+                                name=effect_data['name'],
+                                description=effect_data['description'],
+                                stat_type=get_stat_type(stat_mod['stat_type']),
+                                modifier_value=stat_mod['modifier_value'],
+                                modifier_type=get_modifier_type(stat_mod.get('modifier_type', 'percentage')),
+                                duration=effect_data['duration'],
+                                stacking_rule=get_stacking_rule(effect_data.get('stacking_rule', 'no_stack')),
+                                max_stacks=effect_data.get('max_stacks', 1),
+                                priority=get_priority(effect_data.get('priority', 'normal'))
+                            )
+                            effects.append(effect)
+                    else:
+                        # Regular special effects with custom behavior
+                        special_effect_data = effect_data.get('special_effect', {})
+                        special_type = special_effect_data.get('type', effect_id)
+                        
+                        effect = SpecialStatusEffect(
+                            effect_id=effect_id,
+                            name=effect_data['name'],
+                            description=effect_data['description'],
+                            special_type=special_type,
+                            duration=effect_data['duration'],
+                            stacking_rule=get_stacking_rule(effect_data.get('stacking_rule', 'no_stack')),
+                            max_stacks=effect_data.get('max_stacks', 1),
+                            priority=get_priority(effect_data.get('priority', 'normal'))
+                        )
+                        effects.append(effect)
+                
+                except KeyError as e:
+                    logger.warning("Missing key in special effect data for %s: %s", effect_id, e)
+                    continue
+            
+            # Register all effects
+            for effect in effects:
+                self.effect_definitions[effect.effect_id] = effect
+            
+            logger.info("Loaded %d status effects from JSON", len(self.effect_definitions))
+            
+        except FileNotFoundError:
+            logger.error("Status effects file not found: data/status_effects.json")
+            self._create_fallback_effects()
+        except json.JSONDecodeError as e:
+            logger.error("Invalid JSON in status effects file: %s", e)
+            self._create_fallback_effects()
+        except KeyError as e:
+            logger.error("Missing key in status effects file: %s", e)
+            self._create_fallback_effects()
+    
+    def _create_fallback_effects(self):
+        """Create basic fallback effects if JSON loading fails"""
+        logger.warning("Creating fallback status effects")
         
-        # Stat modifier effects
-        effects = [
+        # Basic fallback effects
+        basic_effects = [
             StatModifierStatusEffect(
                 effect_id="attack_boost",
                 name="Attack Boost",
@@ -268,49 +666,6 @@ class StatusEffectSystem:
                 max_stacks=3
             ),
             
-            StatModifierStatusEffect(
-                effect_id="defense_boost",
-                name="Defense Boost", 
-                description="Increases VIT by 25%",
-                stat_type=StatType.VIT,
-                modifier_value=0.25,
-                duration=4,
-                stacking_rule=StackingRule.STACK_INTENSITY,
-                max_stacks=2
-            ),
-            
-            StatModifierStatusEffect(
-                effect_id="speed_boost",
-                name="Haste",
-                description="Increases SPD by 50%",
-                stat_type=StatType.SPD,
-                modifier_value=0.50,
-                duration=3,
-                priority=StatusPriority.HIGH
-            ),
-            
-            StatModifierStatusEffect(
-                effect_id="attack_debuff",
-                name="Weakness",
-                description="Decreases ATK by 20%",
-                stat_type=StatType.ATK,
-                modifier_value=-0.20,
-                duration=4,
-                stacking_rule=StackingRule.STACK_BOTH,
-                max_stacks=3
-            ),
-            
-            StatModifierStatusEffect(
-                effect_id="magic_boost",
-                name="Magic Power",
-                description="Increases MAG by 40%",
-                stat_type=StatType.MAG,
-                modifier_value=0.40,
-                duration=6,
-                priority=StatusPriority.HIGH
-            ),
-            
-            # Damage over time effects
             DamageOverTimeStatusEffect(
                 effect_id="poison",
                 name="Poison",
@@ -321,29 +676,6 @@ class StatusEffectSystem:
                 max_stacks=5
             ),
             
-            DamageOverTimeStatusEffect(
-                effect_id="burn",
-                name="Burn",
-                description="Deals fire damage based on caster's MAG",
-                damage_per_turn=30.0,
-                scaling_stat="mag",
-                duration=4,
-                stacking_rule=StackingRule.STACK_DURATION,
-                max_stacks=3
-            ),
-            
-            DamageOverTimeStatusEffect(
-                effect_id="bleed",
-                name="Bleed",
-                description="Deals physical damage based on caster's ATK",
-                damage_per_turn=40.0,
-                scaling_stat="atk",
-                duration=3,
-                stacking_rule=StackingRule.INDEPENDENT,
-                max_stacks=10
-            ),
-            
-            # Healing over time effects
             HealOverTimeStatusEffect(
                 effect_id="regeneration",
                 name="Regeneration",
@@ -352,64 +684,10 @@ class StatusEffectSystem:
                 duration=5,
                 stacking_rule=StackingRule.STACK_INTENSITY,
                 max_stacks=3
-            ),
-            
-            HealOverTimeStatusEffect(
-                effect_id="divine_blessing",
-                name="Divine Blessing",
-                description="Restores HP based on caster's SPR",
-                heal_per_turn=60.0,
-                scaling_stat="spr",
-                duration=7,
-                priority=StatusPriority.HIGH
             )
         ]
         
-        # Add special effects with custom functions
-        def stun_effect(target, instance, battle_context):
-            """Stun prevents all actions"""
-            return {"stunned": True, "actions_prevented": True}
-        
-        def charm_effect(target, instance, battle_context):
-            """Charm makes target attack allies"""
-            return {"charmed": True, "target_switch": "allies"}
-        
-        def berserk_effect(target, instance, battle_context):
-            """Berserk forces attack actions only"""
-            return {"berserked": True, "action_restriction": "attack_only"}
-        
-        special_effects = [
-            SpecialStatusEffect(
-                effect_id="stun",
-                name="Stun",
-                description="Cannot take any actions",
-                effect_function=stun_effect,
-                duration=2,
-                priority=StatusPriority.CRITICAL
-            ),
-            
-            SpecialStatusEffect(
-                effect_id="charm",
-                name="Charm",
-                description="Attacks allies instead of enemies",
-                effect_function=charm_effect,
-                duration=3,
-                priority=StatusPriority.HIGH
-            ),
-            
-            SpecialStatusEffect(
-                effect_id="berserk",
-                name="Berserk",
-                description="Can only use attack actions",
-                effect_function=berserk_effect,
-                duration=4,
-                priority=StatusPriority.NORMAL
-            )
-        ]
-        
-        # Register all effects
-        all_effects = effects + special_effects
-        for effect in all_effects:
+        for effect in basic_effects:
             self.effect_definitions[effect.effect_id] = effect
     
     def apply_status_effect(self, target_id: str, effect_id: str, source_id: str,
@@ -419,6 +697,12 @@ class StatusEffectSystem:
         if effect_id not in self.effect_definitions:
             logger.warning("Unknown status effect: %s", effect_id)
             return {"success": False, "reason": "unknown_effect"}
+        
+        # Check if target is immune to status effects
+        target = self._get_character_by_id(target_id)
+        if target and self._is_immune_to_status(target, effect_id):
+            logger.debug("Target %s is immune to status effect %s", target_id, effect_id)
+            return {"success": False, "reason": "target_immune"}
         
         effect_def = self.effect_definitions[effect_id]
         duration = duration_override if duration_override is not None else effect_def.base_duration
@@ -470,14 +754,48 @@ class StatusEffectSystem:
         
         self.active_effects[target_id].append(new_instance)
         
-        # Apply the effect (call on_apply)
-        target = self._get_character_by_id(target_id)
+        # Apply the effect (call on_apply and immediate apply_effect)
         if target:
-            battle_context = {"source_character": self._get_character_by_id(source_id)}
+            battle_context = {
+                "source_character": self._get_character_by_id(source_id),
+                "battle_system": getattr(self, 'battle_system', None)
+            }
+            # Call on_apply for initialization
             apply_result = effect_def.on_apply(target, new_instance, battle_context)
-            logger.info("Applied status effect %s to %s: %s", effect_id, target_id, apply_result)
+            
+            # Immediately apply the effect for instant effects (like stun, charm, berserk)
+            effect_result = effect_def.apply_effect(target, new_instance, battle_context)
+            logger.info("Applied status effect %s to %s: on_apply=%s, effect=%s", 
+                       effect_id, target_id, apply_result, effect_result)
         
         return {"success": True, "action": "applied", "instance_id": id(new_instance)}
+    
+    def _is_immune_to_status(self, target, effect_id: str) -> bool:
+        """Check if target is immune to a specific status effect"""
+        if not hasattr(target, 'combat_status'):
+            return False
+        
+        combat_status = target.combat_status
+        
+        # Check for general status immunity
+        if combat_status.get('status_immune', False):
+            immune_to = combat_status.get('immune_to', '')
+            if immune_to == 'all_status_effects':
+                return True
+            elif isinstance(immune_to, list) and effect_id in immune_to:
+                return True
+        
+        # Check for specific immunities based on effect type
+        effect_def = self.effect_definitions.get(effect_id)
+        if effect_def:
+            if effect_def.effect_type == StatusEffectType.DEBUFF:
+                return combat_status.get('debuff_immune', False)
+            elif effect_def.effect_type == StatusEffectType.DOT:
+                return combat_status.get('dot_immune', False)
+            elif effect_def.effect_type == StatusEffectType.SPECIAL:
+                return combat_status.get('special_immune', False)
+        
+        return False
     
     def remove_status_effect(self, target_id: str, effect_id: str, source_id: Optional[str] = None) -> bool:
         """Remove a specific status effect"""
@@ -522,10 +840,15 @@ class StatusEffectSystem:
             effect_def = self.effect_definitions[effect_instance.effect_id]
             
             # Apply the effect
-            battle_context = {"source_character": self._get_character_by_id(effect_instance.source_id)}
+            battle_context = {
+                "source_character": self._get_character_by_id(effect_instance.source_id),
+                "battle_system": getattr(self, 'battle_system', None)
+            }
             effect_result = effect_def.apply_effect(target, effect_instance, battle_context)
             effect_result["effect_name"] = effect_def.name
             effect_result["effect_id"] = effect_instance.effect_id
+            effect_result["source_id"] = effect_instance.source_id
+            effect_result["intensity"] = effect_instance.current_intensity
             results.append(effect_result)
             
             # Reduce duration
@@ -538,12 +861,117 @@ class StatusEffectSystem:
         # Remove expired effects
         for expired_effect in effects_to_remove:
             effect_def = self.effect_definitions[expired_effect.effect_id]
-            battle_context = {"source_character": self._get_character_by_id(expired_effect.source_id)}
+            battle_context = {
+                "source_character": self._get_character_by_id(expired_effect.source_id),
+                "battle_system": getattr(self, 'battle_system', None)
+            }
             remove_result = effect_def.on_remove(target, expired_effect, battle_context)
             self.active_effects[character_id].remove(expired_effect)
             logger.debug("Expired status effect %s on %s", expired_effect.effect_id, character_id)
+            
+            # Add expiration info to results
+            results.append({
+                "effect_name": effect_def.name,
+                "effect_id": expired_effect.effect_id,
+                "effect": "expired",
+                "message": f"{effect_def.name} has worn off",
+                "removal_result": remove_result
+            })
         
         return results
+    
+    def can_character_act(self, character_id: str) -> Dict[str, Any]:
+        """Check if character can act and what actions are available"""
+        target = self._get_character_by_id(character_id)
+        if not target:
+            return {"can_act": True, "available_actions": ["attack", "skill", "item"]}
+        
+        if not hasattr(target, 'combat_status'):
+            return {"can_act": True, "available_actions": ["attack", "skill", "item"]}
+        
+        combat_status = target.combat_status
+        
+        # Check for stun
+        if combat_status.get('stunned', False):
+            return {
+                "can_act": False,
+                "available_actions": [],
+                "reason": "stunned",
+                "message": f"{character_id} is stunned and cannot act"
+            }
+        
+        # Check for action restrictions (berserk)
+        if combat_status.get('action_restriction'):
+            restriction = combat_status['action_restriction']
+            if restriction == 'attack_only':
+                return {
+                    "can_act": True,
+                    "available_actions": ["attack"],
+                    "restriction": "attack_only",
+                    "message": f"{character_id} is berserked and can only attack"
+                }
+        
+        # Check for allowed actions override
+        if 'allowed_actions' in combat_status:
+            return {
+                "can_act": True,
+                "available_actions": combat_status['allowed_actions'],
+                "restriction": "custom",
+                "message": f"{character_id} has limited actions available"
+            }
+        
+        return {"can_act": True, "available_actions": ["attack", "skill", "item"]}
+    
+    def get_target_override(self, character_id: str) -> Optional[str]:
+        """Get target override for charmed characters"""
+        target = self._get_character_by_id(character_id)
+        if not target or not hasattr(target, 'combat_status'):
+            return None
+        
+        return target.combat_status.get('target_override')
+    
+    def has_status_type(self, character_id: str, status_type: StatusEffectType) -> bool:
+        """Check if character has any effect of a specific type"""
+        if character_id not in self.active_effects:
+            return False
+        
+        for effect_instance in self.active_effects[character_id]:
+            effect_def = self.effect_definitions[effect_instance.effect_id]
+            if effect_def.effect_type == status_type:
+                return True
+        
+        return False
+    
+    def get_status_modifiers(self, character_id: str) -> Dict[str, float]:
+        """Get all status-based stat modifiers for calculations"""
+        modifiers = {}
+        
+        if character_id not in self.active_effects:
+            return modifiers
+        
+        for effect_instance in self.active_effects[character_id]:
+            effect_def = self.effect_definitions[effect_instance.effect_id]
+            
+            if isinstance(effect_def, StatModifierStatusEffect):
+                stat_name = effect_def.stat_type.value
+                modifier_value = effect_def.modifier_value * effect_instance.current_intensity
+                
+                if stat_name not in modifiers:
+                    modifiers[stat_name] = 0
+                modifiers[stat_name] += modifier_value
+            
+            elif isinstance(effect_def, AllStatsModifierStatusEffect):
+                modifier_value = effect_def.modifier_value * effect_instance.current_intensity
+                for stat in ['atk', 'mag', 'vit', 'spr', 'int', 'spd', 'lck']:
+                    if stat not in modifiers:
+                        modifiers[stat] = 0
+                    modifiers[stat] += modifier_value
+        
+        return modifiers
+    
+    def set_battle_system(self, battle_system):
+        """Set the battle system for integration"""
+        self.battle_system = battle_system
     
     def get_active_effects(self, character_id: str) -> List[Dict[str, Any]]:
         """Get all active effects for a character"""
@@ -586,9 +1014,30 @@ class StatusEffectSystem:
         self.turn_counter += 1
     
     def _get_character_by_id(self, character_id: str):
-        """Get character object by ID (placeholder - would integrate with character system)"""
-        # In a full implementation, this would get the actual character object
-        # For now, return a mock object with basic stats support
+        """Get character object by ID - integrated with battle context"""
+        # First check cache
+        if character_id in self._character_cache:
+            return self._character_cache[character_id]
+            
+        # Try to get character from battle context if available
+        if self.battle_context:
+            try:
+                all_characters = self.battle_context.get_all_characters()
+                for character in all_characters:
+                    if character.character_id == character_id:
+                        self._character_cache[character_id] = character
+                        return character
+            except (AttributeError, TypeError) as e:
+                logger.warning("Failed to get character from battle context: %s", e)
+        
+        # Try to get from global character registry if available
+        if self.character_registry:
+            character = self.character_registry.get(character_id)
+            if character:
+                self._character_cache[character_id] = character
+                return character
+        
+        # Fallback: create mock object for testing/standalone usage
         from ..components.stats_component import StatsComponent
         
         class MockCharacter:
@@ -597,6 +1046,7 @@ class StatusEffectSystem:
                 self.current_hp = 100
                 self.max_hp = 100
                 self.stats = StatsComponent(char_id)
+                self.combat_status = {}  # Initialize combat status
                 
                 # Initialize with basic stats
                 character_data = {
@@ -607,7 +1057,18 @@ class StatusEffectSystem:
                 }
                 self.stats.initialize(character_data)
         
-        return MockCharacter(character_id)
+        logger.debug("Using mock character for ID: %s", character_id)
+        mock_character = MockCharacter(character_id)
+        self._character_cache[character_id] = mock_character
+        return mock_character
+    
+    def set_battle_context(self, battle_context):
+        """Set the battle context for character lookups"""
+        self.battle_context = battle_context
+    
+    def set_character_registry(self, registry):
+        """Set a character registry for lookups"""
+        self.character_registry = registry
 
 # Global status effect system instance
 status_effect_system = StatusEffectSystem()

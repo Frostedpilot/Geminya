@@ -8,15 +8,17 @@ This class provides a unified interface to all character functionality:
 - Serialization and persistence
 """
 
-from typing import Dict, Any, Optional, Union, Type, List, cast
+from typing import Dict, Any, Optional, Union, Type, List, Tuple
 import logging
 
 from .stats_component import StatsComponent, StatType
 from .effects_component import EffectsComponent, StatusEffect
 from .state_component import StateComponent
-from .abilities_component import AbilitiesComponent, BaseSkill, BasePassive
+from .universal_abilities_component import UniversalAbilitiesComponent
+from ..core.universal_skill_library import UniversalSkill
 from . import BaseComponent
 from ..core.event_system import GameEvent, event_bus, EventPhase
+from ..core.elemental_system import ElementalCalculator
 
 logger = logging.getLogger(__name__)
 
@@ -32,11 +34,16 @@ class Character:
         self.character_id = character_id
         self.character_data = character_data or {}
         
-        # Core components
+        # Initialize components dict without type constraints for abilities
+        self._abilities_component = UniversalAbilitiesComponent(self.character_data)
+        
+        # Core components (keeping type system for others)
         self.components: Dict[str, BaseComponent] = {}
         
-        # Initialize core components
-        self._initialize_components()
+        # Initialize other components normally
+        self.components["stats"] = StatsComponent(character_id)
+        self.components["effects"] = EffectsComponent(character_id) 
+        self.components["state"] = StateComponent(character_id)
         
         # Character metadata
         self.name = self.character_data.get("name", character_id)
@@ -47,6 +54,12 @@ class Character:
         
         # Current HP tracking (initialized after stats are set)
         self.current_hp = 0.0
+        
+        # Initialize components after character data is set
+        self._initialize_components()
+        
+        # Set initial HP to max
+        self.current_hp = self.get_stat("hp")
         
         # Initialize all components with data
         if character_data:
@@ -60,10 +73,7 @@ class Character:
         self.components["stats"] = StatsComponent(self.character_id)
         self.components["effects"] = EffectsComponent(self.character_id)
         self.components["state"] = StateComponent(self.character_id)
-        self.components["abilities"] = AbilitiesComponent(self.character_id)
-        
-        # Set character reference for abilities component (after components dict is set)
-        self.abilities.set_character(self)
+        # Note: abilities component is initialized separately as _abilities_component
         
         logger.debug("Initialized core components for character %s", self.character_id)
     
@@ -216,9 +226,9 @@ class Character:
         return self.components["state"]  # type: ignore
     
     @property
-    def abilities(self) -> AbilitiesComponent:
+    def abilities(self) -> UniversalAbilitiesComponent:
         """Get abilities component"""
-        return self.components["abilities"]  # type: ignore
+        return self._abilities_component
     
     def get_stat(self, stat_type: Union[StatType, str]) -> float:
         """Get current stat value"""
@@ -329,29 +339,75 @@ class Character:
         """Reset action gauge"""
         self.state.reset_action_gauge()
     
-    # Abilities methods
+    # Universal Skills System methods
     
-    def get_skill(self, skill_id: str) -> Optional[BaseSkill]:
-        """Get a skill by ID"""
-        return self.abilities.get_skill(skill_id)
+    def get_universal_skill(self, skill_id: str) -> Optional[UniversalSkill]:
+        """Get a universal skill by ID if available to this character"""
+        for role_skills in self.abilities.get_available_skills().values():
+            for skill in role_skills:
+                if skill.skill_id == skill_id:
+                    return skill
+        return None
     
-    def get_passive(self, passive_id: str) -> Optional[BasePassive]:
-        """Get a passive by ID"""
-        return self.abilities.get_passive(passive_id)
-    
-    def get_skills(self) -> List[BaseSkill]:
-        """Get all skills"""
+    def get_all_available_skills(self) -> List[UniversalSkill]:
+        """Get all skills available to this character"""
         all_skills = []
-        for skill_list in self.abilities.skills.values():
-            all_skills.extend(skill_list)
+        for role_skills in self.abilities.get_available_skills().values():
+            all_skills.extend(role_skills)
         return all_skills
     
-    def get_passives(self) -> List[BasePassive]:
-        """Get all passives"""
-        all_passives = []
-        for passive_list in self.abilities.passives.values():
-            all_passives.extend(passive_list)
-        return all_passives
+    def get_usable_skills(self) -> List[UniversalSkill]:
+        """Get skills that are not on cooldown"""
+        usable = []
+        for role_skills in self.abilities.get_usable_skills().values():
+            usable.extend(role_skills)
+        return usable
+    
+    def can_use_skill(self, skill_id: str) -> bool:
+        """Check if character can use a specific skill"""
+        return self.abilities.can_use_skill(skill_id)
+    
+    def use_universal_skill(self, skill_id: str) -> Optional[UniversalSkill]:
+        """Use a universal skill (put it on cooldown)"""
+        return self.abilities.use_skill(skill_id)
+    
+    def ai_select_skill(self, battle_context: Optional[Dict[str, Any]] = None) -> Optional[UniversalSkill]:
+        """Use AI to select the best skill for current situation"""
+        character_stats = {
+            'hp': self.get_stat('hp'),
+            'atk': self.get_stat('atk'), 
+            'def': self.get_stat('def'),
+            'mag': self.get_stat('mag'),
+            'res': self.get_stat('res'),
+            'spd': self.get_stat('spd')
+        }
+        return self.abilities.ai_select_skill(character_stats, battle_context)
+    
+    def get_skill_effectiveness(self, skill: UniversalSkill) -> float:
+        """Get how effective this character is with a specific skill"""
+        return self.abilities.get_skill_effectiveness(skill)
+    
+    def get_character_analysis(self) -> Dict[str, Any]:
+        """Get detailed analysis of this character's capabilities"""
+        return self.abilities.get_character_analysis()
+        
+    def get_skill_recommendations(self, situation: str = "general") -> List[Dict[str, Any]]:
+        """Get recommended skills for different situations"""
+        character_stats = {
+            'hp': self.get_stat('hp'),
+            'atk': self.get_stat('atk'), 
+            'def': self.get_stat('def'),
+            'mag': self.get_stat('mag'),
+            'res': self.get_stat('res'),
+            'spd': self.get_stat('spd')
+        }
+        return self.abilities.get_skill_recommendations(character_stats, situation)
+    
+    def advance_skill_cooldowns(self):
+        """Advance all skill cooldowns by one turn"""
+        self.abilities.advance_cooldowns()
+    
+    # HP management methods
     
     def get_current_hp(self) -> float:
         """Get current HP"""
@@ -370,28 +426,46 @@ class Character:
         """Check if character is defeated (HP <= 0)"""
         return self.current_hp <= 0
     
+    # Legacy compatibility methods (for backwards compatibility)
+    
+    def get_skills(self) -> List[UniversalSkill]:
+        """Get all skills (legacy compatibility)"""
+        return self.get_all_available_skills()
+    
     def get_available_skills(self):
-        """Get all currently available skills"""
-        return self.abilities.get_available_skills(self)
+        """Get all currently available skills (legacy compatibility)"""
+        return self.abilities.get_available_skills()
     
-    def add_skill(self, skill: BaseSkill):
-        """Add a skill to the character"""
-        self.abilities.add_skill(skill)
-    
-    def add_passive(self, passive: BasePassive):
-        """Add a passive to the character"""
-        self.abilities.add_passive(passive)
-    
-    def use_skill(self, skill_id: str, targets, battle_context=None):
-        """Use a skill"""
-        skill = self.get_skill(skill_id)
-        if not skill:
-            return {"success": False, "error": f"Skill {skill_id} not found"}
+    def get_skill(self, skill_id: str) -> Optional[UniversalSkill]:
+        """Get a skill by ID (legacy compatibility)"""
+        return self.get_universal_skill(skill_id)
         
-        if not skill.can_use(self):
+    def use_skill(self, skill_id: str, targets=None, battle_context=None) -> Dict[str, Any]:
+        """Use a skill (legacy compatibility method)"""
+        skill = self.use_universal_skill(skill_id)
+        if skill:
+            # Log what happened for debugging
+            logger.info("Character %s used skill %s", self.name, skill.name)
+            return {"success": True, "skill": skill, "message": f"Used {skill.name}"}
+        else:
             return {"success": False, "error": f"Cannot use skill {skill_id}"}
+    
+    # Remove passive-related methods since universal system doesn't use them
+    def get_passives(self) -> List:
+        """Get all passives (empty in universal system)"""
+        return []
+    
+    def get_passive(self, passive_id: str) -> Optional[Any]:
+        """Get a passive by ID (not used in universal system)"""
+        return None
+    
+    def add_skill(self, skill: Any):
+        """Add skill (not used in universal system - skills come from library)"""
+        pass
         
-        return skill.execute(self, targets, battle_context)
+    def add_passive(self, passive: Any):
+        """Add passive (not used in universal system)"""
+        pass
     
     def has_resource(self, resource: str, amount: float) -> bool:
         """Check if character has enough of a resource (for skill costs)"""
@@ -403,9 +477,43 @@ class Character:
         # Placeholder for future resource system
         pass
     
+    def get_elements(self) -> List[str]:
+        """Get character's elemental types"""
+        elemental_type_data = self.character_data.get("elemental_type", ["neutral"])
+        return ElementalCalculator.parse_character_elements(elemental_type_data)
+    
+    def get_elemental_resistances(self) -> Dict[str, str]:
+        """Get character's elemental resistances"""
+        resistances_data = self.character_data.get("elemental_resistances", {})
+        return ElementalCalculator.parse_character_resistances(resistances_data)
+    
+    def get_elemental_effectiveness_against(self, target: 'Character') -> Dict[str, Any]:
+        """Get elemental effectiveness analysis against target"""
+        from ..core.elemental_system import elemental_calculator
+        
+        my_elements = self.get_elements()
+        target_resistances = target.get_elemental_resistances()
+        
+        return elemental_calculator.analyze_elemental_matchup(my_elements, target_resistances)
+    
+    def calculate_elemental_modifier_against(
+        self, 
+        target: 'Character', 
+        skill_element_override: Optional[str] = None
+    ) -> Tuple[float, Dict[str, Any]]:
+        """Calculate elemental damage modifier against target"""
+        from ..core.elemental_system import elemental_calculator
+        
+        my_elements = self.get_elements()
+        target_resistances = target.get_elemental_resistances()
+        
+        return elemental_calculator.calculate_elemental_modifier(
+            my_elements, target_resistances, skill_element_override
+        )
+    
     def get_summary(self) -> Dict[str, Any]:
         """Get character summary"""
-        abilities_summary = self.abilities.get_summary()
+        abilities_analysis = self.abilities.get_character_analysis()
         
         return {
             "character_id": self.character_id,
@@ -423,10 +531,10 @@ class Character:
             "current_target": self.state.current_target,
             "active_effects_count": len(self.effects.active_effects),
             "cooldowns_count": len(self.state.cooldowns),
-            "total_skills": abilities_summary["total_skills"],
-            "total_passives": abilities_summary["total_passives"],
-            "available_skills": abilities_summary["available_skills"],
-            "active_passives": abilities_summary["active_passives"],
+            "total_skills": abilities_analysis["total_skills"],
+            "potency_ratings": abilities_analysis["potency_ratings"],
+            "primary_roles": abilities_analysis["primary_roles"],
+            "secondary_roles": abilities_analysis["secondary_roles"],
             "stats": {
                 stat.value: self.get_stat(stat) for stat in StatType
             }

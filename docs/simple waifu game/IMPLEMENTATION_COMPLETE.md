@@ -52,7 +52,7 @@ The game now includes **ALL** design specification features:
 - Universal Scaling Formula (complex mathematical scaling)
 
 ### Character Systems ✅
-- Archetype System (22 character types with passives)
+- Archetype System (22 character types for classification)
 - Signature Abilities System (unique character ultimates)
 - Enhanced Skill Library (40+ skills across 6 categories)
 

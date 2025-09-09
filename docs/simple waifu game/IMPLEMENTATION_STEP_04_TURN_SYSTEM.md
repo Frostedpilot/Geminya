@@ -1096,9 +1096,6 @@ class BattleManager:
         if self.battle_context.team_2_leader_id:
             self._apply_leader_bonus(self.battle_context.team_2_leader_id)
         
-        # Apply archetype passives
-        self._apply_archetype_passives()
-        
         # Apply synergy bonuses
         self._apply_synergy_bonuses()
     
@@ -1123,12 +1120,6 @@ class BattleManager:
                     stats_comp.add_modifier(modifier)
                 
                 logger.debug(f"Applied leader bonus to {leader_id}")
-    
-    def _apply_archetype_passives(self):
-        """Apply archetype passive bonuses to all characters"""
-        # This would implement the archetype passive table from the game design
-        # For now, implement a basic version
-        pass
     
     def _apply_synergy_bonuses(self):
         """Apply series synergy bonuses"""

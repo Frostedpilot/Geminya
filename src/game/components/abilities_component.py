@@ -47,6 +47,52 @@ class TargetType(Enum):
     RANDOM_ALLY = "random_ally"
     FRONT_ROW = "front_row"
     BACK_ROW = "back_row"
+    
+    # New target types for advanced skills system
+    SINGLE_FRONT_ENEMY = "single_front_enemy"
+    SINGLE_BACK_ENEMY = "single_back_enemy"
+    FRONT_ROW_ENEMIES = "front_row_enemies"
+    FRONT_ROW_ALLIES = "front_row_allies"
+    ROW_ALLIES = "row_allies"
+    ROW_ENEMIES = "row_enemies"
+    THREE_RANDOM_ENEMIES = "three_random_enemies"
+    RANDOM_ENEMIES = "random_enemies"
+    DEFEATED_ALLY = "defeated_ally"
+
+class SkillEffectType(Enum):
+    """Types of skill effects"""
+    # Basic effects
+    DAMAGE = "damage"
+    HEAL = "heal"
+    STATUS_EFFECT = "status_effect"
+    
+    # Advanced damage effects
+    CHAIN_DAMAGE = "chain_damage"
+    SPLASH_DAMAGE = "splash_damage"
+    RECOIL_DAMAGE = "recoil_damage"
+    
+    # Conditional effects
+    CONDITIONAL_MULTIPLIER = "conditional_multiplier"
+    
+    # Armor/Defense effects
+    ARMOR_PENETRATION = "armor_penetration"
+    
+    # Combat mechanics
+    COUNTER_ATTACK = "counter_attack"
+    DAMAGE_REDIRECT = "damage_redirect"
+    
+    # Utility effects
+    CLEANSE_DEBUFFS = "cleanse_debuffs"
+    DISPEL_BUFF = "dispel_buff"
+    SHIELD = "shield"
+    GUARANTEED_DODGE = "guaranteed_dodge"
+    ACTION_GAUGE_BOOST = "action_gauge_boost"
+    
+    # Magic effects
+    REFLECT_MAGIC = "reflect_magic"
+    
+    # Special effects
+    REVIVE = "revive"
 
 class SkillState(Enum):
     """Skill availability states"""
@@ -165,9 +211,43 @@ class BaseSkill(ABC):
     
     def get_valid_targets(self, caster, battle_context) -> List:
         """Get list of valid targets for this skill"""
-        # This would be implemented by a battle context system
-        # For now, return empty list as placeholder
-        return []
+        if not battle_context:
+            return []
+            
+        try:
+            # Get all characters in battle
+            all_characters = battle_context.get_all_characters()
+            if not all_characters:
+                return []
+            
+            # Filter based on targeting rules
+            valid_targets = []
+            
+            # Determine targeting based on skill properties
+            target_type = getattr(self, 'target_type', 'enemy')
+            target_count = getattr(self, 'target_count', 1)
+            
+            if target_type == 'self':
+                valid_targets = [caster]
+            elif target_type == 'ally':
+                valid_targets = [char for char in all_characters 
+                               if char.team_id == caster.team_id and char.is_alive()]
+            elif target_type == 'enemy':
+                enemy_team = 'team_2' if caster.team_id == 'team_1' else 'team_1'
+                valid_targets = [char for char in all_characters 
+                               if char.team_id == enemy_team and char.is_alive()]
+            elif target_type == 'all':
+                valid_targets = [char for char in all_characters if char.is_alive()]
+            
+            # Limit to target count if specified
+            if target_count > 0 and len(valid_targets) > target_count:
+                valid_targets = valid_targets[:target_count]
+                
+            return valid_targets
+            
+        except Exception as e:
+            logger.warning(f"Failed to get valid targets for skill {self.skill_id}: {e}")
+            return []
     
     def execute(self, caster, targets: List, battle_context) -> Dict[str, Any]:
         """Execute the skill with full pipeline"""
@@ -324,6 +404,93 @@ class BasePassive(ABC):
     def __str__(self) -> str:
         return f"Passive({self.passive_id}: {self.name})"
 
+class DataDrivenSkill(BaseSkill):
+    """A skill implementation that uses data from the new skills system"""
+    
+    def __init__(self, skill_id: str, name: str, description: str, skill_type: SkillType,
+                 target_type: TargetType, cooldown: int, cost: SkillCost, skill_data: Dict[str, Any]):
+        super().__init__(skill_id, name, description, skill_type, target_type, cooldown, cost)
+        self.skill_data = skill_data
+        
+        # Extract scaling parameters
+        self.power_weight = skill_data.get("power_weight", 50)
+        self.floor = skill_data.get("floor", 20)
+        self.sc1 = skill_data.get("sc1", 50)
+        self.sc2 = skill_data.get("sc2", 200)
+        self.post_cap_rate = skill_data.get("post_cap_rate", 0.5)
+        
+        # Extract scaling info
+        scaling = skill_data.get("scaling", {})
+        self.primary_stat = scaling.get("primary_stat", "atk")
+        self.skill_multiplier = scaling.get("skill_multiplier", 1.0)
+        
+        # Extract effects
+        self.effects = skill_data.get("effects", [])
+    
+    def calculate_damage(self, caster, target) -> float:
+        """Calculate damage using the universal scaling system"""
+        from ..core.universal_scaling import UniversalScaling, ScalingParameters
+        
+        # Get stats as dict
+        caster_stats = {
+            "atk": getattr(caster.stats, 'get_stat', lambda x: 100)("atk"),
+            "mag": getattr(caster.stats, 'get_stat', lambda x: 100)("mag"),
+            "int": getattr(caster.stats, 'get_stat', lambda x: 100)("int"),
+            "spr": getattr(caster.stats, 'get_stat', lambda x: 100)("spr"),
+        }
+        
+        target_stats = {
+            "vit": getattr(target.stats, 'get_stat', lambda x: 50)("vit"),
+            "spr": getattr(target.stats, 'get_stat', lambda x: 50)("spr"),
+        }
+        
+        # Create scaling parameters
+        scaling_params = ScalingParameters(
+            floor=self.floor,
+            ceiling=0,
+            softcap_1=self.sc1,
+            softcap_2=self.sc2,
+            post_cap_rate=self.post_cap_rate
+        )
+        
+        # Determine if magical damage
+        is_magical = self.primary_stat == "mag"
+        
+        # Calculate final damage
+        damage = UniversalScaling.calculate_final_damage(
+            caster_stats=caster_stats,
+            target_stats=target_stats,
+            scaling_params=scaling_params,
+            skill_multiplier=self.skill_multiplier,
+            is_magical=is_magical
+        )
+        
+        return damage
+    
+    def validate_execution(self, caster, targets: List, battle_context) -> bool:
+        """Validate that the skill can be executed"""
+        return len(targets) > 0
+    
+    def get_ai_priority(self, caster, battle_context) -> float:
+        """Get AI priority for this skill"""
+        return 1.0
+    
+    def execute_effects(self, caster, targets: List, battle_context) -> Dict[str, Any]:
+        """Execute all skill effects using the dedicated effect handler"""
+        from .skill_effects import SkillEffectHandler
+        
+        result = SkillEffectHandler.execute_skill_effects(
+            effects=self.effects,
+            caster=caster,
+            targets=targets,
+            battle_context=battle_context
+        )
+        
+        # Add success flag
+        result["success"] = True
+        
+        return result
+
 class AbilitiesComponent(BaseComponent):
     """Component that manages character's skills and passive abilities"""
     
@@ -391,17 +558,84 @@ class AbilitiesComponent(BaseComponent):
     
     def create_skill_from_data(self, skill_data: Dict[str, Any], skill_type: SkillType) -> Optional[BaseSkill]:
         """Create a skill instance from data"""
-        # This would typically load from a skill factory/registry
-        # For now, return None as placeholder for data-driven loading
-        logger.info("Creating skill from data: %s", skill_data.get("skill_id", "unknown"))
-        return None
+        # Create a data-driven skill from the new skill format
+        logger.info("Creating skill from data: %s", skill_data.get("name", "unknown"))
+        
+        # Extract basic skill info
+        skill_id = skill_data.get("name", "unknown").lower().replace(" ", "_")
+        name = skill_data.get("name", "Unknown Skill")
+        description = skill_data.get("description", "")
+        target_type_str = skill_data.get("target_type", "single_enemy")
+        
+        # Convert target type string to enum
+        try:
+            target_type = TargetType(target_type_str)
+        except ValueError:
+            logger.warning("Unknown target type: %s, defaulting to single_enemy", target_type_str)
+            target_type = TargetType.SINGLE_ENEMY
+        
+        # Create skill cost
+        cooldown = skill_data.get("cooldown", 0)
+        cost = SkillCost()  # Default cost for now
+        
+        # Create the data-driven skill
+        skill = DataDrivenSkill(
+            skill_id=skill_id,
+            name=name,
+            description=description,
+            skill_type=skill_type,
+            target_type=target_type,
+            cooldown=cooldown,
+            cost=cost,
+            skill_data=skill_data
+        )
+        
+        return skill
     
     def create_passive_from_data(self, passive_data: Dict[str, Any], passive_type: PassiveType) -> Optional[BasePassive]:
         """Create a passive instance from data"""
-        # This would typically load from a passive factory/registry
-        # For now, return None as placeholder for data-driven loading
-        logger.info("Creating passive from data: %s", passive_data.get("passive_id", "unknown"))
-        return None
+        try:
+            passive_id = passive_data.get("passive_id")
+            if not passive_id:
+                logger.warning("Passive data missing 'passive_id'")
+                return None
+            
+            # Import here to avoid circular imports
+            from ..core.universal_skill_library import UniversalSkillLibrary
+            
+            # Try to get passive from universal library
+            skill_lib = UniversalSkillLibrary()
+            passive_template = skill_lib.get_passive_by_id(passive_id)
+            
+            if passive_template:
+                # Create passive instance from template
+                passive = BasePassive(
+                    passive_id=passive_id,
+                    name=passive_template.get("name", passive_id),
+                    description=passive_template.get("description", ""),
+                    passive_type=passive_type,
+                    triggers=passive_template.get("triggers", []),
+                    effects=passive_template.get("effects", [])
+                )
+                logger.info(f"Created passive from universal library: {passive_id}")
+                return passive
+            
+            # Fallback: create basic passive from data
+            passive = BasePassive(
+                passive_id=passive_id,
+                name=passive_data.get("name", passive_id),
+                description=passive_data.get("description", ""),
+                passive_type=passive_type,
+                triggers=passive_data.get("triggers", []),
+                effects=passive_data.get("effects", [])
+            )
+            
+            logger.info(f"Created basic passive from data: {passive_id}")
+            return passive
+            
+        except Exception as e:
+            logger.error(f"Failed to create passive from data: {e}")
+            return None
     
     def add_skill(self, skill: BaseSkill):
         """Add a skill to the character"""

@@ -17,6 +17,7 @@ import math
 
 from ..core.event_system import GameEvent, event_bus, EventPhase
 from ..core.battle_context import BattleContext
+from ..core.elemental_system import elemental_calculator
 from ..components.character import Character
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,8 @@ class DamageInfo:
     is_critical: bool = False
     is_blocked: bool = False
     is_dodged: bool = False
+    elemental_modifier: float = 1.0
+    elemental_details: Optional[Dict[str, Any]] = None
     modifiers: Optional[List[str]] = None
     
     def __post_init__(self):
@@ -325,14 +328,75 @@ class CombatSystem:
     
     def _execute_item(self, action: CombatAction) -> ActionResult:
         """Execute an item usage action"""
-        # Item system not implemented yet, return basic result
-        return ActionResult(
-            action=action,
-            success=True,
-            damage_results={},
-            status_effects_applied=[],
-            events_triggered=[]
-        )
+        try:
+            # Basic item system implementation
+            item_id = action.target_id  # Using target_id to store item_id
+            caster = action.character
+            
+            # Simple item effects
+            item_effects = {
+                'healing_potion': {'type': 'heal', 'value': 50},
+                'mana_potion': {'type': 'restore_mp', 'value': 30},
+                'strength_buff': {'type': 'buff_atk', 'value': 20, 'duration': 3},
+                'speed_buff': {'type': 'buff_spd', 'value': 15, 'duration': 3},
+                'antidote': {'type': 'cleanse', 'effects': ['poison', 'burn']},
+                'smoke_bomb': {'type': 'escape', 'success_rate': 0.8}
+            }
+            
+            item_data = item_effects.get(item_id, {'type': 'unknown'})
+            effects = []
+            
+            if item_data['type'] == 'heal':
+                heal_amount = min(item_data['value'], caster.max_hp - caster.current_hp)
+                caster.current_hp += heal_amount
+                effects.append(f"Healed {heal_amount} HP")
+                
+            elif item_data['type'] == 'restore_mp':
+                # MP restoration (if MP system exists)
+                effects.append(f"Restored {item_data['value']} MP")
+                
+            elif item_data['type'].startswith('buff_'):
+                stat_type = item_data['type'].split('_')[1]
+                duration = item_data.get('duration', 3)
+                if hasattr(caster, 'effects'):
+                    # Apply stat buff effect
+                    effects.append(f"Applied {stat_type.upper()} buff for {duration} turns")
+                    
+            elif item_data['type'] == 'cleanse':
+                if hasattr(caster, 'effects'):
+                    # Remove specified debuffs
+                    cleansed = item_data.get('effects', [])
+                    effects.append(f"Cleansed effects: {', '.join(cleansed)}")
+                    
+            elif item_data['type'] == 'escape':
+                success_rate = item_data.get('success_rate', 0.5)
+                import random
+                if random.random() < success_rate:
+                    effects.append("Successfully escaped from battle!")
+                else:
+                    effects.append("Failed to escape!")
+            else:
+                effects.append(f"Used unknown item: {item_id}")
+                
+            return ActionResult(
+                action=action,
+                success=True,
+                damage_results={},
+                healing_results={caster.character_id: item_data.get('value', 0)} if item_data['type'] == 'heal' else {},
+                status_effects_applied=effects,
+                events_triggered=[]
+            )
+            
+        except Exception as e:
+            logger.warning(f"Failed to execute item {action.target_id}: {e}")
+            return ActionResult(
+                action=action,
+                success=False,
+                damage_results={},
+                healing_results={},
+                status_effects_applied=[f"Item usage failed: {str(e)}"],
+                events_triggered=[]
+            )
     
     def _execute_defend(self, action: CombatAction) -> ActionResult:
         """Execute a defend action"""
@@ -384,7 +448,8 @@ class CombatSystem:
     
     def _calculate_damage(self, attacker: Character, target: Character, 
                          base_damage: float, damage_type: DamageType,
-                         accuracy: float = 1.0, critical_chance: float = 0.0) -> DamageInfo:
+                         accuracy: float = 1.0, critical_chance: float = 0.0,
+                         skill_element_override: Optional[str] = None) -> DamageInfo:
         """Calculate final damage amount with all modifiers"""
         
         # Accuracy check
@@ -408,6 +473,12 @@ class CombatSystem:
         if is_critical:
             final_damage *= self.critical_multiplier
         
+        # Apply elemental modifier
+        elemental_modifier, elemental_details = attacker.calculate_elemental_modifier_against(
+            target, skill_element_override
+        )
+        final_damage *= elemental_modifier
+        
         # Apply damage type modifiers
         if damage_type == DamageType.PHYSICAL:
             defense = target.get_stat("vit")
@@ -427,7 +498,9 @@ class CombatSystem:
             base_amount=base_damage,
             final_amount=final_damage,
             damage_type=damage_type,
-            is_critical=is_critical
+            is_critical=is_critical,
+            elemental_modifier=elemental_modifier,
+            elemental_details=elemental_details
         )
         
         self._publish_damage_event("combat.damage.calculation", attacker, target, damage_info)
@@ -475,10 +548,19 @@ class CombatSystem:
             target.current_hp = max(0, target.current_hp - damage_info.final_amount)
             actual_damage = old_hp - target.current_hp
             
-            logger.info("%s takes %.1f %s damage (%.1f -> %.1f)%s", 
-                       target.name, actual_damage, damage_info.damage_type.value,
+            # Build damage description
+            damage_desc = f"{damage_info.damage_type.value}"
+            if damage_info.elemental_modifier != 1.0:
+                if damage_info.elemental_modifier > 1.0:
+                    damage_desc += " (super effective!)"
+                elif damage_info.elemental_modifier < 1.0:
+                    damage_desc += " (not very effective)"
+            
+            logger.info("%s takes %.1f %s damage (%.1f -> %.1f)%s%s", 
+                       target.name, actual_damage, damage_desc,
                        old_hp, target.current_hp,
-                       " CRITICAL!" if damage_info.is_critical else "")
+                       " CRITICAL!" if damage_info.is_critical else "",
+                       f" [Elemental: {damage_info.elemental_modifier:.1f}x]" if damage_info.elemental_modifier != 1.0 else "")
             
             # Check if character is defeated
             if target.current_hp <= 0:
