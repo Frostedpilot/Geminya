@@ -88,6 +88,20 @@ DEFAULT_GIFT_CODES = [
         "reward_value": 3,
         "is_active": True,
         "usage_limit": 99,
+    },
+    {
+        "code": "YESSIR",
+        "reward_type": "gems",
+        "reward_value": 500,
+        "is_active": True,
+        "usage_limit": 99,
+    },
+    {
+        "code": "EVERYONEBLAMETHEMUSLIM",
+        "reward_type": "gems",
+        "reward_value": 3000,
+        "is_active": True,
+        "usage_limit": 99,
     }
 ]
 

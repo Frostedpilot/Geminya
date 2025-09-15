@@ -178,8 +178,8 @@ class WaifuAcademyCog(BaseCommand):
                 # Sort by star level (highest first)
                 for star_level in sorted(rarity_dist.keys(), reverse=True):
                     count = rarity_dist[star_level]
-                    if star_level >= 5:
-                        # 5+ stars get special formatting
+                    if star_level > 5:
+                        # 6+ stars get special formatting
                         rarity_text += f"🌟 {star_level}⭐: {count}\n"
                     else:
                         stars = "⭐" * star_level
