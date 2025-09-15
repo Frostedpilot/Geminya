@@ -7,7 +7,7 @@ An automated, turn-based PvP battler where players form teams of six characters 
 
 ## **2.0 Core Gameplay Loop**
 
-1.  **Pre-Battle Phase (Team Formation):** Players check the active **Battlefield Condition**. They then select a team of up to six characters, assign a **Leader**, and arrange them in a front/back row formation. Team composition may activate **Synergy** and **Archetype Passive** bonuses.
+1.  **Pre-Battle Phase (Team Formation):** Players check the active **Battlefield Condition**. They then select a team of up to six characters, assign a **Leader**, and arrange them in a front/back row formation. Team composition may activate **Synergy** bonuses.
 2.  **Battle Phase (Auto-Battle):** The battle commences. All active bonuses are applied as characters' **Action Gauges** fill based on their `spd`. When a character's gauge is full, they take their turn, after which it resets.
 3.  **Post-Battle Phase (Victory/Defeat):** The battle concludes when one team is eliminated or the round limit is reached.
 
@@ -21,21 +21,8 @@ An automated, turn-based PvP battler where players form teams of six characters 
 *   **Designation:** Before a battle, the player must designate **one character** on their team as the Leader.
 *   **Leader Buff:** The designated Leader receives a **+10% bonus to all of their base stats** (`hp`, `atk`, `mag`, `vit`, `spr`, `int`, `spd`, `lck`) for the duration of the battle.
 
-#### **3.3 Archetype Passives**
-*   **Activation:** Every character on the battlefield gains a passive bonus based on their primary `archetype`.
+#### **3.3 Team Synergy Bonuses**
 
-| Archetype Group | Passive Effect |
-| :--- | :--- |
-| **Physical Attacker / Berserker** | Gains +2% ATK for every 10% of missing HP. |
-| **Mage / Warlock / Sorcerer** | Starts the battle with +15% magical resistance (`spr`). |
-| **Healer / Priest** | Increases all healing they perform by 10%. |
-| **Defender / Knight / Templar** | The first time this character is hit, they gain a +20% VIT buff for 2 turns. |
-| **Debuffer / Trickster / Illusionist** | At the start of the battle, has a 25% chance to apply "Slow" to a random front-row enemy for 1 turn. |
-| **Buffer / Dancer / Bard** | Buffs cast by this character last for one additional turn. |
-| **Specialist (Ninja / Assassin / Gunslinger)**| Has a permanent +10% bonus to `spd` and `lck`. |
-| **Sage / Oracle / Engineer** | Immune to the "Silence" status effect. |
-
-#### **3.4 Team Synergy Bonuses**
 *   **Activation:** If a team includes multiple characters from the same `series`, they gain a tiered, passive bonus.
 
 | Series Example | Tier 1 | Tier 2 | Tier 3 |

@@ -6,9 +6,9 @@
     "start_time": "2025-08-26 00:00:00",
     "end_time": "2025-09-01 23:59:59",
     "description": "Initial rate-up banner with increased drop rates for select series!",
-    "is_active": false,
+    "is_active": true,
     "waifu_ids": [],
-    "series_ids": [31,75,109,19]
+    "series_ids": [31,74,218,19,107,123]
   },
   {
     "id": 2,

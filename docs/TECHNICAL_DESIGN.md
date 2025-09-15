@@ -345,7 +345,9 @@ Skills that affect multiple game systems use a composite effect structure:
 
 ## 8. Data-Driven Content System
 
-### 8.1 Declarative Content Definitions
+### 8.1 Core Content Definitions
+
+The system uses JSON templates to define game content declaratively, allowing for easy modification and extension without code changes.
 
 **Skill Templates:**
 
@@ -357,6 +359,7 @@ Skills that affect multiple game systems use a composite effect structure:
     "damage_type": "magical",
     "scaling": "mag",
     "target_type": "single_enemy",
+    "base_damage": 100,
     "effects": [
       {
         "type": "burn",
@@ -392,10 +395,6 @@ Skills that affect multiple game systems use a composite effect structure:
         "stat": "atk",
         "modifier_type": "percentage",
         "value": 0.5
-      },
-      {
-        "type": "status_immunity",
-        "status_types": ["fear", "charm"]
       }
     ],
     "duration": "while_condition_met"
@@ -419,12 +418,7 @@ Skills that affect multiple game systems use a composite effect structure:
     "duration": 3,
     "stacking": {
       "type": "intensity",
-      "max_stacks": 5,
-      "stack_effect": "damage_multiplier"
-    },
-    "visual_effects": {
-      "icon": "fire_dot",
-      "particle": "flame_aura"
+      "max_stacks": 5
     }
   }
 }
@@ -434,66 +428,22 @@ Skills that affect multiple game systems use a composite effect structure:
 
 ```json
 {
-  "condition_id": "arcane_storm",
+  "condition_id": "scorching_sun",
   "base_template": "global_modifier",
   "parameters": {
     "effects": [
       {
-        "type": "skill_cost_modifier",
-        "skill_types": ["magical"],
-        "cost_multiplier": 0.8
-      },
-      {
         "type": "elemental_amplification",
-        "elements": ["arcane", "lightning"],
-        "damage_multiplier": 1.3
+        "elements": ["fire"],
+        "stat_bonus": {"atk": 0.2, "mag": 0.2}
       },
       {
-        "type": "periodic_event",
-        "event": "mana_surge",
-        "frequency": "every_3_turns",
-        "effect": {
-          "type": "restore_resource",
-          "resource": "mp",
-          "amount": 50
-        }
+        "type": "elemental_weakness",
+        "elements": ["water"],
+        "stat_penalty": {"vit": 0.1, "spr": 0.1}
       }
     ],
-    "duration": "battle",
-    "visual_theme": "purple_lightning"
-  }
-}
-```
-
-**Character Archetype Templates:**
-
-```json
-{
-  "archetype_id": "battle_mage",
-  "base_template": "hybrid_archetype",
-  "parameters": {
-    "primary_roles": ["mage", "attacker"],
-    "stat_affinities": {
-      "mag": 1.2,
-      "atk": 0.8,
-      "int": 1.1,
-      "spd": 0.9
-    },
-    "passive_abilities": [
-      {
-        "id": "spellsword_mastery",
-        "effect": "physical_skills_scale_with_mag"
-      },
-      {
-        "id": "arcane_weapon",
-        "effect": "basic_attacks_deal_magical_damage"
-      }
-    ],
-    "skill_affinities": {
-      "magical_damage": 1.0,
-      "physical_damage": 0.7,
-      "buff": 0.6
-    }
+    "duration": "battle"
   }
 }
 ```
@@ -502,18 +452,18 @@ Skills that affect multiple game systems use a composite effect structure:
 
 ```json
 {
-  "synergy_id": "fate_servants",
+  "synergy_id": "konosuba_team",
   "base_template": "series_synergy",
   "parameters": {
-    "series_name": "Fate",
+    "series_name": "Konosuba",
     "thresholds": [
       {
         "character_count": 2,
         "effects": [
           {
             "type": "stat_bonus",
-            "stats": ["atk", "mag"],
-            "bonus": 0.1
+            "stats": ["lck"],
+            "bonus": 0.2
           }
         ]
       },
@@ -522,22 +472,8 @@ Skills that affect multiple game systems use a composite effect structure:
         "effects": [
           {
             "type": "skill_enhancement",
-            "skill_types": ["signature"],
-            "cooldown_reduction": 1
-          },
-          {
-            "type": "passive_ability",
-            "ability": "noble_phantasm_charge"
-          }
-        ]
-      },
-      {
-        "character_count": 6,
-        "effects": [
-          {
-            "type": "team_ability",
-            "ability": "reality_marble",
-            "trigger": "team_hp_below_30_percent"
+            "effect": "cooldown_chance",
+            "probability": 0.05
           }
         ]
       }
@@ -550,119 +486,46 @@ Skills that affect multiple game systems use a composite effect structure:
 
 ```json
 {
-  "equipment_id": "excalibur",
-  "base_template": "legendary_weapon",
+  "equipment_id": "basic_sword",
+  "base_template": "weapon",
   "parameters": {
     "equipment_type": "sword",
     "stat_bonuses": {
-      "atk": 150,
-      "mag": 50,
-      "lck": 20
-    },
-    "passive_effects": [
-      {
-        "id": "holy_blade",
-        "effect": "extra_damage_vs_dark_enemies",
-        "multiplier": 1.5
-      }
-    ],
-    "active_ability": {
-      "skill_id": "excalibur_blast",
-      "cooldown": 5,
-      "description": "Unleash a devastating light beam"
+      "atk": 50,
+      "lck": 5
     },
     "restrictions": {
-      "archetype_requirements": ["knight", "paladin"],
-      "character_requirements": ["artoria_pendragon"]
+      "archetype_requirements": ["attacker", "knight"]
     }
   }
 }
 ```
 
-**Event Templates:**
+**AI Behavior Templates (Future Expansion):**
 
 ```json
 {
-  "event_id": "summer_festival",
-  "base_template": "seasonal_event",
-  "parameters": {
-    "duration": "2_weeks",
-    "battle_modifiers": [
-      {
-        "type": "exp_bonus",
-        "multiplier": 1.5
-      },
-      {
-        "type": "special_battlefield",
-        "condition": "beach_party"
-      }
-    ],
-    "special_rewards": [
-      {
-        "type": "limited_character",
-        "character_id": "summer_jeanne"
-      },
-      {
-        "type": "cosmetic",
-        "item_id": "beach_outfit_set"
-      }
-    ],
-    "unlock_conditions": {
-      "player_level": 10,
-      "story_progress": "chapter_3_complete"
-    }
-  }
-}
-```
-
-**AI Behavior Templates:**
-
-```json
-{
-  "ai_behavior_id": "berserker_ai",
-  "base_template": "aggressive_ai",
+  "ai_behavior_id": "aggressive_attacker",
+  "base_template": "role_focused_ai",
   "parameters": {
     "role_preferences": {
       "attacker": 2.0,
-      "defender": 0.3,
-      "healer": 0.1
+      "mage": 1.5,
+      "healer": 0.2
     },
     "target_priority": {
-      "lowest_hp_enemy": 1.5,
-      "highest_threat_enemy": 1.2,
-      "weakest_defense": 1.1
-    },
-    "special_behaviors": [
-      {
-        "condition": "self_hp_below_25_percent",
-        "effect": "ignore_defense_focus_damage"
-      },
-      {
-        "condition": "ally_defeated",
-        "effect": "rage_mode_increased_aggression"
-      }
-    ],
-    "skill_usage_patterns": {
-      "signature_skill_trigger": "hp_below_50_percent",
-      "ultimate_skill_priority": "when_multiple_enemies"
+      "lowest_hp_enemy": 1.8,
+      "highest_threat_enemy": 1.2
     }
   }
 }
 ```
 
-**Template System Features:**
+### 8.2 Template System Implementation
 
-- **Inheritance Hierarchy**: Templates can extend other templates
-- **Parameter Validation**: Type checking and constraint validation
-- **Dynamic Loading**: Hot-reload templates without restart
-- **Composition Support**: Combine multiple template effects
-- **Version Management**: Track template changes over time
-- **Localization Ready**: Text strings separated for translation
-- **Automatic Documentation**: Generate docs from template definitions
+**Base Template Structure:**
 
-### 8.2 Template Inheritance and Composition
-
-**Base Template Definitions:**
+All content definitions follow a common structure with inheritance support:
 
 ```json
 {
@@ -675,24 +538,12 @@ Skills that affect multiple game systems use a composite effect structure:
   ],
   "optional_parameters": [
     "stacking_rules",
-    "removal_conditions",
-    "visual_effects"
-  ],
-  "validation_rules": {
-    "duration": {
-      "type": "integer",
-      "min": 0,
-      "special_values": ["permanent", "conditional"]
-    },
-    "target_scope": {
-      "type": "enum",
-      "values": ["self", "single", "multiple", "all", "global"]
-    }
-  }
+    "removal_conditions"
+  ]
 }
 ```
 
-**Template Inheritance Example:**
+**Template Inheritance:**
 
 ```json
 {
@@ -702,151 +553,65 @@ Skills that affect multiple game systems use a composite effect structure:
     "stat_type",
     "modifier_value",
     "modifier_type"
-  ],
-  "parameter_overrides": {
-    "effect_type": {
-      "default": "stat_modification",
-      "readonly": true
-    }
-  },
-  "validation_rules": {
-    "stat_type": {
-      "type": "enum",
-      "values": ["hp", "atk", "mag", "vit", "spr", "int", "spd", "lck"]
-    },
-    "modifier_type": {
-      "type": "enum",
-      "values": ["flat", "percentage", "multiplicative"]
-    }
-  }
+  ]
 }
 ```
 
-**Content Validation Framework:**
+**Content Loading System:**
 
-```json
-{
-  "validation_config": {
-    "balance_checks": {
-      "damage_skills": {
-        "max_base_damage": 500,
-        "max_scaling_multiplier": 2.0,
-        "cooldown_vs_power_ratio": "linear"
-      },
-      "healing_skills": {
-        "max_healing_per_turn": 300,
-        "healing_vs_cost_efficiency": "bounded"
-      }
-    },
-    "performance_limits": {
-      "max_effects_per_skill": 5,
-      "max_conditional_checks": 10,
-      "max_calculation_depth": 15
-    },
-    "compatibility_checks": {
-      "required_game_version": "1.0.0",
-      "deprecated_features": ["old_damage_formula"],
-      "conflicting_effects": ["silence_and_skill_boost"]
-    }
-  }
-}
+- JSON files are loaded from `src/game/data/` directories
+- Templates are validated against base schemas
+- Content is cached and can be hot-reloaded during development
+- Simple dependency resolution for template inheritance
+
+**File Organization:**
+
+```text
+src/game/data/
+├── skills/              # Skill definitions
+├── passives/            # Passive ability definitions  
+├── status_effects/      # Status effect definitions
+├── battlefield/         # Battlefield condition definitions
+├── synergies/           # Series synergy definitions
+├── equipment/           # Equipment definitions (future)
+└── ai_behaviors/        # AI behavior definitions (future)
 ```
 
-### 8.3 Content Management and Expansion System
+### 8.3 Integration with Game Systems
 
-**Hot-Reloadable Content Pipeline:**
+**Content Loading Process:**
 
-**Development Workflow:**
+1. **Initialization**: Load all JSON content files at game startup
+2. **Template Resolution**: Resolve inheritance chains and build final definitions
+3. **Registration**: Register content with appropriate game systems
+4. **Runtime Access**: Game systems query content by ID as needed
 
-1. **Content Creation**: Use template-based JSON definitions
-2. **Validation**: Automatic validation against schemas and balance rules  
-3. **Testing**: Isolated testing environment for new content
-4. **Staging**: Deploy to test servers for integration testing
-5. **Production**: Hot-reload into live game with rollback capability
-
-**Version Management:**
-
-```json
-{
-  "content_package": {
-    "package_id": "summer_2025_update", 
-    "version": "1.2.0",
-    "dependencies": ["base_game:1.0.0"],
-    "contents": {
-      "skills": ["beach_volleyball_spike", "sandcastle_fortress"],
-      "characters": ["summer_miku", "beach_volleyball_team"], 
-      "battlefield_conditions": ["summer_heat_wave"],
-      "events": ["beach_tournament"]
-    },
-    "compatibility": {
-      "min_game_version": "1.0.0",
-      "max_game_version": "2.0.0"
-    },
-    "rollback_data": {
-      "previous_version": "1.1.5", 
-      "affected_systems": ["battle_engine", "character_stats"]
-    }
-  }
-}
-```
-
-**Plugin Architecture:**
-
-```json
-{
-  "plugin_manifest": {
-    "plugin_id": "custom_battle_modes",
-    "version": "1.0.0", 
-    "author": "CommunityDev",
-    "description": "Adds custom battle modes and rules",
-    "permissions": [
-      "modify_battle_rules",
-      "add_victory_conditions", 
-      "create_custom_effects"
-    ],
-    "entry_points": {
-      "battle_mode_handlers": ["survival_mode", "king_of_hill"],
-      "effect_processors": ["custom_damage_calculator"],
-      "ai_behaviors": ["defensive_turtle_ai"]
-    },
-    "resource_limits": {
-      "max_memory_mb": 50,
-      "max_cpu_percent": 5,
-      "max_execution_time_ms": 100
-    }
-  }
-}
-```
-
-**Content Creator API:**
+**Example Integration:**
 
 ```python
-# Simplified API interface for content creation
-class ContentCreatorAPI:
-    def create_skill(self, template: str, parameters: dict) -> SkillID
-    def create_passive(self, template: str, parameters: dict) -> PassiveID
-    def create_status_effect(self, template: str, parameters: dict) -> StatusID
-    def validate_content(self, content: dict) -> ValidationResult
-    def test_balance(self, content: dict, test_scenarios: list) -> BalanceReport
-    def submit_for_review(self, content_package: dict) -> SubmissionID
+# Skill system integration
+skill_definition = ContentLoader.get_skill("fireball")
+skill_instance = SkillFactory.create(skill_definition, caster_character)
+
+# Effect system integration  
+status_definition = ContentLoader.get_status_effect("burning")
+status_instance = StatusEffectFactory.create(status_definition, target_character)
+
+# Battle system integration
+battlefield_condition = ContentLoader.get_battlefield_condition("scorching_sun")
+battle_context.apply_global_condition(battlefield_condition)
 ```
 
-**Content Distribution:**
+**Benefits:**
 
-**Skill Libraries**: Collections of thematic abilities
-**Battle Modes**: Alternative victory conditions and rules
-**Cosmetic Packs**: Visual themes and effects
-**Balance Updates**: Numerical adjustments and formula changes
+- **Maintainability**: Content changes don't require code modifications
+- **Extensibility**: New content types can be added easily
+- **Balance Iteration**: Rapid tweaking of parameters during development
+- **Modularity**: Content can be organized by features or expansions
 
-**Note:** All new characters are imported and managed via the database. There is no modular content pack system for character additions; character data is handled through database operations and migrations.
+**Character Data Note:**
 
-**Performance Monitoring:**
-
-- Resource usage limits per plugin
-- Execution time timeouts  
-- Memory leak detection
-- Performance regression alerts
-- Automatic rollback on critical issues
+Character definitions remain database-driven rather than file-based, as they require more complex relationships and frequently change during gameplay (levels, equipment, etc.). The data-driven system focuses on static game rules and content definitions.
 
 ## 9. Performance and Scalability
 
@@ -984,17 +749,17 @@ class ContentCreatorAPI:
 
 **Data-Driven System:**
 
-- JSON skill definition system
-- Template and inheritance support
-- Hot-reload capability
-- Validation and testing tools
+- JSON content definition system for skills, passives, status effects
+- Basic template inheritance support
+- Content loading and caching
+- Integration with existing game systems
 
-**Plugin Architecture:**
+**Future Expansion Support:**
 
-- External content loading
-- Sandboxed execution
-- Performance monitoring
-- Error handling and recovery
+- Equipment system templates
+- AI behavior customization
+- Additional battlefield conditions
+- Series synergy extensions
 
 ### Phase 5: Polish and Tools (2-3 weeks)
 
