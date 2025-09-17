@@ -1,4 +1,4 @@
-"""AI system for character decision making - Three-Phase Intelligence."""
+"""AI system for character decision making - Three-Phase Intelligence with Advanced Targeting."""
 
 import random
 from .base_system import BaseSystem
@@ -14,17 +14,42 @@ except ImportError:
     def get_signature_rule(rule_name, default=None):
         return default
 
+# Import Advanced Targeting Engine
+try:
+    from .advanced_targeting_engine import AdvancedTargetingEngine, TargetingContext
+    ADVANCED_TARGETING_AVAILABLE = True
+except ImportError:
+    # Fallback if advanced targeting not available
+    AdvancedTargetingEngine = None
+    TargetingContext = None
+    ADVANCED_TARGETING_AVAILABLE = False
+
 class AI_System(BaseSystem):
     """Handles AI decision making for characters using Three-Phase Intelligence:
     Phase 1: Role Selection based on battlefield analysis
     Phase 2: Skill Selection filtered by chosen role
-    Phase 3: Target Priority Score (TPS) calculation
+    Phase 3: Advanced Target Selection with multi-target algorithms
     """
     
     # Role potency mappings from archetype data
     ROLE_POTENCY_VALUES = {
         'S': 4.0, 'A': 3.0, 'B': 2.0, 'C': 1.0, 'D': 0.5, 'F': 0.1
     }
+    
+    def __init__(self, battle_context, event_bus):
+        """Initialize AI System with Advanced Targeting capabilities.
+        
+        Args:
+            battle_context: Battle context for accessing battlefield state
+            event_bus: Event bus for communication
+        """
+        super().__init__(battle_context, event_bus)
+        
+        # Initialize Advanced Targeting Engine if available
+        if ADVANCED_TARGETING_AVAILABLE and AdvancedTargetingEngine:
+            self.targeting_engine = AdvancedTargetingEngine()
+        else:
+            self.targeting_engine = None
     
     def choose_action(self, character):
         """Choose an action for the given character using Three-Phase AI.
@@ -149,71 +174,252 @@ class AI_System(BaseSystem):
         return self._weighted_random_choice(role_weights)
     
     def _apply_battlefield_modifiers(self, character, role_weights):
-        """Apply dynamic weight modifiers based on battlefield conditions.
+        """Apply dynamic weight modifiers based on comprehensive battlefield analysis.
         
         Args:
             character: The character making the decision
             role_weights: Dict of role -> weight to modify
         """
+        # Comprehensive battlefield analysis
+        battlefield_state = self._analyze_battlefield_state(character)
+        threat_assessment = self._assess_threat_levels(character)
+        team_composition = self._analyze_team_composition(character)
+        
+        # Apply health-based modifiers
+        self._apply_health_modifiers(battlefield_state, role_weights)
+        
+        # Apply threat-based modifiers
+        self._apply_threat_modifiers(threat_assessment, role_weights)
+        
+        # Apply team composition modifiers
+        self._apply_composition_modifiers(team_composition, role_weights)
+        
+        # Apply formation and positioning modifiers
+        self._apply_formation_modifiers(character, role_weights)
+        
+        # Apply effect synergy modifiers
+        self._apply_effect_synergy_modifiers(character, role_weights)
+        
+        # Apply adaptive learning modifiers (pattern recognition)
+        self._apply_adaptive_modifiers(character, role_weights)
+    
+    def _analyze_battlefield_state(self, character):
+        """Comprehensive battlefield state analysis.
+        
+        Args:
+            character: The character analyzing the battlefield
+            
+        Returns:
+            dict: Battlefield state information
+        """
         allies = self._get_allies(character)
         enemies = self._get_enemies(character)
         
-        # Health Status Analysis
-        ally_avg_hp = self._get_average_hp_percentage(allies) if allies else 1.0
-        enemy_avg_hp = self._get_average_hp_percentage(enemies) if enemies else 1.0
+        state = {
+            'ally_count': len([a for a in allies if self._is_alive(a)]),
+            'enemy_count': len([e for e in enemies if self._is_alive(e)]),
+            'ally_avg_hp': self._get_average_hp_percentage(allies),
+            'enemy_avg_hp': self._get_average_hp_percentage(enemies),
+            'ally_lowest_hp': self._get_lowest_hp_percentage(allies),
+            'enemy_lowest_hp': self._get_lowest_hp_percentage(enemies),
+            'ally_buffs': self._count_buffs_on_team(allies),
+            'enemy_buffs': self._count_buffs_on_team(enemies),
+            'ally_debuffs': self._count_debuffs_on_team(allies),
+            'enemy_debuffs': self._count_debuffs_on_team(enemies),
+            'turn_number': getattr(self.battle_context, 'turn_number', 1),
+            'round_number': getattr(self.battle_context, 'round_number', 1)
+        }
         
-        # Get health thresholds from rule engine
-        health_threshold_low = get_ai_rule("role_selection_weights.health_threshold_low", 0.4)
-        health_threshold_critical = get_ai_rule("role_selection_weights.health_threshold_critical", 0.25)
-        max_weight_multiplier = get_ai_rule("role_selection_weights.max_weight_multiplier", 3.0)
+        # Formation analysis
+        state['ally_formation'] = self._analyze_formation(allies)
+        state['enemy_formation'] = self._analyze_formation(enemies)
         
-        # Low Health - favor healing and defense
-        if ally_avg_hp < health_threshold_low:
-            role_weights['Healer'] = role_weights.get('Healer', 1.0) * 2.0
-            role_weights['Defender'] = role_weights.get('Defender', 1.0) * 1.5
+        return state
+    
+    def _assess_threat_levels(self, character):
+        """Assess threat levels of all enemies and importance of allies.
         
-        # High enemy health - favor damage
-        if enemy_avg_hp > 0.7:
-            role_weights['Attacker'] = role_weights.get('Attacker', 1.0) * 1.5
-            role_weights['Mage'] = role_weights.get('Mage', 1.0) * 1.5
-        
-        # Buff/Debuff Analysis
-        ally_buffs = self._count_buffs_on_team(allies)
-        enemy_debuffs = self._count_debuffs_on_team(enemies)
-        
-        # Few ally buffs - favor buffing
-        if ally_buffs < len(allies):
-            role_weights['Buffer'] = role_weights.get('Buffer', 1.0) * 1.5
-        
-        # Few enemy debuffs - favor debuffing
-        if enemy_debuffs < len(enemies):
-            role_weights['Debuffer'] = role_weights.get('Debuffer', 1.0) * 1.5
-        
-        # Self-condition modifiers
-        state_component = character.components.get('state')
-        if state_component:
-            self_hp_pct = state_component.current_hp / state_component.max_hp
+        Args:
+            character: The character assessing threats
             
-            # Low self HP - defensive stance
-            if self_hp_pct < 0.4:
-                role_weights['Defender'] = role_weights.get('Defender', 1.0) * 1.5
-                role_weights['Healer'] = role_weights.get('Healer', 1.0) * 1.5
-            
-            # Check for self buffs
-            effects_component = character.components.get('effects')
-            if effects_component:
-                active_effects = effects_component.get_active_effects()
-                has_atk_buff = any('atk_up' in effect.name.lower() for effect in active_effects)
-                has_mag_buff = any('mag_up' in effect.name.lower() for effect in active_effects)
-                has_def_buff = any('vit_up' in effect.name.lower() or 'spr_up' in effect.name.lower() for effect in active_effects)
+        Returns:
+            dict: Threat assessment data
+        """
+        enemies = self._get_enemies(character)
+        allies = self._get_allies(character)
+        
+        threat_data = {
+            'enemy_threats': {},
+            'ally_priorities': {},
+            'highest_threat': None,
+            'most_vulnerable_ally': None
+        }
+        
+        # Assess individual enemy threats
+        max_threat = 0
+        for enemy in enemies:
+            if not self._is_alive(enemy):
+                continue
                 
-                # Synergy modifiers
-                if has_atk_buff:
-                    role_weights['Attacker'] = role_weights.get('Attacker', 1.0) * 1.75
-                if has_mag_buff:
-                    role_weights['Mage'] = role_weights.get('Mage', 1.0) * 1.75
-                if has_def_buff:
-                    role_weights['Defender'] = role_weights.get('Defender', 1.0) * 2.0
+            threat_score = self._calculate_threat_score(enemy)
+            threat_data['enemy_threats'][enemy] = threat_score
+            
+            if threat_score > max_threat:
+                max_threat = threat_score
+                threat_data['highest_threat'] = enemy
+        
+        # Assess ally protection priorities
+        max_priority = 0
+        for ally in allies:
+            if not self._is_alive(ally) or ally == character:
+                continue
+                
+            priority_score = self._calculate_ally_priority(ally)
+            threat_data['ally_priorities'][ally] = priority_score
+            
+            if priority_score > max_priority:
+                max_priority = priority_score
+                threat_data['most_vulnerable_ally'] = ally
+        
+        return threat_data
+    
+    def _calculate_threat_score(self, enemy):
+        """Calculate comprehensive threat score for an enemy.
+        
+        Args:
+            enemy: Enemy character to assess
+            
+        Returns:
+            float: Threat score (higher = more dangerous)
+        """
+        if not self._is_alive(enemy):
+            return 0
+        
+        stats = enemy.components.get('stats')
+        state = enemy.components.get('state')
+        effects = enemy.components.get('effects')
+        
+        if not stats or not state:
+            return 50  # Default threat
+        
+        # Base threat from stats
+        atk = stats.get_stat('atk')
+        mag = stats.get_stat('mag')
+        spd = stats.get_stat('spd')
+        lck = stats.get_stat('lck')
+        
+        threat_score = (atk + mag) * 0.4 + spd * 0.3 + lck * 0.1
+        
+        # Health scaling (low health = less threat, but also easier target)
+        hp_ratio = state.current_hp / state.max_hp
+        threat_score *= (0.3 + 0.7 * hp_ratio)  # Minimum 30% threat when low
+        
+        # Effect modifiers
+        if effects:
+            active_effects = effects.get_active_effects()
+            for effect in active_effects:
+                effect_name = getattr(effect, 'name', '').lower()
+                # Offensive buffs increase threat
+                if any(buff in effect_name for buff in ['atk_up', 'mag_up', 'haste', 'berserk']):
+                    threat_score *= 1.3
+                # Debuffs decrease threat
+                elif any(debuff in effect_name for debuff in ['atk_down', 'mag_down', 'slow', 'stun']):
+                    threat_score *= 0.7
+        
+        # Action gauge (about to act = more immediate threat)
+        action_gauge = getattr(state, 'action_gauge', 0)
+        if action_gauge > 800:
+            threat_score *= 1.4
+        elif action_gauge > 600:
+            threat_score *= 1.2
+        
+        return threat_score
+    
+    def _calculate_ally_priority(self, ally):
+        """Calculate protection priority for an ally.
+        
+        Args:
+            ally: Ally character to assess
+            
+        Returns:
+            float: Priority score (higher = more important to protect)
+        """
+        if not self._is_alive(ally):
+            return 0
+        
+        stats = ally.components.get('stats')
+        state = ally.components.get('state')
+        
+        if not stats or not state:
+            return 50  # Default priority
+        
+        # Base priority from supportive stats
+        int_stat = stats.get_stat('int')
+        spr = stats.get_stat('spr')
+        mag = stats.get_stat('mag')
+        
+        priority_score = int_stat * 0.4 + spr * 0.3 + mag * 0.2
+        
+        # Health urgency (lower health = higher priority)
+        hp_ratio = state.current_hp / state.max_hp
+        urgency_multiplier = 2.0 - hp_ratio  # 1.0 at full health, 2.0 at near death
+        priority_score *= urgency_multiplier
+        
+        # Role-based priority (healers and buffers are more important)
+        archetype = ally.components.get('archetype')
+        if archetype:
+            archetype_data = archetype.archetype_data
+            role_potencies = archetype_data.get('role_potency', {})
+            
+            # High healer/buffer potency = higher priority
+            healer_potency = self.ROLE_POTENCY_VALUES.get(role_potencies.get('Healer', 'F'), 0.1)
+            buffer_potency = self.ROLE_POTENCY_VALUES.get(role_potencies.get('Buffer', 'F'), 0.1)
+            
+            priority_score += (healer_potency + buffer_potency) * 10
+        
+        return priority_score
+    
+    def _analyze_team_composition(self, character):
+        """Analyze team composition for strategic insights.
+        
+        Args:
+            character: The character analyzing
+            
+        Returns:
+            dict: Team composition analysis
+        """
+        allies = self._get_allies(character)
+        enemies = self._get_enemies(character)
+        
+        composition = {
+            'ally_roles': self._count_roles_in_team(allies),
+            'enemy_roles': self._count_roles_in_team(enemies),
+            'ally_elements': self._count_elements_in_team(allies),
+            'enemy_elements': self._count_elements_in_team(enemies),
+            'role_balance_score': 0,
+            'strategic_advantages': [],
+            'strategic_weaknesses': []
+        }
+        
+        # Calculate role balance (diverse teams are more stable)
+        ally_role_count = len(composition['ally_roles'])
+        composition['role_balance_score'] = min(ally_role_count / 4.0, 1.0)  # Max balance at 4+ roles
+        
+        # Identify strategic advantages
+        if composition['ally_roles'].get('Healer', 0) > composition['enemy_roles'].get('Healer', 0):
+            composition['strategic_advantages'].append('healing_advantage')
+        
+        if composition['ally_roles'].get('Debuffer', 0) > composition['enemy_roles'].get('Buffer', 0):
+            composition['strategic_advantages'].append('control_advantage')
+        
+        # Identify strategic weaknesses
+        if composition['ally_roles'].get('Healer', 0) == 0 and composition['ally_roles'].get('Defender', 0) == 0:
+            composition['strategic_weaknesses'].append('no_sustain')
+        
+        if composition['ally_roles'].get('Attacker', 0) + composition['ally_roles'].get('Mage', 0) < 2:
+            composition['strategic_weaknesses'].append('low_damage')
+        
+        return composition
     
     def _phase_2_skill_selection(self, character, chosen_role):
         """Phase 2: Select skill based on chosen role and availability.
@@ -379,7 +585,47 @@ class AI_System(BaseSystem):
         return score
     
     def _phase_3_target_selection(self, character, skill):
-        """Phase 3: Calculate Target Priority Score for optimal targeting.
+        """Phase 3: Advanced Target Selection with multi-target algorithms.
+        
+        Args:
+            character: The character making the decision
+            skill: Chosen skill data
+            
+        Returns:
+            List of target characters
+        """
+        # Use Advanced Targeting Engine if available
+        if self.targeting_engine and TargetingContext:
+            allies = self._get_allies(character)
+            enemies = self._get_enemies(character)
+            
+            context = TargetingContext(character, allies, enemies, self.battle_context)
+            
+            # Handle special target types and complex patterns
+            targets = self.targeting_engine.resolve_targets(skill, context)
+            
+            if targets:
+                # Calculate AoE efficiency for multi-target skills
+                if len(targets) > 1:
+                    efficiency = self.targeting_engine.calculate_aoe_efficiency(skill, context)
+                    
+                    # Log efficiency for debugging
+                    if hasattr(self.event_bus, 'publish'):
+                        self.event_bus.publish("AdvancedTargetingUsed", {
+                            "character": character,
+                            "skill": skill['name'],
+                            "targets": len(targets),
+                            "efficiency": efficiency,
+                            "pattern": skill.get('target_type', 'single')
+                        })
+                
+                return targets
+        
+        # Fallback to legacy targeting system
+        return self._legacy_target_selection(character, skill)
+    
+    def _legacy_target_selection(self, character, skill):
+        """Legacy target selection method for backward compatibility.
         
         Args:
             character: The character making the decision
@@ -689,3 +935,308 @@ class AI_System(BaseSystem):
                 total_debuffs += debuff_count
         
         return total_debuffs
+
+    # ================ ENHANCED AI HELPER METHODS ================
+    
+    def _is_alive(self, character):
+        """Check if a character is alive.
+        
+        Args:
+            character: Character to check
+            
+        Returns:
+            bool: True if character is alive
+        """
+        if not character:
+            return False
+        state = character.components.get('state')
+        return state and getattr(state, 'is_alive', True)
+    
+    def _get_lowest_hp_percentage(self, team):
+        """Get the lowest HP percentage in a team.
+        
+        Args:
+            team: List of characters
+            
+        Returns:
+            float: Lowest HP percentage (0.0 to 1.0)
+        """
+        if not team:
+            return 1.0
+        
+        lowest = 1.0
+        for character in team:
+            if not self._is_alive(character):
+                continue
+            state = character.components.get('state')
+            if state:
+                hp_pct = state.current_hp / state.max_hp
+                lowest = min(lowest, hp_pct)
+        
+        return lowest
+    
+    def _analyze_formation(self, team):
+        """Analyze team formation and positioning.
+        
+        Args:
+            team: List of characters
+            
+        Returns:
+            dict: Formation analysis
+        """
+        formation = {
+            'front_row_count': 0,
+            'back_row_count': 0,
+            'total_alive': 0,
+            'formation_strength': 0.5,  # Default balanced
+            'vulnerabilities': []
+        }
+        
+        for character in team:
+            if not self._is_alive(character):
+                continue
+            
+            formation['total_alive'] += 1
+            # This would need actual position data from battle context
+            # For now, simulate based on character archetype
+            archetype = character.components.get('archetype')
+            if archetype:
+                archetype_data = archetype.archetype_data
+                role_potencies = archetype_data.get('role_potency', {})
+                
+                # Defenders and attackers typically front row
+                if (self.ROLE_POTENCY_VALUES.get(role_potencies.get('Defender', 'F'), 0.1) > 2.0 or
+                    self.ROLE_POTENCY_VALUES.get(role_potencies.get('Attacker', 'F'), 0.1) > 2.0):
+                    formation['front_row_count'] += 1
+                else:
+                    formation['back_row_count'] += 1
+        
+        # Calculate formation strength
+        if formation['total_alive'] > 0:
+            front_ratio = formation['front_row_count'] / formation['total_alive']
+            # Ideal is around 40-60% front row
+            if 0.4 <= front_ratio <= 0.6:
+                formation['formation_strength'] = 0.8
+            elif front_ratio < 0.2:
+                formation['formation_strength'] = 0.3
+                formation['vulnerabilities'].append('no_front_line')
+            elif front_ratio > 0.8:
+                formation['formation_strength'] = 0.4
+                formation['vulnerabilities'].append('no_back_line')
+        
+        return formation
+    
+    def _count_roles_in_team(self, team):
+        """Count different roles in a team.
+        
+        Args:
+            team: List of characters
+            
+        Returns:
+            dict: Role name -> count
+        """
+        role_counts = {}
+        
+        for character in team:
+            if not self._is_alive(character):
+                continue
+            
+            archetype = character.components.get('archetype')
+            if archetype:
+                archetype_data = archetype.archetype_data
+                role_potencies = archetype_data.get('role_potency', {})
+                
+                # Find character's strongest role
+                best_role = None
+                best_potency = 0
+                for role, potency in role_potencies.items():
+                    potency_value = self.ROLE_POTENCY_VALUES.get(potency, 0.1)
+                    if potency_value > best_potency:
+                        best_potency = potency_value
+                        best_role = role
+                
+                if best_role:
+                    role_counts[best_role] = role_counts.get(best_role, 0) + 1
+        
+        return role_counts
+    
+    def _count_elements_in_team(self, team):
+        """Count different elements in a team.
+        
+        Args:
+            team: List of characters
+            
+        Returns:
+            dict: Element -> count
+        """
+        element_counts = {}
+        
+        for character in team:
+            if not self._is_alive(character):
+                continue
+            
+            # This would need character element data
+            # For now, return placeholder
+            element_counts['neutral'] = element_counts.get('neutral', 0) + 1
+        
+        return element_counts
+    
+    def _apply_health_modifiers(self, battlefield_state, role_weights):
+        """Apply health-based role weight modifiers.
+        
+        Args:
+            battlefield_state: Battlefield analysis data
+            role_weights: Role weights to modify
+        """
+        ally_avg_hp = battlefield_state['ally_avg_hp']
+        ally_lowest_hp = battlefield_state['ally_lowest_hp']
+        enemy_avg_hp = battlefield_state['enemy_avg_hp']
+        
+        # Critical health situations
+        if ally_lowest_hp < 0.15:
+            role_weights['Healer'] = role_weights.get('Healer', 1.0) * 4.0
+            role_weights['Defender'] = role_weights.get('Defender', 1.0) * 2.0
+        elif ally_avg_hp < 0.4:
+            role_weights['Healer'] = role_weights.get('Healer', 1.0) * 2.5
+            role_weights['Defender'] = role_weights.get('Defender', 1.0) * 1.5
+        
+        # Enemy health assessment
+        if enemy_avg_hp > 0.8:
+            role_weights['Attacker'] = role_weights.get('Attacker', 1.0) * 1.6
+            role_weights['Mage'] = role_weights.get('Mage', 1.0) * 1.6
+        elif enemy_avg_hp < 0.3:
+            # Low enemy health - finish them off
+            role_weights['Attacker'] = role_weights.get('Attacker', 1.0) * 2.0
+            role_weights['Mage'] = role_weights.get('Mage', 1.0) * 2.0
+    
+    def _apply_threat_modifiers(self, threat_assessment, role_weights):
+        """Apply threat-based role weight modifiers.
+        
+        Args:
+            threat_assessment: Threat analysis data
+            role_weights: Role weights to modify
+        """
+        highest_threat = threat_assessment.get('highest_threat')
+        most_vulnerable_ally = threat_assessment.get('most_vulnerable_ally')
+        
+        # High threat enemy present
+        if highest_threat:
+            threat_score = threat_assessment['enemy_threats'].get(highest_threat, 0)
+            if threat_score > 150:  # Very high threat
+                role_weights['Debuffer'] = role_weights.get('Debuffer', 1.0) * 2.5
+                role_weights['Defender'] = role_weights.get('Defender', 1.0) * 2.0
+        
+        # Vulnerable ally needs protection
+        if most_vulnerable_ally:
+            priority_score = threat_assessment['ally_priorities'].get(most_vulnerable_ally, 0)
+            if priority_score > 100:  # High priority ally in danger
+                role_weights['Healer'] = role_weights.get('Healer', 1.0) * 2.0
+                role_weights['Buffer'] = role_weights.get('Buffer', 1.0) * 1.5
+    
+    def _apply_composition_modifiers(self, team_composition, role_weights):
+        """Apply team composition-based modifiers.
+        
+        Args:
+            team_composition: Team composition analysis
+            role_weights: Role weights to modify
+        """
+        ally_roles = team_composition['ally_roles']
+        strategic_weaknesses = team_composition['strategic_weaknesses']
+        
+        # Address strategic weaknesses
+        if 'no_sustain' in strategic_weaknesses:
+            role_weights['Healer'] = role_weights.get('Healer', 1.0) * 3.0
+            role_weights['Defender'] = role_weights.get('Defender', 1.0) * 2.0
+        
+        if 'low_damage' in strategic_weaknesses:
+            role_weights['Attacker'] = role_weights.get('Attacker', 1.0) * 2.5
+            role_weights['Mage'] = role_weights.get('Mage', 1.0) * 2.5
+        
+        # Role saturation - avoid overstacking
+        total_allies = sum(ally_roles.values())
+        if total_allies > 0:
+            for role, count in ally_roles.items():
+                if count / total_allies > 0.5:  # More than 50% of team is this role
+                    role_weights[role] = role_weights.get(role, 1.0) * 0.6
+    
+    def _apply_formation_modifiers(self, character, role_weights):
+        """Apply formation and positioning modifiers.
+        
+        Args:
+            character: Character making decision
+            role_weights: Role weights to modify
+        """
+        allies = self._get_allies(character)
+        ally_formation = self._analyze_formation(allies)
+        
+        vulnerabilities = ally_formation.get('vulnerabilities', [])
+        
+        if 'no_front_line' in vulnerabilities:
+            role_weights['Defender'] = role_weights.get('Defender', 1.0) * 3.0
+            role_weights['Attacker'] = role_weights.get('Attacker', 1.0) * 2.0
+        
+        if 'no_back_line' in vulnerabilities:
+            role_weights['Mage'] = role_weights.get('Mage', 1.0) * 2.0
+            role_weights['Healer'] = role_weights.get('Healer', 1.0) * 2.0
+    
+    def _apply_effect_synergy_modifiers(self, character, role_weights):
+        """Apply effect synergy modifiers based on character's current effects.
+        
+        Args:
+            character: Character making decision
+            role_weights: Role weights to modify
+        """
+        effects_component = character.components.get('effects')
+        if not effects_component:
+            return
+        
+        active_effects = effects_component.get_active_effects()
+        
+        for effect in active_effects:
+            effect_name = getattr(effect, 'name', '').lower()
+            
+            # Offensive buffs synergize with attack roles
+            if any(buff in effect_name for buff in ['atk_up', 'power', 'strength']):
+                role_weights['Attacker'] = role_weights.get('Attacker', 1.0) * 1.8
+            
+            if any(buff in effect_name for buff in ['mag_up', 'magic', 'arcane']):
+                role_weights['Mage'] = role_weights.get('Mage', 1.0) * 1.8
+            
+            # Defensive buffs synergize with defensive roles
+            if any(buff in effect_name for buff in ['vit_up', 'spr_up', 'barrier', 'shield']):
+                role_weights['Defender'] = role_weights.get('Defender', 1.0) * 2.0
+            
+            # Speed buffs synergize with all roles
+            if any(buff in effect_name for buff in ['spd_up', 'haste', 'quick']):
+                for role in role_weights:
+                    role_weights[role] = role_weights.get(role, 1.0) * 1.2
+    
+    def _apply_adaptive_modifiers(self, character, role_weights):
+        """Apply adaptive learning modifiers based on battle patterns.
+        
+        Args:
+            character: Character making decision
+            role_weights: Role weights to modify
+        """
+        # This would implement pattern recognition and adaptive learning
+        # For now, implement basic turn-based adaptation
+        
+        turn_number = getattr(self.battle_context, 'turn_number', 1)
+        round_number = getattr(self.battle_context, 'round_number', 1)
+        
+        # Early battle - favor setup and positioning
+        if turn_number < 5:
+            role_weights['Buffer'] = role_weights.get('Buffer', 1.0) * 1.3
+            role_weights['Defender'] = role_weights.get('Defender', 1.0) * 1.2
+        
+        # Mid battle - favor aggressive actions
+        elif 5 <= turn_number < 15:
+            role_weights['Attacker'] = role_weights.get('Attacker', 1.0) * 1.2
+            role_weights['Mage'] = role_weights.get('Mage', 1.0) * 1.2
+            role_weights['Debuffer'] = role_weights.get('Debuffer', 1.0) * 1.3
+        
+        # Late battle - favor finishing moves and emergency healing
+        else:
+            role_weights['Attacker'] = role_weights.get('Attacker', 1.0) * 1.5
+            role_weights['Mage'] = role_weights.get('Mage', 1.0) * 1.5
+            role_weights['Healer'] = role_weights.get('Healer', 1.0) * 1.8
