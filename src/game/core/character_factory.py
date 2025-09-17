@@ -76,6 +76,9 @@ class CharacterFactory:
                 archetype_component = ArchetypeComponent(archetype_data)
                 character.components['archetype'] = archetype_component
         
+        # Set character reference in components that need it (must be done after archetype is set)
+        stats_component.set_character(character)
+        
         # Store additional metadata
         character.team = team
         character.position = position

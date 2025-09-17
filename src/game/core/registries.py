@@ -28,6 +28,10 @@ class CharacterDataRegistry(Registry):
     """Registry for character base data."""
     pass
 
+class ArchetypeDataRegistry(Registry):
+    """Registry for character archetype data."""
+    pass
+
 class SkillRegistry(Registry):
     """Registry for skill definitions."""
     pass

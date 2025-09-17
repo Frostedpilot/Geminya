@@ -173,6 +173,33 @@ A second weighted roll based on the `Power Weight` of skills within the chosen r
 #### **Phase 3: Target Selection using Priority Score**
 After a skill is chosen, the AI calculates a **Target Priority Score (TPS)** for every valid target. The target with the highest TPS is selected. If there's a tie, a random choice is made between the tied targets.
 
+### **5.1 Role Potency Stat Modifiers**
+
+Beyond influencing AI behavior, a character's **Role Potency** provides subtle but meaningful stat bonuses that enhance their effectiveness in their specialized roles. Each potency rating applies a percentage modifier to **all base stats** (`hp`, `atk`, `mag`, `vit`, `spr`, `int`, `spd`, `lck`) based on the character's highest-rated role potency.
+
+**Potency Stat Multipliers:**
+
+| Potency Rating | Stat Multiplier | Description |
+| :--- | :--- | :--- |
+| **S** | **1.10** (110%) | **Master:** +10% to all stats - exceptional specialists |
+| **A** | **1.05** (105%) | **Expert:** +5% to all stats - skilled professionals |
+| **B** | **1.00** (100%) | **Competent:** No modifier - baseline performance |
+| **C** | **0.95** (95%) | **Average:** -5% to all stats - below-average capability |
+| **D** | **0.85** (85%) | **Poor:** -15% to all stats - significant weakness |
+| **F** | **0.70** (70%) | **Terrible:** -30% to all stats - major deficiency |
+
+**Application Rules:**
+
+*   **Primary Role Bonus:** The modifier is determined by the character's **single highest potency rating** across all roles.
+*   **Multiplicative Application:** The modifier applies to base stats before any other calculations (Leader bonuses, synergies, buffs, etc.).
+*   **Balanced Impact:** This system rewards specialization while creating meaningful trade-offs for characters with poor potencies.
+
+**Examples:**
+
+*   **Pure Mage** (S Mage, D-F others): Receives **1.10x** multiplier to all stats, making them excellent overall performers when used correctly.
+*   **Balanced Defender** (All C potencies): Receives **0.95x** multiplier, slightly below baseline but highly adaptable.
+*   **Flawed Specialist** (S Attacker, F Mage): Still receives **1.10x** multiplier from their S-tier specialty, but AI limitations prevent optimal use.
+
 **A. Offensive Single-Target Skills (Damage)**
 `TPS = Base Score * Kill Priority Multiplier * Elemental Weakness Multiplier * Debuff Multiplier`
 

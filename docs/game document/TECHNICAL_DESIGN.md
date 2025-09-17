@@ -67,6 +67,54 @@ src/game/
     ├── effect_library/       # JSON reusable effect templates
     └── synergy_definitions/  # JSON series synergy configurations
 ```
+
+### **3.1 Role Potency Integration in StatsComponent**
+
+The `StatsComponent` implements a **hierarchical stat calculation system** that applies role potency modifiers at the foundation level, ensuring they influence all subsequent calculations.
+
+#### **Stat Calculation Pipeline:**
+```python
+def get_final_stat(self, stat_name):
+    # 1. Base Stat (from character data)
+    base_value = self.base_stats[stat_name]
+    
+    # 2. Role Potency Modifier (applied first, multiplicative)
+    potency_multiplier = self._get_role_potency_multiplier()
+    potency_modified = base_value * potency_multiplier
+    
+    # 3. Flat Modifiers (Leader bonus, item bonuses, etc.)
+    flat_bonuses = sum(self.flat_modifiers[stat_name])
+    
+    # 4. Percentage Modifiers (buffs, debuffs, synergies)
+    percentage_multiplier = 1.0 + sum(self.percentage_modifiers[stat_name])
+    
+    # 5. Final Calculation
+    return int((potency_modified + flat_bonuses) * percentage_multiplier)
+
+def _get_role_potency_multiplier(self):
+    # Role potency multipliers based on highest rating
+    POTENCY_MULTIPLIERS = {
+        'S': 1.10,  # +10% Master bonus
+        'A': 1.05,  # +5% Expert bonus  
+        'B': 1.00,  # Baseline competent
+        'C': 0.95,  # -5% Average penalty
+        'D': 0.85,  # -15% Poor penalty
+        'F': 0.70   # -30% Terrible penalty
+    }
+    
+    # Find highest potency rating across all roles
+    archetype_data = self.character.get_component('archetype')
+    role_potencies = archetype_data.get_role_potencies()
+    highest_potency = max(role_potencies.values(), 
+                         key=lambda x: POTENCY_MULTIPLIERS.get(x, 1.0))
+    
+    return POTENCY_MULTIPLIERS.get(highest_potency, 1.0)
+```
+
+#### **Design Rationale:**
+*   **Early Application:** Role potency modifies base stats before any other calculations, establishing a character's fundamental power level.
+*   **Universal Impact:** All stats receive the same multiplier, rewarding specialization while maintaining character balance.
+*   **Cached Calculation:** The potency multiplier is calculated once and cached until the character's archetype changes.
 ---
 
 ## **4.0 The Event & Hook System**
@@ -155,11 +203,40 @@ Defines a character's usable action.
 The `CombatSystem` follows a strict, event-driven pipeline to ensure all modifiers are applied in the correct order:
 1.  **Publish `PreProcess_Action` Hook**: Check for action cancellations (Stun).
 2.  **Publish `PreProcess_DamageCalculation` Hook**: Apply modifiers to input stats (Armor Break).
-3.  **Calculate Initial Damage**: Use the GDD's Potency Value formulas.
+3.  **Calculate Initial Damage**: Use the GDD's Potency Value formulas with role potency-enhanced stats.
 4.  **Apply Universal Scaling Formula**: Use the skill's unique `scaling_params`.
 5.  **Publish `PostProcess_DamageCalculation` Hook**: Apply modifiers to the final number (Critical Hits, Barriers).
 6.  **Apply Final Damage/Healing**: Change the target's `current_hp`.
 7.  **Publish Result Hooks**: `HPChanged`, `EffectApplied`, etc.
+
+#### **6.1.1 Role Potency Integration in Combat**
+Role potency stat modifiers are seamlessly integrated into the combat calculation pipeline:
+
+```python
+# Example: Physical Damage Calculation with Role Potency
+def calculate_physical_damage(attacker, target, skill_multiplier):
+    # Step 1: Get potency-enhanced ATK stat from StatsComponent
+    attacker_atk = attacker.components['stats'].get_final_stat('atk')
+    # ^ This already includes role potency multiplier (S=1.10, A=1.05, etc.)
+    
+    # Step 2: Calculate base damage using enhanced stats
+    base_damage = attacker_atk * skill_multiplier
+    
+    # Step 3: Apply target defense (also potency-enhanced)
+    target_vit = target.components['stats'].get_final_stat('vit')
+    damage_reduction = target_vit / (150 + target_vit)
+    potency_value = base_damage * (1 - damage_reduction)
+    
+    # Step 4: Apply Universal Scaling Formula
+    scaled_damage = apply_universal_scaling(potency_value, skill_params)
+    
+    return scaled_damage
+```
+
+**Impact Examples:**
+*   **S-tier Mage (1.10x multiplier)**: Base 200 MAG becomes 220 MAG, significantly increasing magical damage output.
+*   **F-tier Physical Attacker (0.70x multiplier)**: Base 180 ATK becomes 126 ATK, substantially reducing physical effectiveness.
+*   **Balanced Tank (0.95x multiplier)**: Base 250 VIT becomes 238 VIT, slightly reducing defensive capability but maintaining overall viability.
 
 #### **6.2 AI Decision Logic**
 The `AI_System` makes intelligent, context-aware decisions by:
