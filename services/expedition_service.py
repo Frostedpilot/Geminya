@@ -69,13 +69,23 @@ class ExpeditionService:
         """Get all available expedition templates (simplified lifecycle - no daily refresh needed)"""
         templates = []
         for template in self.data_manager.get_expedition_templates():
+            # Keep original difficulty value, but calculate tier for rewards logic
+            difficulty_tier = max(1, min(5, (template.difficulty + 50) // 100))
+            
+            # Estimate encounter count based on duration and difficulty
+            base_encounters = template.duration_hours
+            expected_encounters = max(1, base_encounters + (difficulty_tier - 1))  # Minimum 1 encounter
+            
             templates.append({
                 "expedition_id": template.expedition_id,
                 "name": template.name,
                 "duration_hours": template.duration_hours,
-                "difficulty": template.difficulty,
+                "difficulty": template.difficulty,  # Keep original raw difficulty
+                "difficulty_tier": difficulty_tier,  # Keep tier for rewards logic
+                "expected_encounters": expected_encounters,  # Add calculated encounters
                 "num_favored_affinities": template.num_favored_affinities,
                 "num_disfavored_affinities": template.num_disfavored_affinities,
+                "affinity_pools": getattr(template, 'affinity_pools', {}),  # Add affinity pools
                 "encounter_pool_tags": template.encounter_pool_tags,
                 "description": f"Duration: {template.duration_hours}h, Difficulty: {template.difficulty}, Buffs/Debuffs: {template.num_favored_affinities}/{template.num_disfavored_affinities}"
             })
