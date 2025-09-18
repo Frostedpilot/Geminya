@@ -145,24 +145,67 @@ class ExpeditionResolver:
                 description="Invalid standard encounter - missing check_stat or difficulty"
             )
         
+        # Check for encounter skipping
+        if expedition.consume_skip_encounter():
+            return EncounterResult(
+                encounter=encounter,
+                outcome=EncounterOutcome.SUCCESS,
+                description=f"Encounter skipped due to modifier effect. {encounter.description or encounter.name}",
+                loot_value_change=encounter.loot_values.get("common", 10) if encounter.loot_values else 10
+            )
+        
+        # Check for guaranteed success
+        if expedition.consume_guaranteed_success():
+            loot_value_change = encounter.loot_values.get("great", 20) if encounter.loot_values else 20
+            return EncounterResult(
+                encounter=encounter,
+                outcome=EncounterOutcome.GREAT_SUCCESS,
+                description=f"Guaranteed success! {encounter.description or encounter.name}",
+                loot_value_change=loot_value_change
+            )
+        
         # Calculate team skill score
         team_score = self._calculate_team_score(encounter.check_stat, expedition, team)
         
         # Apply expedition-specific difficulty modifiers
         effective_difficulty = expedition.get_effective_difficulty(encounter.difficulty)
         
-        # Calculate success threshold
+        # Calculate success threshold with expedition bonuses
         success_threshold = ChanceTable.calculate_success_threshold(team_score, effective_difficulty)
+        
+        # Apply success rate bonuses
+        success_threshold += expedition.success_rate_bonus
+        success_threshold = max(0.0, min(1.0, success_threshold))  # Clamp between 0 and 1
         
         # Roll for outcome
         outcome = ChanceTable.roll_outcome(success_threshold)
         
-        # Generate loot based on outcome
+        # Apply mishap prevention
+        if outcome == EncounterOutcome.MISHAP and expedition.prevent_mishaps:
+            outcome = EncounterOutcome.FAILURE  # Downgrade mishap to failure
+        
+        # Apply failure prevention
+        if outcome == EncounterOutcome.FAILURE and expedition.prevent_failure:
+            outcome = EncounterOutcome.SUCCESS  # Upgrade failure to success
+        
+        # Generate loot based on outcome with modifiers
         loot_value_change = 0
         if outcome == EncounterOutcome.GREAT_SUCCESS:
-            loot_value_change = encounter.loot_values.get("great", 20) if encounter.loot_values else 20
+            base_loot = encounter.loot_values.get("great", 20) if encounter.loot_values else 20
         elif outcome == EncounterOutcome.SUCCESS:
-            loot_value_change = encounter.loot_values.get("common", 10) if encounter.loot_values else 10
+            base_loot = encounter.loot_values.get("common", 10) if encounter.loot_values else 10
+        else:
+            base_loot = 0
+        
+        # Apply loot multipliers
+        if base_loot > 0:
+            loot_value_change = int(base_loot * expedition.get_effective_loot_multiplier())
+            
+            # Apply encounter-specific bonuses
+            encounter_type = encounter.type.value if encounter.type else "standard"
+            if encounter_type in expedition.encounter_specific_loot_bonus:
+                bonus_multiplier = 1.0 + expedition.encounter_specific_loot_bonus[encounter_type]
+                loot_value_change = int(loot_value_change * bonus_multiplier)
         
         return EncounterResult(
             encounter=encounter,
@@ -290,8 +333,11 @@ class ExpeditionResolver:
     
     def _apply_encounter_effects(self, encounter_result: EncounterResult, expedition: Expedition, loot_pool: LootPool):
         """Apply the effects of an encounter to the expedition state and loot pool"""
-        # Handle loot changes
+        # Handle loot changes with expedition multipliers
         if encounter_result.loot_value_change > 0:
+            # Apply expedition loot multipliers
+            effective_loot_value = int(encounter_result.loot_value_change * expedition.get_effective_loot_multiplier())
+            
             # Generate loot items
             success_level = "great" if encounter_result.outcome == EncounterOutcome.GREAT_SUCCESS else "common"
             loot_items = self.loot_generator.generate_loot(
@@ -300,8 +346,9 @@ class ExpeditionResolver:
             )
             loot_pool.add_items(loot_items)
         elif encounter_result.outcome == EncounterOutcome.MISHAP:
-            # Remove random item on mishap
-            loot_pool.remove_random_item()
+            # Only remove item if mishaps aren't prevented
+            if not expedition.prevent_mishaps:
+                loot_pool.remove_random_item()
         
         # Apply modifiers (BOON/HAZARD effects)
         if encounter_result.modifier_applied:
@@ -368,6 +415,150 @@ class ExpeditionResolver:
             # Convert percentage to multiplier (e.g., 20 -> 1.20)
             multiplier = 1.0 + (float(modifier.value) / 100.0)
             expedition.add_difficulty_modifier(multiplier)
+        
+        # ===== MISHAP AND OUTCOME MODIFIERS =====
+        elif modifier.type == ModifierType.PREVENT_MISHAP:
+            # Prevent next mishap
+            expedition.prevent_mishaps = True
+        
+        elif modifier.type == ModifierType.FINAL_ROLL_PENALTY and modifier.value:
+            # Penalty to final outcome rolls (treat as success rate penalty)
+            expedition.add_success_rate_bonus(-float(modifier.value) / 100.0)
+        
+        elif modifier.type == ModifierType.FINAL_ROLL_BONUS and modifier.value:
+            # Bonus to final outcome rolls (treat as success rate bonus)
+            expedition.add_success_rate_bonus(float(modifier.value) / 100.0)
+        
+        # ===== LOOT MODIFIERS =====
+        elif modifier.type == ModifierType.LOOT_POOL_PENALTY and modifier.value:
+            # Reduce loot quality/quantity
+            multiplier = 1.0 - (float(modifier.value) / 100.0)
+            expedition.add_loot_multiplier(max(0.1, multiplier))
+        
+        elif modifier.type == ModifierType.LOOT_POOL_BONUS and modifier.value:
+            # Improve loot quality/quantity
+            multiplier = 1.0 + (float(modifier.value) / 100.0)
+            expedition.add_loot_multiplier(multiplier)
+        
+        elif modifier.type == ModifierType.LOOT_QUALITY_HALVED:
+            # Halve loot quality
+            expedition.add_loot_multiplier(0.5)
+        
+        elif modifier.type == ModifierType.PREVENT_MISHAP_LOOT_LOSS:
+            # Prevent loot loss on mishap (set prevent mishaps flag)
+            expedition.prevent_mishaps = True
+        
+        # ===== ENCOUNTER TAG MODIFIERS =====
+        elif modifier.type == ModifierType.REMOVE_ENCOUNTER_TAG and modifier.value:
+            # Remove specific tag from encounters (complex - would need tag modification)
+            # For now, treat as minor difficulty reduction
+            expedition.add_difficulty_modifier(0.95)
+        
+        elif modifier.type == ModifierType.ENCOUNTER_TAG_ADD and modifier.value:
+            # Add tag to encounters (complex - would need tag modification)
+            # For now, treat as minor loot bonus
+            expedition.add_loot_multiplier(1.05)
+        
+        elif modifier.type == ModifierType.ENCOUNTER_TAG_IGNORE and modifier.value:
+            # Ignore specific tagged encounters (complex - would need encounter filtering)
+            # For now, treat as success rate bonus
+            expedition.add_success_rate_bonus(0.1)
+        
+        elif modifier.type == ModifierType.ENCOUNTER_TAG_SWAP and modifier.value:
+            # Swap one tag for another (complex - would need tag swapping)
+            # For now, treat as neutral effect with small loot bonus
+            expedition.add_loot_multiplier(1.02)
+        
+        # ===== SKILL AND SUCCESS MODIFIERS =====
+        elif modifier.type == ModifierType.SKILL_SCORE_MULTIPLIER and modifier.value:
+            # Multiply skill scores (treat as stat bonus)
+            multiplier_bonus = int((float(modifier.value) - 1.0) * 10)  # Convert multiplier to flat bonus
+            for stat_name in ["hp", "atk", "mag", "vit", "spr", "intel", "spd", "lck"]:
+                expedition.add_stat_bonus(stat_name, multiplier_bonus)
+        
+        elif modifier.type == ModifierType.SUCCESS_CHANCE_INCREASE and modifier.value:
+            # Direct success rate bonus
+            expedition.add_success_rate_bonus(float(modifier.value) / 100.0)
+        
+        elif modifier.type == ModifierType.SUCCESS_CHANCE_INCREASE_TAG and modifier.value:
+            # Success chance increase for tagged encounters (treat as general success bonus)
+            expedition.add_success_rate_bonus(float(modifier.value) / 100.0)
+        
+        # ===== ENCOUNTER COUNT MODIFIERS =====
+        elif modifier.type == ModifierType.ENCOUNTER_COUNT_ADD and modifier.value:
+            # Add encounters
+            expedition.encounter_count += int(modifier.value)
+        
+        elif modifier.type == ModifierType.ENCOUNTER_COUNT_SUBTRACT and modifier.value:
+            # Remove encounters (don't go below 1)
+            expedition.encounter_count = max(1, expedition.encounter_count - int(modifier.value))
+        
+        elif modifier.type == ModifierType.ENCOUNTER_COUNT_HALVE:
+            # Halve encounter count
+            expedition.encounter_count = max(1, expedition.encounter_count // 2)
+        
+        # ===== AFFINITY MULTIPLIER MODIFIERS =====
+        elif modifier.type == ModifierType.AFFINITY_MULTIPLIER_HALVE:
+            # Halve affinity effects (complex - would need affinity calculation modification)
+            # For now, reduce stat bonuses slightly
+            for stat_name in ["hp", "atk", "mag", "vit", "spr", "intel", "spd", "lck"]:
+                expedition.add_stat_bonus(stat_name, -2)
+        
+        elif modifier.type == ModifierType.AFFINITY_MULTIPLIER_RESET:
+            # Reset affinity multipliers (complex - would need affinity calculation modification)
+            # For now, clear dynamic affinities
+            expedition.dynamic_favored_affinities.clear()
+            expedition.dynamic_disfavored_affinities.clear()
+        
+        elif modifier.type == ModifierType.AFFINITY_MULTIPLIER_ADD and modifier.value:
+            # Add to affinity multiplier (treat as stat bonus)
+            bonus = int(float(modifier.value) * 5)  # Scale to reasonable stat bonus
+            for stat_name in ["hp", "atk", "mag", "vit", "spr", "intel", "spd", "lck"]:
+                expedition.add_stat_bonus(stat_name, bonus)
+        
+        # ===== MISHAP MODIFIERS =====
+        elif modifier.type == ModifierType.MISHAP_CHANCE_HALVE:
+            # Halve mishap chance
+            expedition.prevent_mishaps = True
+        
+        # ===== DIFFICULTY MODIFIERS =====
+        elif modifier.type == ModifierType.DIFFICULTY_INCREASE_ABSOLUTE and modifier.value:
+            # Add flat difficulty (treat as multiplier based on absolute value)
+            multiplier = 1.0 + (float(modifier.value) / 50.0)  # Scale absolute to reasonable multiplier
+            expedition.add_difficulty_modifier(multiplier)
+        
+        # ===== GUARANTEED OUTCOME MODIFIERS =====
+        elif modifier.type == ModifierType.GUARANTEED_SUCCESS_NEXT_ENCOUNTER and modifier.value:
+            # Guarantee success for next N encounters
+            expedition.guaranteed_success_encounters += int(modifier.value)
+        
+        elif modifier.type == ModifierType.GUARANTEED_SUCCESS_TAG and modifier.value:
+            # Guarantee success on tagged encounters (treat as high success rate bonus)
+            expedition.add_success_rate_bonus(0.8)  # Very high bonus
+        
+        elif modifier.type == ModifierType.GUARANTEED_GREAT_SUCCESS_NEXT_ENCOUNTER and modifier.value:
+            # Guarantee great success for next encounters (treat as guaranteed success + bonus)
+            expedition.guaranteed_success_encounters += int(modifier.value)
+            expedition.add_success_rate_bonus(0.5)  # Extra bonus for great success
+        
+        # ===== SPECIAL EFFECT MODIFIERS =====
+        elif modifier.type == ModifierType.RANDOMIZE_CHECK_STATS:
+            # Randomize which stats are checked (complex - would need stat check modification)
+            # For now, add small bonus to all stats to represent adaptability
+            for stat_name in ["hp", "atk", "mag", "vit", "spr", "intel", "spd", "lck"]:
+                expedition.add_stat_bonus(stat_name, 2)
+        
+        elif modifier.type == ModifierType.PREVENT_NEXT_MISHAP:
+            # Prevent next mishap only
+            expedition.prevent_mishaps = True
+        
+        elif modifier.type == ModifierType.PREVENT_ALL_MISHAPS:
+            # Prevent all mishaps
+            expedition.prevent_mishaps = True
+        
+        elif modifier.type == ModifierType.SKIP_NEXT_ENCOUNTER and modifier.value:
+            # Skip next encounter entirely
+            expedition.skip_encounters += int(modifier.value)
     
     def _apply_final_multiplier(self, result: ExpeditionResult, team: Team):
         """Calculate and apply the final luck-based multiplier"""

@@ -137,6 +137,15 @@ class Expedition:
     stat_bonuses: Dict[str, int] = field(default_factory=dict)
     difficulty_modifiers: List[float] = field(default_factory=list)
     
+    # Complex state tracking for encounter-affecting modifiers
+    guaranteed_success_encounters: int = 0
+    skip_encounters: int = 0
+    prevent_mishaps: bool = False
+    prevent_failure: bool = False
+    loot_multipliers: List[float] = field(default_factory=list)
+    encounter_specific_loot_bonus: Dict[str, float] = field(default_factory=dict)  # encounter_type -> bonus
+    success_rate_bonus: float = 0.0
+    
     def get_all_favored_affinities(self) -> List[Affinity]:
         """Get all favored affinities (base + dynamic)"""
         return self.favored_affinities + self.dynamic_favored_affinities
@@ -173,6 +182,40 @@ class Expedition:
         """Get effective stat value with bonuses applied"""
         bonus = self.stat_bonuses.get(stat_name, 0)
         return max(0, base_stat + bonus)  # Don't allow negative stats
+    
+    def add_loot_multiplier(self, multiplier: float):
+        """Add a loot multiplier"""
+        self.loot_multipliers.append(multiplier)
+    
+    def add_encounter_loot_bonus(self, encounter_type: str, bonus: float):
+        """Add specific loot bonus for encounter type"""
+        current_bonus = self.encounter_specific_loot_bonus.get(encounter_type, 0.0)
+        self.encounter_specific_loot_bonus[encounter_type] = current_bonus + bonus
+    
+    def add_success_rate_bonus(self, bonus: float):
+        """Add success rate bonus (additive)"""
+        self.success_rate_bonus += bonus
+    
+    def consume_guaranteed_success(self) -> bool:
+        """Use one guaranteed success if available"""
+        if self.guaranteed_success_encounters > 0:
+            self.guaranteed_success_encounters -= 1
+            return True
+        return False
+    
+    def consume_skip_encounter(self) -> bool:
+        """Use one skip encounter if available"""
+        if self.skip_encounters > 0:
+            self.skip_encounters -= 1
+            return True
+        return False
+    
+    def get_effective_loot_multiplier(self) -> float:
+        """Get combined loot multiplier"""
+        multiplier = 1.0
+        for mult in self.loot_multipliers:
+            multiplier *= mult
+        return multiplier
 
 
 class ExpeditionStatus(Enum):
