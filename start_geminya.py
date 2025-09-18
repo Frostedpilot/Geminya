@@ -11,6 +11,7 @@ import os
 import argparse
 from pathlib import Path
 from config import Config, ConfigError
+from config.logging_config import setup_logging
 
 
 def setup_environment():
@@ -141,11 +142,20 @@ def main():
 
     # Set up environment
     setup_environment()
+    
+    # Set up logging before doing anything else
+    debug_mode = args.verbose
+    setup_logging(debug_mode=debug_mode)
+    
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("Geminya bot startup initiated")
 
     # Check dependencies
     if args.check_deps or args.verbose:
-        print("🔍 Checking dependencies...")
+        logger.info("Checking dependencies...")
         if not check_dependencies():
+            logger.error("Dependency check failed")
             sys.exit(1)
         print("✅ All dependencies found")
 

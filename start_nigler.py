@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Startup script for the Geminya Discord bot.
+"""Startup script for the Geminya Discord bot (Nigler Mode).
 
 This script provides a convenient way to start the bot with proper error handling,
 configuration validation, and environment setup.
@@ -11,6 +11,7 @@ import os
 import argparse
 from pathlib import Path
 from config import Config, ConfigError
+from config.logging_config import setup_logging
 
 
 def setup_environment():
@@ -136,16 +137,25 @@ def main():
 
     args = parser.parse_args()
 
-    print("🐱 Geminya Discord Bot Startup")
-    print("=" * 40)
+    print("🐱 Geminya Discord Bot Startup (Nigler Mode)")
+    print("=" * 45)
 
     # Set up environment
     setup_environment()
+    
+    # Set up logging (production mode for nigler)
+    debug_mode = args.verbose
+    setup_logging(debug_mode=debug_mode)
+    
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info("Geminya bot startup initiated (NIGLER MODE)")
 
     # Check dependencies
     if args.check_deps or args.verbose:
-        print("🔍 Checking dependencies...")
+        logger.info("Checking dependencies...")
         if not check_dependencies():
+            logger.error("Dependency check failed")
             sys.exit(1)
         print("✅ All dependencies found")
 

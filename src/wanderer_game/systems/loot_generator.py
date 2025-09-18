@@ -29,102 +29,102 @@ class LootGenerator:
             1: [
                 ("sakura_crystals", 10, 50),    # Basic crystals
                 ("quartzs", 1, 30),             # Valuable currency (10x sakura value)
-                ("item_101", 1, 20)             # Basic item
+                ("item_1", 1, 20)             # Basic item
             ],
             2: [
                 ("sakura_crystals", 15, 50),
                 ("quartzs", 1, 30),
-                ("item_102", 1, 20)
+                ("item_1", 1, 20)
             ],
             3: [
                 ("sakura_crystals", 20, 50),
                 ("quartzs", 2, 30),
-                ("item_103", 1, 20)
+                ("item_1", 1, 20)
             ],
             4: [
                 ("sakura_crystals", 25, 50),
                 ("quartzs", 2, 30),
-                ("item_104", 1, 20)
+                ("item_1", 1, 20)
             ],
             5: [
                 ("sakura_crystals", 35, 50),
                 ("quartzs", 3, 30),
-                ("item_105", 1, 20)
+                ("item_5", 1, 20)
             ],
             6: [
                 ("sakura_crystals", 45, 50),
                 ("quartzs", 4, 30),
-                ("item_106", 1, 20)
+                ("item_6", 1, 20)
             ],
             7: [
                 ("sakura_crystals", 55, 50),
                 ("quartzs", 5, 30),
-                ("item_107", 1, 20)
+                ("item_7", 1, 20)
             ],
             8: [
                 ("sakura_crystals", 70, 50),
                 ("quartzs", 6, 30),
-                ("item_108", 1, 20)
+                ("item_1", 1, 20)
             ],
             9: [
                 ("sakura_crystals", 85, 50),
                 ("quartzs", 8, 30),
-                ("item_109", 1, 20)
+                ("item_1", 1, 20)
             ],
             10: [
                 ("sakura_crystals", 100, 50),
                 ("quartzs", 10, 30),
-                ("item_110", 1, 20)
+                ("item_1", 1, 20)
             ],
             11: [
                 ("sakura_crystals", 120, 50),
                 ("quartzs", 12, 30),
-                ("item_111", 1, 20)
+                ("item_1", 1, 20)
             ],
             12: [
                 ("sakura_crystals", 140, 50),
                 ("quartzs", 14, 30),
-                ("item_112", 1, 20)
+                ("item_2", 1, 20)
             ],
             13: [
                 ("sakura_crystals", 165, 50),
                 ("quartzs", 16, 30),
-                ("item_113", 1, 20)
+                ("item_3", 1, 20)
             ],
             14: [
                 ("sakura_crystals", 190, 50),
                 ("quartzs", 19, 30),
-                ("item_114", 1, 20)
+                ("item_4", 1, 20)
             ],
             15: [
                 ("sakura_crystals", 220, 50),
                 ("quartzs", 22, 30),
-                ("item_115", 1, 20)
+                ("item_5", 1, 20)
             ],
             16: [
                 ("sakura_crystals", 250, 50),
                 ("quartzs", 25, 30),
-                ("item_116", 1, 20)
+                ("item_6", 1, 20)
             ],
             17: [
                 ("sakura_crystals", 285, 50),
                 ("quartzs", 28, 30),
-                ("item_117", 1, 20)
+                ("item_7", 1, 20)
             ],
             18: [
                 ("sakura_crystals", 325, 50),
                 ("quartzs", 32, 30),
-                ("item_118", 1, 20)
+                ("item_1", 1, 20)
             ],
             19: [
                 ("sakura_crystals", 370, 50),
                 ("quartzs", 37, 30),
-                ("item_119", 1, 20)
+                ("item_1", 1, 20)
             ],
             20: [
                 ("sakura_crystals", 420, 50),
                 ("quartzs", 42, 30),
-                ("item_120", 1, 20)
+                ("item_1", 1, 20)
             ]
         }
         

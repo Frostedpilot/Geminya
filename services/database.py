@@ -779,6 +779,64 @@ class DatabaseService:
             """
         )
 
+        # Expedition system tables for Wanderer Game integration
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_expeditions (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                expedition_name VARCHAR(255) NOT NULL,
+                location VARCHAR(255) NOT NULL,
+                difficulty VARCHAR(50) NOT NULL,
+                status VARCHAR(50) NOT NULL DEFAULT 'in_progress',
+                duration_hours INTEGER NOT NULL,
+                started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP NULL,
+                rewards_claimed BOOLEAN DEFAULT FALSE,
+                expedition_data TEXT NOT NULL DEFAULT '{}',
+                final_results TEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_user_expeditions_user_id ON user_expeditions(user_id);
+            CREATE INDEX IF NOT EXISTS idx_user_expeditions_status ON user_expeditions(status);
+            CREATE INDEX IF NOT EXISTS idx_user_expeditions_started_at ON user_expeditions(started_at);
+            """
+        )
+
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS expedition_participants (
+                id SERIAL PRIMARY KEY,
+                expedition_id INTEGER NOT NULL REFERENCES user_expeditions(id) ON DELETE CASCADE,
+                user_waifu_id INTEGER NOT NULL REFERENCES user_waifus(id) ON DELETE CASCADE,
+                position_in_party INTEGER NOT NULL,
+                star_level_used INTEGER NOT NULL,
+                final_hp INTEGER DEFAULT NULL,
+                final_mp INTEGER DEFAULT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(expedition_id, position_in_party)
+            );
+            CREATE INDEX IF NOT EXISTS idx_expedition_participants_expedition_id ON expedition_participants(expedition_id);
+            CREATE INDEX IF NOT EXISTS idx_expedition_participants_user_waifu_id ON expedition_participants(user_waifu_id);
+            """
+        )
+
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS expedition_logs (
+                id SERIAL PRIMARY KEY,
+                expedition_id INTEGER NOT NULL REFERENCES user_expeditions(id) ON DELETE CASCADE,
+                log_type VARCHAR(50) NOT NULL,
+                encounter_number INTEGER NULL,
+                message TEXT NOT NULL,
+                data TEXT DEFAULT '{}',
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_expedition_logs_expedition_id ON expedition_logs(expedition_id);
+            CREATE INDEX IF NOT EXISTS idx_expedition_logs_type ON expedition_logs(log_type);
+            """
+        )
+
     # User-related methods
     async def get_or_create_user(self, discord_id: str) -> Dict[str, Any]:
         """Get user from database or create if doesn't exist (PostgreSQL)."""
@@ -1344,3 +1402,594 @@ class DatabaseService:
 
     # Shop-related methods for guarantee tickets only
     # Note: Other item type methods were removed to simplify the codebase
+
+    # === EXPEDITION SYSTEM METHODS ===
+    
+    async def create_expedition(self, discord_id: str, expedition_data: Dict[str, Any], participants: List[Dict[str, Any]]) -> int:
+        """Create a new expedition for a user with participants."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        self.logger.info(f"[DB_EXPEDITION_CREATE] Creating expedition for user {discord_id} with {len(participants)} participants")
+        self.logger.debug(f"[DB_EXPEDITION_CREATE] Expedition data: {expedition_data}")
+        
+        async with self.connection_pool.acquire() as conn:
+            async with conn.transaction():
+                # Get user_id
+                user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+                if not user_row:
+                    self.logger.error(f"[DB_EXPEDITION_CREATE] User {discord_id} not found in database")
+                    raise ValueError(f"User {discord_id} not found")
+                user_id = user_row["id"]
+                
+                # Create expedition
+                self.logger.debug(f"[DB_EXPEDITION_CREATE] Creating expedition record for user_id {user_id}")
+                expedition_row = await conn.fetchrow(
+                    """
+                    INSERT INTO user_expeditions (
+                        user_id, expedition_name, location, difficulty, 
+                        duration_hours, expedition_data, status
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    RETURNING id
+                    """,
+                    user_id,
+                    expedition_data["name"],
+                    expedition_data["location"],
+                    expedition_data["difficulty"],
+                    expedition_data["duration_hours"],
+                    json.dumps(expedition_data),
+                    "in_progress"
+                )
+                
+                expedition_id = expedition_row["id"]
+                self.logger.info(f"[DB_EXPEDITION_CREATE] Created expedition {expedition_id} for user {discord_id}")
+                
+                # Add participants
+                self.logger.debug(f"[DB_EXPEDITION_CREATE] Adding {len(participants)} participants to expedition {expedition_id}")
+                for i, participant in enumerate(participants):
+                    await conn.execute(
+                        """
+                        INSERT INTO expedition_participants (
+                            expedition_id, user_waifu_id, position_in_party, star_level_used
+                        ) VALUES ($1, $2, $3, $4)
+                        """,
+                        expedition_id,
+                        participant["user_waifu_id"],
+                        i,
+                        participant["star_level"]
+                    )
+                    self.logger.debug(f"[DB_EXPEDITION_CREATE] Added participant {participant['user_waifu_id']} at position {i}")
+                
+                self.logger.info(f"[DB_EXPEDITION_CREATE] Successfully created expedition {expedition_id} with all participants")
+                return expedition_id
+
+    async def get_user_expeditions(self, discord_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get all expeditions for a user, optionally filtered by status."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        self.logger.debug(f"[DB_EXPEDITION_GET] Getting expeditions for user {discord_id} with status {status}")
+        
+        async with self.connection_pool.acquire() as conn:
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                self.logger.warning(f"[DB_EXPEDITION_GET] User {discord_id} not found in database")
+                return []
+            user_id = user_row["id"]
+            
+            if status:
+                rows = await conn.fetch(
+                    "SELECT * FROM user_expeditions WHERE user_id = $1 AND status = $2 ORDER BY started_at DESC",
+                    user_id, status
+                )
+            else:
+                rows = await conn.fetch(
+                    "SELECT * FROM user_expeditions WHERE user_id = $1 ORDER BY started_at DESC",
+                    user_id
+                )
+            
+            self.logger.debug(f"[DB_EXPEDITION_GET] Found {len(rows)} expeditions for user {discord_id}")
+            
+            expeditions = []
+            for row in rows:
+                expedition = dict(row)
+                if expedition['expedition_data']:
+                    try:
+                        expedition['expedition_data'] = json.loads(expedition['expedition_data'])
+                    except:
+                        expedition['expedition_data'] = {}
+                if expedition['final_results']:
+                    try:
+                        expedition['final_results'] = json.loads(expedition['final_results'])
+                    except:
+                        expedition['final_results'] = {}
+                expeditions.append(expedition)
+            
+            return expeditions
+
+    async def get_expedition_with_participants(self, expedition_id: int) -> Optional[Dict[str, Any]]:
+        """Get expedition with minimal participant details (optimized)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            # Get expedition
+            expedition_row = await conn.fetchrow(
+                "SELECT * FROM user_expeditions WHERE id = $1", expedition_id
+            )
+            if not expedition_row:
+                return None
+            
+            expedition = dict(expedition_row)
+            if expedition['expedition_data']:
+                try:
+                    expedition['expedition_data'] = json.loads(expedition['expedition_data'])
+                except:
+                    expedition['expedition_data'] = {}
+            
+            # Get participants with minimal data (no joins to waifus table)
+            participant_rows = await conn.fetch(
+                """
+                SELECT ep.user_waifu_id, ep.position_in_party, ep.star_level_used, uw.waifu_id
+                FROM expedition_participants ep
+                JOIN user_waifus uw ON ep.user_waifu_id = uw.id
+                WHERE ep.expedition_id = $1
+                ORDER BY ep.position_in_party
+                """,
+                expedition_id
+            )
+            
+            participants = []
+            for row in participant_rows:
+                participant = {
+                    "user_waifu_id": row["user_waifu_id"],
+                    "waifu_id": row["waifu_id"], 
+                    "position_in_party": row["position_in_party"],
+                    "star_level_used": row["star_level_used"]
+                }
+                participants.append(participant)
+            
+            expedition['participants'] = participants
+            return expedition
+
+    async def update_expedition_status(self, expedition_id: int, status: str, final_results: Optional[Dict] = None) -> bool:
+        """Update expedition status and optionally set final results."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            if status == "completed" and final_results:
+                await conn.execute(
+                    """
+                    UPDATE user_expeditions 
+                    SET status = $1, completed_at = CURRENT_TIMESTAMP, final_results = $2
+                    WHERE id = $3
+                    """,
+                    status, json.dumps(final_results), expedition_id
+                )
+            else:
+                await conn.execute(
+                    "UPDATE user_expeditions SET status = $1 WHERE id = $2",
+                    status, expedition_id
+                )
+            return True
+
+    async def claim_expedition_rewards(self, expedition_id: int) -> bool:
+        """Mark expedition rewards as claimed."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE user_expeditions SET rewards_claimed = TRUE WHERE id = $1",
+                expedition_id
+            )
+            return result.endswith('1')
+
+    async def add_expedition_log(self, expedition_id: int, log_type: str, message: str, data: Optional[Dict] = None, encounter_number: Optional[int] = None) -> int:
+        """Add a log entry to an expedition."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO expedition_logs (expedition_id, log_type, message, data, encounter_number)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id
+                """,
+                expedition_id, log_type, message, json.dumps(data or {}), encounter_number
+            )
+            return row["id"] if row else 0
+
+    async def get_expedition_logs(self, expedition_id: int) -> List[Dict[str, Any]]:
+        """Get all logs for an expedition."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM expedition_logs WHERE expedition_id = $1 ORDER BY timestamp ASC",
+                expedition_id
+            )
+            
+            logs = []
+            for row in rows:
+                log = dict(row)
+                if log['data']:
+                    try:
+                        log['data'] = json.loads(log['data'])
+                    except:
+                        log['data'] = {}
+                logs.append(log)
+            
+            return logs
+
+    async def get_user_waifus_for_expedition(self, discord_id: str) -> List[Dict[str, Any]]:
+        """Get user's waifus suitable for expeditions with their star levels."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                return []
+            user_id = user_row["id"]
+            
+            rows = await conn.fetch(
+                """
+                SELECT uw.id as user_waifu_id, uw.waifu_id, uw.current_star_level, uw.bond_level,
+                       w.name, w.series, w.rarity, w.image_url, w.stats, w.elemental_type, 
+                       w.archetype, w.potency, w.elemental_resistances
+                FROM user_waifus uw
+                JOIN waifus w ON uw.waifu_id = w.waifu_id
+                WHERE uw.user_id = $1
+                ORDER BY w.rarity DESC, w.name ASC
+                """,
+                user_id
+            )
+            
+            waifus = []
+            for row in rows:
+                waifu = dict(row)
+                waifu = self._parse_waifu_json_fields(waifu)
+                waifus.append(waifu)
+            
+            return waifus
+
+    async def get_user_waifus_minimal(self, discord_id: str) -> List[Dict[str, Any]]:
+        """Get user's waifus with minimal data (no joins) - optimized for expeditions."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                return []
+            user_id = user_row["id"]
+            
+            rows = await conn.fetch(
+                """
+                SELECT id as user_waifu_id, waifu_id, current_star_level, bond_level
+                FROM user_waifus
+                WHERE user_id = $1
+                ORDER BY waifu_id ASC
+                """,
+                user_id
+            )
+            
+            return [dict(row) for row in rows]
+
+    async def update_user_waifu_star_level(self, user_waifu_id: int, star_level: int) -> bool:
+        """Update a user waifu's star level."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE user_waifus SET current_star_level = $1 WHERE id = $2",
+                star_level, user_waifu_id
+            )
+            return result.endswith('1')
+
+    async def check_expedition_conflicts(self, discord_id: str, participant_ids: List[int]) -> List[int]:
+        """Check if any waifus are already in active expeditions."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                return []
+            user_id = user_row["id"]
+            
+            rows = await conn.fetch(
+                """
+                SELECT DISTINCT ep.user_waifu_id
+                FROM expedition_participants ep
+                JOIN user_expeditions ue ON ep.expedition_id = ue.id
+                WHERE ue.user_id = $1 AND ue.status = 'in_progress'
+                AND ep.user_waifu_id = ANY($2::int[])
+                """,
+                user_id, participant_ids
+            )
+            
+            return [row['user_waifu_id'] for row in rows]
+
+    async def release_expedition_participants(self, expedition_id: int) -> bool:
+        """Release participants from an expedition so they can be used in new expeditions."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            try:
+                # Simply delete the expedition participants to free them up
+                result = await conn.execute(
+                    "DELETE FROM expedition_participants WHERE expedition_id = $1",
+                    expedition_id
+                )
+                self.logger.info(f"Released participants for expedition {expedition_id}: {result}")
+                return True
+            except Exception as e:
+                self.logger.error(f"Error releasing expedition participants: {e}")
+                return False
+
+    async def distribute_loot_rewards(self, discord_id: str, loot_items: List[Any]) -> Dict[str, Any]:
+        """
+        Distribute loot rewards to a user
+        
+        Args:
+            discord_id: User's Discord ID
+            loot_items: List of loot items from LootGenerator.generate_loot()
+                       Each item should have: item_type, item_id, quantity, value
+        
+        Returns:
+            Dictionary with distribution results and summary
+        """
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            async with conn.transaction():
+                # Get user_id from discord_id
+                user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+                if not user_row:
+                    raise ValueError(f"User with discord_id {discord_id} not found")
+                
+                user_id = user_row["id"]
+                
+                # Track rewards for summary
+                currency_rewards = {"sakura_crystals": 0, "quartzs": 0}
+                item_rewards = []
+                
+                for loot_item in loot_items:
+                    # Enhanced input validation and handling for both dict and object access patterns
+                    try:
+                        if hasattr(loot_item, 'item_type'):
+                            # Object-style access
+                            item_type = loot_item.item_type.value if hasattr(loot_item.item_type, 'value') else str(loot_item.item_type)
+                            item_id = getattr(loot_item, 'item_id', '')
+                            quantity = getattr(loot_item, 'quantity', 0)
+                            value = getattr(loot_item, 'value', 0)
+                        elif hasattr(loot_item, 'get') and callable(getattr(loot_item, 'get')):
+                            # Dictionary-style access
+                            item_type = loot_item.get('item_type', '')
+                            item_id = loot_item.get('item_id', '')
+                            quantity = loot_item.get('quantity', 0)
+                            value = loot_item.get('value', 0)
+                        else:
+                            # Invalid loot item structure - log and skip
+                            print(f"Warning: Invalid loot item structure detected: {type(loot_item)}. Skipping...")
+                            continue
+                        
+                        # Validate extracted values
+                        if not item_type or not item_id:
+                            print(f"Warning: Loot item missing required fields (item_type: {item_type}, item_id: {item_id}). Skipping...")
+                            continue
+                            
+                        # Ensure quantity is a valid number
+                        try:
+                            quantity = int(quantity)
+                            if quantity <= 0:
+                                print(f"Warning: Invalid quantity {quantity} for item {item_id}. Skipping...")
+                                continue
+                        except (ValueError, TypeError):
+                            print(f"Warning: Invalid quantity type for item {item_id}: {type(quantity)}. Skipping...")
+                            continue
+                        
+                    except Exception as e:
+                        print(f"Error processing loot item {loot_item}: {str(e)}. Skipping...")
+                        continue
+                    
+                    if item_type in ["GEMS", "gems"] and item_id == "sakura_crystals":
+                        # Add sakura crystals to user
+                        await conn.execute(
+                            "UPDATE users SET sakura_crystals = sakura_crystals + $1 WHERE id = $2",
+                            quantity, user_id
+                        )
+                        currency_rewards["sakura_crystals"] += quantity
+                        
+                    elif item_type in ["QUARTZS", "quartzs"] and item_id == "quartzs":
+                        # Add quartzs to user
+                        await conn.execute(
+                            "UPDATE users SET quartzs = quartzs + $1 WHERE id = $2",
+                            quantity, user_id
+                        )
+                        currency_rewards["quartzs"] += quantity
+                        
+                    elif item_type in ["ITEM", "item"]:
+                        # Add item to user inventory
+                        await self._add_item_to_inventory(conn, user_id, item_id, quantity)
+                        item_rewards.append({
+                            "item_id": item_id,
+                            "quantity": quantity,
+                            "value": value
+                        })
+                
+                return {
+                    "success": True,
+                    "currency_rewards": currency_rewards,
+                    "item_rewards": item_rewards,
+                    "total_items": len(loot_items)
+                }
+
+    async def _add_item_to_inventory(self, conn, user_id: int, item_id: str, quantity: int):
+        """
+        Add an item to user inventory, stacking if it already exists.
+        Uses shop_items table for item details if item_id follows format "item_X" where X is shop_items.id
+        
+        Args:
+            conn: Database connection
+            user_id: User's database ID
+            item_id: Item identifier (e.g., "item_1", "item_2") where number is shop_items.id
+            quantity: Quantity to add
+        """
+        # Extract shop_item_id from item_id (e.g., "item_1" -> 1)
+        shop_item_id = None
+        item_name = item_id
+        item_type = "expedition_reward"
+        metadata = '{}'
+        effects = '{}'
+        
+        if item_id.startswith("item_") and len(item_id) > 5:
+            try:
+                shop_item_id = int(item_id[5:])  # Extract number after "item_"
+                
+                # Fetch item details from shop_items table including item_data and effects
+                shop_item = await conn.fetchrow(
+                    "SELECT name, description, category, item_type, item_data, effects FROM shop_items WHERE id = $1",
+                    shop_item_id
+                )
+                
+                if shop_item:
+                    item_name = shop_item["name"]
+                    item_type = shop_item.get("item_type", "expedition_reward")
+                    metadata = shop_item.get("item_data") if shop_item.get("item_data") else '{}'
+                    effects = shop_item.get("effects") if shop_item.get("effects") else '{}'
+                else:
+                    self.logger.warning(f"Shop item with ID {shop_item_id} not found, using fallback item_id: {item_id}")
+            except (ValueError, TypeError):
+                self.logger.warning(f"Invalid item_id format: {item_id}, expected 'item_X' where X is a number")
+        
+        # Check if item already exists in inventory (by item_name)
+        existing_item = await conn.fetchrow(
+            """
+            SELECT id, quantity FROM user_inventory 
+            WHERE user_id = $1 AND item_name = $2
+            """, 
+            str(user_id), item_name
+        )
+        
+        if existing_item:
+            # Update existing item quantity
+            await conn.execute(
+                "UPDATE user_inventory SET quantity = quantity + $1 WHERE id = $2",
+                quantity, existing_item["id"]
+            )
+        else:
+            # Create new inventory entry with copied metadata and effects
+            await conn.execute(
+                """
+                INSERT INTO user_inventory (user_id, item_name, item_type, quantity, metadata, effects, is_active, acquired_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                """,
+                str(user_id), item_name, item_type, quantity, metadata, effects, True
+            )
+
+    async def get_user_currency(self, discord_id: str) -> Dict[str, int]:
+        """
+        Get user's current currency amounts
+        
+        Args:
+            discord_id: User's Discord ID
+            
+        Returns:
+            Dictionary with sakura_crystals and quartzs amounts
+        """
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            user_row = await conn.fetchrow(
+                "SELECT sakura_crystals, quartzs FROM users WHERE discord_id = $1", 
+                discord_id
+            )
+            
+            if not user_row:
+                return {"sakura_crystals": 0, "quartzs": 0}
+            
+            return {
+                "sakura_crystals": user_row["sakura_crystals"] or 0,
+                "quartzs": user_row["quartzs"] or 0
+            }
+
+    async def get_user_inventory_items(self, discord_id: str, item_type: str = None) -> List[Dict[str, Any]]:
+        """
+        Get user's inventory items
+        
+        Args:
+            discord_id: User's Discord ID
+            item_type: Optional filter by item type
+            
+        Returns:
+            List of inventory items
+        """
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            # Get user_id from discord_id
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                return []
+            
+            user_id = str(user_row["id"])
+            
+            if item_type:
+                items = await conn.fetch(
+                    """
+                    SELECT * FROM user_inventory 
+                    WHERE user_id = $1 AND item_type = $2 
+                    ORDER BY acquired_at DESC
+                    """,
+                    user_id, item_type
+                )
+            else:
+                items = await conn.fetch(
+                    """
+                    SELECT * FROM user_inventory 
+                    WHERE user_id = $1 
+                    ORDER BY acquired_at DESC
+                    """,
+                    user_id
+                )
+            
+            return [dict(item) for item in items]
+
+    async def get_expedition_by_id(self, expedition_id: int) -> Optional[Dict[str, Any]]:
+        """Get expedition details by ID with creator information"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            expedition_row = await conn.fetchrow(
+                """
+                SELECT e.*, u.discord_id as creator_discord_id 
+                FROM user_expeditions e
+                JOIN users u ON e.user_id = u.id
+                WHERE e.id = $1
+                """,
+                expedition_id
+            )
+            
+            if not expedition_row:
+                return None
+            
+            expedition = dict(expedition_row)
+            if expedition['expedition_data']:
+                try:
+                    expedition['expedition_data'] = json.loads(expedition['expedition_data'])
+                except:
+                    expedition['expedition_data'] = {}
+            
+            return expedition
