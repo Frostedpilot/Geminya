@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from cogs.base_command import BaseCommand
 from services.container import ServiceContainer
+from src.wanderer_game.systems.loot_generator import LootGenerator
 
 
 class CharacterSearchModal(discord.ui.Modal):
@@ -1520,6 +1521,149 @@ class ExpeditionsCog(BaseCommand):
         embed.set_footer(text=f"Use /nwnl_expeditions_start to begin this expedition • ID: {expedition_id}")
         
         return embed
+
+    @app_commands.command(
+        name="nwnl_loot_probability",
+        description="🎯 View item probability chances for different difficulty levels"
+    )
+    @app_commands.describe(
+        difficulty="The difficulty level to calculate probabilities for (default: 1000)"
+    )
+    async def nwnl_loot_probability(self, interaction: discord.Interaction, difficulty: int = 1000):
+        """Display beautiful item probability breakdown for a given difficulty."""
+        await interaction.response.defer()
+        
+        try:
+            # Validate difficulty range
+            if difficulty < 1:
+                difficulty = 1
+            elif difficulty > 10000:
+                difficulty = 10000
+            
+            # Initialize LootGenerator
+            loot_generator = LootGenerator()
+            
+            # Get simulation data
+            simulation_data = loot_generator.simulate_loot_generation(difficulty, num_simulations=10000)
+            type_distribution = simulation_data['type_distribution']
+            item_probabilities = simulation_data['item_probabilities']
+            
+            # Create main embed
+            embed = discord.Embed(
+                title="🎯 Loot Probability Calculator",
+                description=f"**Difficulty Level:** {difficulty:,}\n"
+                           f"*Showing probabilities based on 10,000 simulations*",
+                color=0x9B59B6
+            )
+            
+            # Add type distribution
+            type_text = []
+            for loot_type, percentage in type_distribution.items():
+                if loot_type == 'gems':
+                    emoji = "💎"
+                elif loot_type == 'quartzs':
+                    emoji = "💠"
+                elif loot_type == 'items':
+                    emoji = "📦"
+                else:
+                    emoji = "❓"
+                
+                type_text.append(f"{emoji} **{loot_type.title()}:** {percentage:.1f}%")
+            
+            embed.add_field(
+                name="📊 Loot Type Distribution",
+                value="\n".join(type_text),
+                inline=False
+            )
+            
+            # Add item probabilities - show ALL items regardless of probability
+            if item_probabilities:
+                # Sort items by probability (highest first)
+                sorted_items = sorted(item_probabilities.items(), key=lambda x: x[1], reverse=True)
+                
+                # Get item data for rarity colors and names from the database service
+                try:
+                    # Use the expedition service's database to get item data
+                    item_data = await self.expedition_service.db.get_shop_items()
+                    item_lookup = {item['item_id']: item for item in item_data}
+                except:
+                    item_lookup = {}
+                
+                # Show ALL items with their probabilities
+                all_items = []
+                for item_id, probability in sorted_items:
+                    item_info = item_lookup.get(item_id, {})
+                    item_name = item_info.get('name', f'Item {item_id}')
+                    rarity = item_info.get('rarity', 'common').lower()
+                    
+                    # Get rarity emoji
+                    rarity_emoji = {
+                        'common': '⚪',
+                        'uncommon': '🟢', 
+                        'rare': '🔵',
+                        'epic': '🟣',
+                        'legendary': '🟠',
+                        'mythic': '🔴'
+                    }.get(rarity, '⚪')
+                    
+                    # Format probability with appropriate precision
+                    if probability >= 0.01:
+                        prob_str = f"{probability:.2f}%"
+                    elif probability >= 0.001:
+                        prob_str = f"{probability:.3f}%"
+                    else:
+                        prob_str = f"{probability:.4f}%"
+                    
+                    all_items.append(f"{rarity_emoji} **{item_name}** - {prob_str}")
+                
+                if all_items:
+                    # Split into chunks if too many items (Discord has field value limits)
+                    items_per_field = 10
+                    for i in range(0, len(all_items), items_per_field):
+                        chunk = all_items[i:i + items_per_field]
+                        field_name = "🎁 Item Probabilities" if i == 0 else f"🎁 Item Probabilities (cont. {i//items_per_field + 1})"
+                        embed.add_field(
+                            name=field_name,
+                            value="\n".join(chunk),
+                            inline=False
+                        )
+                else:
+                    embed.add_field(
+                        name="🎁 Item Probabilities",
+                        value="*No items found in probability calculation*",
+                        inline=False
+                    )
+            else:
+                embed.add_field(
+                    name="🎁 Item Probabilities", 
+                    value="*No item probabilities available*",
+                    inline=False
+                )
+            
+            # Add helpful information
+            embed.add_field(
+                name="💡 Tips",
+                value="• Higher difficulty = better item chances\n"
+                      "• All items shown regardless of probability (even <0.01%)\n"
+                      "• Items use forgiving selection (distance up to 1000 still possible)\n"
+                      "• Gem amounts increase with difficulty using normal distribution\n"
+                      "• Quartz probability peaks around difficulty 1000",
+                inline=False
+            )
+            
+            # Footer with calculation details
+            embed.set_footer(text=f"Calculated using exponential decay formula • Range: 1-10,000 difficulty")
+            
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            self.logger.error(f"Error in loot probability command: {e}", exc_info=True)
+            embed = discord.Embed(
+                title="❌ Error",
+                description=f"Failed to calculate probabilities: {str(e)}",
+                color=0xFF0000
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

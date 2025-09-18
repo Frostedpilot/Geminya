@@ -1,266 +1,330 @@
 """
-Tier-based LootGenerator system for the Wanderer Game
+Two-stage LootGenerator system for the Wanderer Game
 
-Uses 20 comprehensive tiers with simplified loot types.
-Each tier contains balanced distributions of sakura_crystals, quartzs, and items.
+Stage 1: Choose loot type (gems/quartzs/items) based on difficulty
+Stage 2: Generate amount using normal distribution or item selection
 """
 
-from typing import Dict, List, Union
+import math
+import random
+from typing import Dict, List, Tuple
 from ..models import LootTable, LootItem, LootType, LootRarity
 
 
 class LootGenerator:
     """
-    20-tier loot generation system with simplified loot types
+    Two-stage loot generation system
     
-    Each tier defines complete loot tables with (loot_type, amount, weight) format.
-    Supports sakura_crystals, quartzs, and item_id based rewards.
+    Stage 1: Dynamic type selection based on difficulty
+    Stage 2: Amount generation via normal distribution or item selection
     """
     
     def __init__(self):
-        self.tier_tables = self._initialize_tier_tables()
+        self.item_configs = self._initialize_item_configs()
     
-    def _initialize_tier_tables(self) -> Dict[int, LootTable]:
-        """Initialize all 20 tier tables with static, balanced loot distributions"""
-        tier_tables = {}
+    def _initialize_item_configs(self) -> List[Tuple[str, int, LootRarity, int]]:
+        """Initialize item configurations for the item selection stage"""
+        # Items only (for stage 2 when item type is selected)
+        item_configs = [
+            ("item_4", 1, LootRarity.COMMON, 80),
+            ("item_4", 2, LootRarity.COMMON, 120),
+            ("item_4", 3, LootRarity.COMMON, 200),
+            ("item_4", 4, LootRarity.UNCOMMON, 280),
+            ("item_4", 5, LootRarity.UNCOMMON, 320),
+            ("item_4", 6, LootRarity.RARE, 400),
+            ("item_4", 30, LootRarity.LEGENDARY, 1600),
+            ("item_4", 100, LootRarity.LEGENDARY, 2000),
+            ("item_2", 1, LootRarity.COMMON, 200),
+            ("item_2", 2, LootRarity.UNCOMMON, 300),
+            ("item_2", 3, LootRarity.UNCOMMON, 400),
+            ("item_2", 4, LootRarity.RARE, 500),
+            ("item_2", 5, LootRarity.RARE, 600),
+            ("item_5", 1, LootRarity.UNCOMMON, 300),
+            ("item_5", 2, LootRarity.RARE, 450),
+            ("item_5", 3, LootRarity.RARE, 600),
+            ("item_5", 4, LootRarity.EPIC, 750),
+            ("item_5", 5, LootRarity.LEGENDARY, 900),
+            ("item_5", 27, LootRarity.LEGENDARY, 2000),
+            ("item_1", 1, LootRarity.RARE, 400),
+            ("item_1", 2, LootRarity.EPIC, 700),
+            ("item_1", 3, LootRarity.LEGENDARY, 900),
+            ("item_3", 1, LootRarity.RARE, 600),
+            ("item_3", 1, LootRarity.EPIC, 900),
+            ("item_3", 1, LootRarity.LEGENDARY, 1200),
+            ("item_6", 1, LootRarity.EPIC, 700),
+            ("item_6", 2, LootRarity.LEGENDARY, 1200),
+            ("item_6", 7, LootRarity.LEGENDARY, 2500),
+            ("item_7", 1, LootRarity.LEGENDARY, 1400),
+        ]
         
-        # Static loot table definitions for each tier
-        tier_configs = {
-            1: [
-                ("sakura_crystals", 10, 50),    # Basic crystals
-                ("quartzs", 1, 30),             # Valuable currency (10x sakura value)
-                ("item_1", 1, 20)             # Basic item
-            ],
-            2: [
-                ("sakura_crystals", 15, 50),
-                ("quartzs", 1, 30),
-                ("item_1", 1, 20)
-            ],
-            3: [
-                ("sakura_crystals", 20, 50),
-                ("quartzs", 2, 30),
-                ("item_1", 1, 20)
-            ],
-            4: [
-                ("sakura_crystals", 25, 50),
-                ("quartzs", 2, 30),
-                ("item_1", 1, 20)
-            ],
-            5: [
-                ("sakura_crystals", 35, 50),
-                ("quartzs", 3, 30),
-                ("item_5", 1, 20)
-            ],
-            6: [
-                ("sakura_crystals", 45, 50),
-                ("quartzs", 4, 30),
-                ("item_6", 1, 20)
-            ],
-            7: [
-                ("sakura_crystals", 55, 50),
-                ("quartzs", 5, 30),
-                ("item_7", 1, 20)
-            ],
-            8: [
-                ("sakura_crystals", 70, 50),
-                ("quartzs", 6, 30),
-                ("item_1", 1, 20)
-            ],
-            9: [
-                ("sakura_crystals", 85, 50),
-                ("quartzs", 8, 30),
-                ("item_1", 1, 20)
-            ],
-            10: [
-                ("sakura_crystals", 100, 50),
-                ("quartzs", 10, 30),
-                ("item_1", 1, 20)
-            ],
-            11: [
-                ("sakura_crystals", 120, 50),
-                ("quartzs", 12, 30),
-                ("item_1", 1, 20)
-            ],
-            12: [
-                ("sakura_crystals", 140, 50),
-                ("quartzs", 14, 30),
-                ("item_2", 1, 20)
-            ],
-            13: [
-                ("sakura_crystals", 165, 50),
-                ("quartzs", 16, 30),
-                ("item_3", 1, 20)
-            ],
-            14: [
-                ("sakura_crystals", 190, 50),
-                ("quartzs", 19, 30),
-                ("item_4", 1, 20)
-            ],
-            15: [
-                ("sakura_crystals", 220, 50),
-                ("quartzs", 22, 30),
-                ("item_5", 1, 20)
-            ],
-            16: [
-                ("sakura_crystals", 250, 50),
-                ("quartzs", 25, 30),
-                ("item_6", 1, 20)
-            ],
-            17: [
-                ("sakura_crystals", 285, 50),
-                ("quartzs", 28, 30),
-                ("item_7", 1, 20)
-            ],
-            18: [
-                ("sakura_crystals", 325, 50),
-                ("quartzs", 32, 30),
-                ("item_1", 1, 20)
-            ],
-            19: [
-                ("sakura_crystals", 370, 50),
-                ("quartzs", 37, 30),
-                ("item_1", 1, 20)
-            ],
-            20: [
-                ("sakura_crystals", 420, 50),
-                ("quartzs", 42, 30),
-                ("item_1", 1, 20)
-            ]
-        }
-        
-        # Create LootTables from static configurations
-        for tier, config in tier_configs.items():
-            loot_items = []
-            for item_id, amount, weight in config:
-                # Determine loot type and create appropriate item
-                if item_id == "sakura_crystals":
-                    item = LootItem(LootType.GEMS, item_id, amount, self._get_rarity(tier), amount)
-                elif item_id == "quartzs":
-                    # Quartzs are 10x more valuable than sakura crystals
-                    item = LootItem(LootType.QUARTZS, item_id, amount, self._get_rarity(tier), amount * 10)
-                else:  # item_xxx
-                    item_value = int(item_id.split('_')[1]) * 5  # item_101 = 505 value
-                    item = LootItem(LootType.ITEM, item_id, amount, self._get_rarity(tier), item_value)
-                
-                loot_items.append((item, weight))
-            
-            tier_tables[tier] = LootTable(f"Tier {tier} Static", loot_items)
-        
-        return tier_tables
+        return item_configs
     
-    def get_available_tables(self) -> List[str]:
-        """Get list of all available tier table names for compatibility"""
-        return [f"Tier {tier} Static" for tier in range(1, 21)]
-    
-    def _get_rarity(self, tier: int) -> LootRarity:
-        """Determine rarity based on tier"""
-        if tier >= 18:
-            return LootRarity.LEGENDARY
-        elif tier >= 14:
-            return LootRarity.EPIC
-        elif tier >= 10:
-            return LootRarity.RARE
-        elif tier >= 6:
-            return LootRarity.UNCOMMON
-        else:
-            return LootRarity.COMMON
-    
-    def generate_loot(self, difficulty: int, success_level: str) -> List[LootItem]:
+    def _calculate_type_probabilities(self, difficulty: int) -> Dict[str, float]:
         """
-        Generate loot based on difficulty and success level
+        Calculate probabilities for each loot type based on difficulty
         
         Args:
-            difficulty: Expedition difficulty
-            success_level: "common" or "great"
+            difficulty: The difficulty value (encounter + effective loot)
+            
+        Returns:
+            Dictionary with probabilities for 'gems', 'quartzs', 'items'
+        """
+        # Clamp difficulty to reasonable range
+        diff = max(1, min(1000, difficulty))
+        
+        # Item probability: 1% below diff 500, scaling to 20% at diff 1000
+        if diff <= 500:
+            item_prob = 0.01  # 1%
+        else:
+            # Scale from 1% to 20% between diff 500-1000
+            item_prob = 0.01 + (0.19 * (diff - 500) / 500)
+        
+        # Quartzs probability: Scale from ~2% to 10% across diff 1-1000
+        quartzs_prob = 0.02 + (0.08 * (diff - 1) / 999)
+        
+        # Gems probability: Takes the remainder (always the most common)
+        gems_prob = 1.0 - item_prob - quartzs_prob
+        
+        return {
+            'gems': gems_prob,
+            'quartzs': quartzs_prob,
+            'items': item_prob
+        }
+    
+    def _select_loot_type(self, difficulty: int) -> str:
+        """Select loot type using weighted random selection"""
+        probs = self._calculate_type_probabilities(difficulty)
+        
+        roll = random.random()
+        if roll < probs['items']:
+            return 'items'
+        elif roll < probs['items'] + probs['quartzs']:
+            return 'quartzs'
+        else:
+            return 'gems'
+    
+    def _generate_gems_amount(self, difficulty: int) -> int:
+        """Generate sakura crystals amount using normal distribution"""
+        # Base amount scales with difficulty
+        base_amount = max(5, difficulty // 3)  # 5 at diff 50, 10 at diff 100, etc.
+        
+        # Add some randomness using normal distribution
+        # Standard deviation is 20% of base amount
+        std_dev = max(1, base_amount * 0.2)
+        amount = int(random.gauss(base_amount, std_dev))
+        
+        # Ensure minimum of 1
+        return max(1, amount)
+    
+    def _generate_quartzs_amount(self, difficulty: int) -> int:
+        """Generate quartzs amount using normal distribution"""
+        # Base amount scales with difficulty (quartzs are more valuable, so fewer)
+        base_amount = max(1, difficulty // 30)  # 1 at diff 50, 2 at diff 100, etc.
+        
+        # Add some randomness using normal distribution
+        # Standard deviation is 30% of base amount (more variance for rare currency)
+        std_dev = max(0.5, base_amount * 0.3)
+        amount = int(random.gauss(base_amount, std_dev))
+        
+        # Ensure minimum of 1
+        return max(1, amount)
+    
+    def _select_item(self, difficulty: int) -> Tuple[str, int, LootRarity]:
+        """Select a specific item using the existing value-based system"""
+        # Use the old probability weight system for items
+        valid_items = []
+        for item_id, amount, rarity, target_value in self.item_configs:
+            weight = self._calculate_item_probability_weight(target_value, difficulty)
+            if weight > 0:
+                valid_items.append((item_id, amount, rarity, weight))
+        
+        if not valid_items:
+            # Fallback to basic item
+            return ("item_basic_1", 1, LootRarity.COMMON)
+        
+        # Select using weighted random
+        total_weight = sum(weight for _, _, _, weight in valid_items)
+        roll = random.uniform(0, total_weight)
+        current_weight = 0
+        
+        for item_id, amount, rarity, weight in valid_items:
+            current_weight += weight
+            if roll <= current_weight:
+                return (item_id, amount, rarity)
+        
+        # Fallback
+        return valid_items[0][:3]
+    
+    def _calculate_item_probability_weight(self, target_value: int, difficulty: int) -> float:
+        """Calculate probability weight for item selection (more forgiving range)"""
+        distance = abs(target_value - difficulty)
+        
+        if distance == 0:
+            return 1.0
+        
+        # Much more forgiving k value: 1000 distance = 0.01% (0.0001)
+        # Using formula: weight = exp(-k * distance)
+        # At distance 1000: should be 0.0001 (0.01%)
+        k = -math.log(0.0001) / 1000  # ≈ 0.00921
+        weight = math.exp(-k * distance)
+        
+        return max(weight, 0.000001)  # Very small minimum threshold
+    
+    def generate_loot(self, loot_value: int, num_rolls: int = 1) -> List[LootItem]:
+        """
+        Generate loot using two-stage system
+        
+        Args:
+            loot_value: Combined value (encounter difficulty + effective_loot_value)
+            num_rolls: Number of items to generate (default 1)
             
         Returns:
             List of generated loot items
         """
-        # Calculate tier from difficulty (0-49 = tier 1, 50-99 = tier 2, etc.)
-        tier = min(20, max(1, (difficulty // 50) + 1))
+        results = []
         
-        # Determine number of rolls
-        num_rolls = 2 if success_level == "great" else 1
+        for _ in range(num_rolls):
+            # Stage 1: Select loot type
+            loot_type = self._select_loot_type(loot_value)
+            
+            # Stage 2: Generate amount/item based on type
+            if loot_type == 'gems':
+                amount = self._generate_gems_amount(loot_value)
+                rarity = self._determine_rarity_by_difficulty(loot_value)
+                item = LootItem(LootType.GEMS, "sakura_crystals", amount, rarity, amount)
+                results.append(item)
+                
+            elif loot_type == 'quartzs':
+                amount = self._generate_quartzs_amount(loot_value)
+                rarity = self._determine_rarity_by_difficulty(loot_value)
+                item = LootItem(LootType.QUARTZS, "quartzs", amount, rarity, amount * 10)
+                results.append(item)
+                
+            else:  # items
+                item_id, amount, rarity = self._select_item(loot_value)
+                item_value = loot_value // 10  # Derived value
+                item = LootItem(LootType.ITEM, item_id, amount, rarity, item_value)
+                results.append(item)
         
-        # Get tier table and roll for loot
-        if tier in self.tier_tables:
-            table = self.tier_tables[tier]
-            return table.roll(num_rolls)
-        
-        # Fallback (shouldn't happen)
-        return [LootItem(LootType.GEMS, "sakura_crystals", 5, LootRarity.COMMON, 5)]
+        return results
     
-    def get_tier_info(self, tier: int) -> Dict:
-        """Get information about a specific tier"""
-        if tier < 1 or tier > 20:
-            return {"error": "Tier must be between 1 and 20"}
+    def _determine_rarity_by_difficulty(self, difficulty: int) -> LootRarity:
+        """Determine rarity based on difficulty level"""
+        if difficulty >= 800:
+            return LootRarity.LEGENDARY
+        elif difficulty >= 500:
+            return LootRarity.EPIC
+        elif difficulty >= 300:
+            return LootRarity.RARE
+        elif difficulty >= 150:
+            return LootRarity.UNCOMMON
+        else:
+            return LootRarity.COMMON
+    
+    def get_loot_info(self, loot_value: int) -> Dict:
+        """Get information about loot generation for a specific loot value"""
+        type_probs = self._calculate_type_probabilities(loot_value)
         
-        # Get the loot table for this tier
-        table = self.tier_tables.get(tier)
-        if not table:
-            return {"error": f"No table found for tier {tier}"}
+        # Calculate expected amounts
+        gems_amount = self._generate_gems_amount(loot_value)
+        quartzs_amount = self._generate_quartzs_amount(loot_value)
         
-        # Extract info from the static table
-        tier_info = {
-            "tier": tier,
-            "rarity": self._get_rarity(tier).value,
-            "difficulty_range": f"{(tier-1)*50}-{tier*50-1}",
-            "loot_items": []
+        # Get available items
+        available_items = []
+        for item_id, amount, rarity, target_value in self.item_configs:
+            weight = self._calculate_item_probability_weight(target_value, loot_value)
+            if weight > 0:
+                available_items.append({
+                    "item_id": item_id,
+                    "quantity": amount,
+                    "rarity": rarity.value,
+                    "target_value": target_value,
+                    "probability_weight": weight,
+                    "distance": abs(target_value - loot_value)
+                })
+        
+        # Sort by probability weight (highest first)
+        available_items.sort(key=lambda x: x["probability_weight"], reverse=True)
+        
+        return {
+            "loot_value": loot_value,
+            "type_probabilities": {
+                "gems": f"{type_probs['gems']*100:.1f}%",
+                "quartzs": f"{type_probs['quartzs']*100:.1f}%", 
+                "items": f"{type_probs['items']*100:.1f}%"
+            },
+            "expected_amounts": {
+                "gems": gems_amount,
+                "quartzs": quartzs_amount
+            },
+            "available_items": len(available_items),
+            "top_items": available_items[:5]
         }
-        
-        for item, weight in table.items:
-            tier_info["loot_items"].append({
-                "item_id": item.item_id,
-                "amount": item.quantity,
-                "weight": weight,
-                "value": item.value
+    
+    def get_all_loot_info(self) -> List[Dict]:
+        """Get information about all item configurations"""
+        items_info = []
+        for item_id, amount, rarity, target_value in self.item_configs:
+            items_info.append({
+                "item_id": item_id,
+                "quantity": amount,
+                "rarity": rarity.value,
+                "target_value": target_value
             })
         
-        return tier_info
+        # Sort by target value
+        items_info.sort(key=lambda x: x["target_value"])
+        
+        return items_info
     
-    def get_all_tiers_info(self) -> List[Dict]:
-        """Get information about all tiers"""
-        return [self.get_tier_info(tier) for tier in range(1, 21)]
-    
-    def simulate_loot_generation(self, difficulty: int, success_level: str, 
-                                num_simulations: int = 1000) -> Dict:
+    def simulate_loot_generation(self, loot_value: int, num_simulations: int = 1000) -> Dict:
         """
         Simulate loot generation for balancing purposes
         
         Args:
-            difficulty: Expedition difficulty
-            success_level: "common" or "great"
+            loot_value: The loot value to simulate
             num_simulations: Number of simulations to run
             
         Returns:
-            Dictionary with average values and statistics
+            Dictionary with simulation statistics
         """
-        total_sakura = 0
-        total_quartzs = 0
-        total_items = 0
+        type_counts = {"gems": 0, "quartzs": 0, "items": 0}
+        item_counts = {}
         total_value = 0
+        total_gems = 0
+        total_quartzs = 0
         
         for _ in range(num_simulations):
-            loot_items = self.generate_loot(difficulty, success_level)
+            loot_items = self.generate_loot(loot_value, 1)
             for item in loot_items:
+                # Count by type
                 if item.item_type == LootType.GEMS:
-                    total_sakura += item.quantity
+                    type_counts["gems"] += 1
+                    total_gems += item.quantity
                 elif item.item_type == LootType.QUARTZS:
+                    type_counts["quartzs"] += 1
                     total_quartzs += item.quantity
-                elif item.item_type == LootType.ITEM:
-                    total_items += item.quantity
+                else:
+                    type_counts["items"] += 1
+                    if item.item_id not in item_counts:
+                        item_counts[item.item_id] = 0
+                    item_counts[item.item_id] += 1
                 
-                total_value += item.value * item.quantity
+                total_value += item.value
         
-        tier = min(20, max(1, (difficulty // 50) + 1))
+        # Convert counts to percentages
+        type_percentages = {type_name: (count / num_simulations) * 100 
+                           for type_name, count in type_counts.items()}
+        
+        item_percentages = {item_id: (count / num_simulations) * 100 
+                           for item_id, count in item_counts.items()}
         
         return {
-            "tier": tier,
-            "difficulty": difficulty,
-            "success_level": success_level,
-            "average_sakura_crystals": total_sakura / num_simulations,
-            "average_quartzs": total_quartzs / num_simulations,
-            "average_items": total_items / num_simulations,
-            "average_total_value": total_value / num_simulations,
-            "simulations": num_simulations
+            "loot_value": loot_value,
+            "simulations": num_simulations,
+            "average_value": total_value / num_simulations,
+            "type_distribution": type_percentages,
+            "average_gems": total_gems / max(1, type_counts["gems"]) if type_counts["gems"] > 0 else 0,
+            "average_quartzs": total_quartzs / max(1, type_counts["quartzs"]) if type_counts["quartzs"] > 0 else 0,
+            "item_probabilities": item_percentages
         }

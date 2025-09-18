@@ -9,6 +9,7 @@ Handles the complete resolution of an expedition by:
 """
 
 from typing import List, Dict, Optional
+import math
 import random
 
 from ..models import (
@@ -71,7 +72,7 @@ class ExpeditionResolver:
         
         # Process each encounter
         for encounter_num in range(expedition.encounter_count):
-            encounter = self._select_encounter(expedition.encounter_pool_tags)
+            encounter = self._select_encounter(expedition.encounter_pool_tags, expedition.difficulty)
             if encounter:
                 encounter_result = self._resolve_encounter(encounter, expedition, team)
                 result.add_encounter_result(encounter_result)
@@ -84,12 +85,13 @@ class ExpeditionResolver:
         
         return result
     
-    def _select_encounter(self, available_tags: List[str]) -> Optional[Encounter]:
+    def _select_encounter(self, available_tags: List[str], expedition_difficulty: int = 0) -> Optional[Encounter]:
         """
-        Select a random encounter that matches the available tags
+        Select an encounter that matches the available tags, weighted by difficulty
         
         Args:
             available_tags: List of tags to match against
+            expedition_difficulty: Expedition difficulty to bias encounter selection
             
         Returns:
             Selected encounter or None if no matches found
@@ -113,7 +115,44 @@ class ExpeditionResolver:
             # Fallback to any encounter if no tag matches
             unique_encounters = list(self.encounters.values())
         
-        return random.choice(unique_encounters) if unique_encounters else None
+        if not unique_encounters:
+            return None
+        
+        # If no expedition difficulty provided, use random selection
+        if expedition_difficulty <= 0:
+            return random.choice(unique_encounters)
+        
+        # Weight encounters based on how close their difficulty is to expedition difficulty
+        weighted_encounters = []
+        for encounter in unique_encounters:
+            encounter_difficulty = encounter.difficulty or 100  # Default if no difficulty
+            
+            # Calculate weight based on difficulty proximity using exponential decay
+            # Closer difficulties get higher weights
+            distance = abs(encounter_difficulty - expedition_difficulty)
+            
+            # Use similar formula as loot generation but more forgiving
+            # At distance 0: weight = 1.0, at distance 100: weight ≈ 0.37, at distance 200: weight ≈ 0.14
+            k = 0.01  # Decay factor (less aggressive than loot system)
+            weight = math.exp(-k * distance)
+            
+            # Minimum weight to ensure all encounters have some chance
+            weight = max(weight, 0.1)
+            
+            weighted_encounters.append((encounter, weight))
+        
+        # Select encounter using weighted random selection
+        total_weight = sum(weight for _, weight in weighted_encounters)
+        roll = random.uniform(0, total_weight)
+        current_weight = 0
+        
+        for encounter, weight in weighted_encounters:
+            current_weight += weight
+            if roll <= current_weight:
+                return encounter
+        
+        # Fallback (shouldn't happen)
+        return weighted_encounters[0][0] if weighted_encounters else None
     
     def _resolve_encounter(self, encounter: Encounter, expedition: Expedition, team: Team) -> EncounterResult:
         """
@@ -333,17 +372,20 @@ class ExpeditionResolver:
     
     def _apply_encounter_effects(self, encounter_result: EncounterResult, expedition: Expedition, loot_pool: LootPool):
         """Apply the effects of an encounter to the expedition state and loot pool"""
-        # Handle loot changes with expedition multipliers
+        # Handle loot changes with new value-based system
         if encounter_result.loot_value_change > 0:
-            # Apply expedition loot multipliers
+            # Apply expedition loot multipliers to get effective loot value
             effective_loot_value = int(encounter_result.loot_value_change * expedition.get_effective_loot_multiplier())
             
-            # Generate loot items
-            success_level = "great" if encounter_result.outcome == EncounterOutcome.GREAT_SUCCESS else "common"
-            loot_items = self.loot_generator.generate_loot(
-                expedition.difficulty, 
-                success_level
-            )
+            # Calculate total loot value: encounter difficulty + effective loot value
+            encounter_difficulty = encounter_result.encounter.difficulty or 100  # Default if no difficulty set
+            total_loot_value = encounter_difficulty + effective_loot_value
+            
+            # Determine number of rolls based on outcome
+            num_rolls = 2 if encounter_result.outcome == EncounterOutcome.GREAT_SUCCESS else 1
+            
+            # Generate loot items using the new value-based system
+            loot_items = self.loot_generator.generate_loot(total_loot_value, num_rolls)
             loot_pool.add_items(loot_items)
         elif encounter_result.outcome == EncounterOutcome.MISHAP:
             # Only remove item if mishaps aren't prevented
