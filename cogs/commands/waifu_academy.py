@@ -5,8 +5,144 @@ from discord.ext import commands
 from cogs.base_command import BaseCommand
 from services.container import ServiceContainer
 
+from typing import Optional
+
 
 class WaifuAcademyCog(BaseCommand):
+
+    @commands.hybrid_command(
+        name="nwnl_collection_search",
+        description="🔍 Search your waifu collection by anime, genre, archetype, or element. Shows elements and archetype."
+    )
+    async def nwnl_collection_search(
+        self,
+        ctx: commands.Context,
+        anime_id: Optional[int] = None,
+        genre: Optional[str] = None,
+        archetype: Optional[str] = None,
+        element: Optional[str] = None
+    ):
+        """Search and filter your waifu collection. Paginate 5 per page. Shows elements and archetype."""
+        await ctx.defer()
+        try:
+            collection = await self.services.waifu_service.get_user_collection_with_stars(str(ctx.author.id))
+            if not collection:
+                embed = discord.Embed(
+                    title="🏫 Empty Academy",
+                    description="You have no waifus yet! Use `/nwnl_summon` to start your collection!",
+                    color=0x95A5A6,
+                )
+                await ctx.send(embed=embed)
+                return
+
+            # Filtering
+            filtered = collection
+            if anime_id is not None:
+                filtered = [w for w in filtered if w.get("series_id") == anime_id]
+            # Robust genre filtering using get_series_genres
+            if genre is not None:
+                genre_lower = genre.lower()
+                # Only use waifus with int series_id
+                series_ids = set(int(w["series_id"]) for w in filtered if isinstance(w.get("series_id"), int))
+                # Map series_id to genres (cache to avoid repeated DB calls)
+                series_genre_map = {}
+                for sid in series_ids:
+                    try:
+                        genres = await self.services.waifu_service.get_series_genres(sid)
+                        series_genre_map[sid] = [g.lower() for g in genres]
+                    except Exception:
+                        series_genre_map[sid] = []
+                filtered = [w for w in filtered if isinstance(w.get("series_id"), int) and w.get("series_id") in series_genre_map and genre_lower in series_genre_map[w.get("series_id")]]
+            if archetype is not None:
+                filtered = [w for w in filtered if isinstance(w.get("archetype"), str) and archetype.lower() in w["archetype"].lower()]
+            if element is not None:
+                def element_matches(w):
+                    etype = w.get("elemental_type")
+                    if isinstance(etype, str):
+                        return element.lower() in etype.lower()
+                    elif isinstance(etype, list):
+                        return any(element.lower() in str(e).lower() for e in etype)
+                    return False
+                filtered = [w for w in filtered if element_matches(w)]
+
+            # Sort by star level (desc), then name
+            sorted_collection = sorted(filtered, key=lambda w: (-w.get("current_star_level", w["rarity"]), -w["character_shards"], w["name"]))
+
+            class SearchPaginator(discord.ui.View):
+                def __init__(self, ctx, waifus):
+                    super().__init__(timeout=180)
+                    self.ctx = ctx
+                    self.waifus = waifus
+                    self.page_idx = 0
+                    self.page_size = 5
+                    self.page_count = max(1, (len(waifus) + self.page_size - 1) // self.page_size)
+
+                def get_embed(self):
+                    start = self.page_idx * self.page_size
+                    end = start + self.page_size
+                    waifu_page = self.waifus[start:end]
+                    title = f"🔍 {self.ctx.author.display_name}'s Waifu Search Results"
+                    embed = discord.Embed(
+                        title=title,
+                        description=f"Page {self.page_idx+1}/{self.page_count} • Total: {len(self.waifus)} waifus",
+                        color=0x8E44AD,
+                    )
+                    if waifu_page:
+                        for w in waifu_page:
+                            stars = "⭐" * w.get("current_star_level", w["rarity"])
+                            shards = w.get("character_shards", 0)
+                            # Element display: join list or show string
+                            etype = w.get("elemental_type")
+                            if isinstance(etype, list):
+                                elements = ", ".join(str(e) for e in etype) if etype else "?"
+                            else:
+                                elements = etype if etype else "?"
+                            # Archetype display: always show string or "?"
+                            archetype_val = w.get("archetype")
+                            archetype = archetype_val if isinstance(archetype_val, str) and archetype_val.strip() else "?"
+                            value = f"{stars} | {w['series']} | {shards} shards\n**Element:** {elements}\n**Archetype:** {archetype}"
+                            embed.add_field(
+                                name=w["name"],
+                                value=value,
+                                inline=False
+                            )
+                    else:
+                        embed.add_field(name="No Characters", value="This page is empty.", inline=False)
+                    embed.set_footer(text=f"Use buttons to navigate • Page {self.page_idx+1}/{self.page_count}")
+                    return embed
+
+                async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                    return interaction.user == self.ctx.author
+
+                @discord.ui.button(label="⬅️ Prev", style=discord.ButtonStyle.primary, row=0)
+                async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.page_idx = (self.page_idx - 1) % self.page_count
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+                @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.primary, row=0)
+                async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.page_idx = (self.page_idx + 1) % self.page_count
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+            if not sorted_collection:
+                embed = discord.Embed(
+                    title="🔍 No Results",
+                    description="No waifus matched your search criteria.",
+                    color=0x95A5A6,
+                )
+                await ctx.send(embed=embed)
+                return
+
+            view = SearchPaginator(ctx, sorted_collection)
+            await ctx.send(embed=view.get_embed(), view=view)
+        except Exception as e:
+            self.logger.error(f"Error in collection search: {e}")
+            embed = discord.Embed(
+                title="❌ Search Error",
+                description="Unable to search your collection. Please try again later!",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
     @commands.hybrid_command(
         name="nwnl_missions",
         description="📅 View all daily missions and your progress"

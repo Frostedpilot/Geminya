@@ -13,6 +13,10 @@ from services.database import DatabaseService
 
 
 class WaifuService:
+
+    async def get_series_genres(self, series_id: int) -> list:
+        """Get genres for a given series_id from the database."""
+        return await self.db.get_series_genres(series_id)
     async def clamp_pity_counter(self, discord_id: str):
         """Ensure the user's pity counter never exceeds the 3★ pity cap."""
         user = await self.db.get_or_create_user(discord_id)

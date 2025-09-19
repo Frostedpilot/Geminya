@@ -12,6 +12,21 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+
+    async def get_series_genres(self, series_id: int) -> list:
+        """Fetch and parse genres for a given series_id from the series table. Genres are pipe-separated (e.g., 'Comedy|Romance')."""
+        if not self.connection_pool:
+            return []
+        try:
+            async with self.connection_pool.acquire() as conn:
+                row = await conn.fetchrow("SELECT genres FROM series WHERE series_id = $1", series_id)
+                if not row or not row["genres"]:
+                    return []
+                genres_raw = row["genres"]
+                # Always split by '|', strip whitespace, ignore empty
+                return [g.strip() for g in genres_raw.split('|') if g.strip()]
+        except Exception:
+            return []
     async def update_waifu(self, waifu_id: int, waifu_data: Dict[str, Any]) -> bool:
         """Update an existing waifu in the database by waifu_id (PostgreSQL) for new schema."""
         if not self.connection_pool:
@@ -955,7 +970,7 @@ class DatabaseService:
             rows = await conn.fetch(
                 """
                 SELECT uw.*, w.name, w.series, w.series_id, w.rarity, w.image_url, w.waifu_id as waifu_id, u.discord_id,
-                       w.stats, w.elemental_type, w.potency, w.elemental_resistances, w.favorite_gifts, w.special_dialogue
+                       w.stats, w.elemental_type, w.potency, w.elemental_resistances, w.favorite_gifts, w.special_dialogue, w.archetype
                 FROM user_waifus uw
                 JOIN waifus w ON uw.waifu_id = w.waifu_id
                 JOIN users u ON uw.user_id = u.id
