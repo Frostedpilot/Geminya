@@ -109,7 +109,21 @@ DEFAULT_GIFT_CODES = [
         "reward_value": 100,
         "is_active": True,
         "usage_limit": 99,
-    }
+    },
+    {
+        "code": "UPDATE2.0",
+        "reward_type": "item",
+        "reward_value": 3,
+        "is_active": True,
+        "usage_limit": 99,
+    },
+    {
+        "code": "HIEUTAVL",
+        "reward_type": "gems",
+        "reward_value": 2000,
+        "is_active": True,
+        "usage_limit": 99,
+    },
 ]
 
 async def initialize_giftcodes():

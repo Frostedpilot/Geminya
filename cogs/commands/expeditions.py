@@ -148,18 +148,15 @@ class ExpeditionListView(discord.ui.View):
                        f"Browse all available expeditions and their details:",
             color=0x8E44AD
         )
-        
         # Calculate page boundaries
         start_idx = self.current_page * self.items_per_page
         end_idx = min(start_idx + self.items_per_page, len(self.expeditions))
         current_expeditions = self.expeditions[start_idx:end_idx]
-        
         # Add detailed expedition info
         for expedition in current_expeditions:
             duration = expedition.get('duration_hours', 4)
-            difficulty = expedition.get('difficulty', 100)  # Use original difficulty
-            difficulty_tier = expedition.get('difficulty_tier', 1)  # Keep tier for rewards
-            # Estimate encounter range if not set
+            difficulty = expedition.get('difficulty', 100)
+            difficulty_tier = expedition.get('difficulty_tier', 1)
             if 'expected_encounters' in expedition:
                 encounters = expedition['expected_encounters']
                 encounters_str = f"~{encounters} battles"
@@ -170,58 +167,44 @@ class ExpeditionListView(discord.ui.View):
             favored = expedition.get('num_favored_affinities', 0)
             disfavored = expedition.get('num_disfavored_affinities', 0)
             expedition_id = expedition.get('expedition_id', 'unknown')
-            
-            # Create difficulty emoji based on tier for visual appeal
             difficulty_emoji = "⭐" * min(difficulty_tier, 5)
-            
-            # Create detailed description
             description_parts = [
                 f"🆔 **ID:** `{expedition_id}`",
                 f"⏱️ **Duration:** {duration} hours",
-                f"{difficulty_emoji} **Difficulty:** {difficulty}",  # Show original difficulty
+                f"{difficulty_emoji} **Difficulty:** {difficulty}",
                 f"⚔️ **Encounters:** {encounters_str}"
             ]
-            
+            # Add per-encounter affinity info
             if favored > 0 or disfavored > 0:
-                # Get actual affinity information if available for short summary
+                description_parts.append(f"🔮 **Per Encounter:** {favored} favored, {disfavored} disfavored affinities")
                 affinity_pools = expedition.get('affinity_pools', {})
-                
                 if favored > 0 and 'favored' in affinity_pools:
-                    # Create short buff summary - list all names without truncation
                     buff_names = []
                     for category, values in affinity_pools['favored'].items():
                         if isinstance(values, list) and values:
                             buff_names.extend(values)
                     if buff_names:
-                        # Show all buff names without truncation
                         description_parts.append(f"✅ **Buffs:** {', '.join(buff_names)}")
                     else:
                         description_parts.append(f"✅ **Buffs:** {favored} character bonuses")
-                
                 if disfavored > 0 and 'disfavored' in affinity_pools:
-                    # Create short debuff summary - list all names without truncation
                     debuff_names = []
                     for category, values in affinity_pools['disfavored'].items():
                         if isinstance(values, list) and values:
                             debuff_names.extend(values)
                     if debuff_names:
-                        # Show all debuff names without truncation
                         description_parts.append(f"❌ **Debuffs:** {', '.join(debuff_names)}")
                     else:
                         description_parts.append(f"❌ **Debuffs:** {disfavored} character penalties")
-                
-                # Fallback if no detailed affinity info
                 if favored > 0 and not any('Buffs:' in part for part in description_parts):
                     description_parts.append(f"✅ **Buffs:** {favored} character bonuses")
                 if disfavored > 0 and not any('Debuffs:' in part for part in description_parts):
                     description_parts.append(f"❌ **Debuffs:** {disfavored} character penalties")
-            
             embed.add_field(
                 name=f"🗺️ {expedition['name']}",
                 value="\n".join(description_parts),
                 inline=False
             )
-        
         embed.set_footer(text="Use the buttons below to navigate • Use /nwnl_expeditions_start to begin an expedition!")
         return embed
 
@@ -382,35 +365,34 @@ class ExpeditionSelectView(discord.ui.View):
                        f"Choose an expedition to view details and start your adventure:",
             color=0x3498DB
         )
-        
         # Calculate page boundaries
         start_idx = self.current_page * self.items_per_page
         end_idx = min(start_idx + self.items_per_page, len(self.expeditions))
         current_expeditions = self.expeditions[start_idx:end_idx]
-        
         # Add expedition preview (first 5 of current page)
         for i, expedition in enumerate(current_expeditions[:5]):
             duration = expedition.get('duration_hours', 4)
-            difficulty = expedition.get('difficulty', 100)  # Use original difficulty
-            difficulty_tier = expedition.get('difficulty_tier', 1)  # For emoji
+            difficulty = expedition.get('difficulty', 100)
+            difficulty_tier = expedition.get('difficulty_tier', 1)
             encounters = expedition.get('expected_encounters', 5)
-            
-            # Create difficulty emoji based on tier
+            favored = expedition.get('num_favored_affinities', 0)
+            disfavored = expedition.get('num_disfavored_affinities', 0)
             difficulty_emoji = "⭐" * min(difficulty_tier, 5)
-            
+            # Add per-encounter affinity info
+            affinity_info = ""
+            if favored > 0 or disfavored > 0:
+                affinity_info = f" | 🔮 {favored} favored, {disfavored} disfavored/encounter"
             embed.add_field(
                 name=f"🗺️ {expedition['name']}",
-                value=f"⏱️ {duration}h | {difficulty_emoji} {difficulty} | ⚔️ ~{encounters} encounters",
+                value=f"⏱️ {duration}h | {difficulty_emoji} {difficulty} | ⚔️ ~{encounters} encounters{affinity_info}",
                 inline=False
             )
-        
         if len(current_expeditions) > 5:
             embed.add_field(
                 name="📜 More Expeditions",
                 value=f"And {len(current_expeditions) - 5} more expeditions available in the selection menu below!",
                 inline=False
             )
-        
         embed.set_footer(text="Select an expedition below to view details and start your adventure!")
         return embed
     
@@ -467,35 +449,35 @@ class ExpeditionSelectView(discord.ui.View):
             description=expedition.get('description', 'An exciting expedition awaits!'),
             color=0x3498DB
         )
-        
         duration_hours = expedition.get('duration_hours', 4)
-        difficulty = expedition.get('difficulty', 100)  # Use original difficulty
-        difficulty_tier = expedition.get('difficulty_tier', 1)  # For rewards logic
+        difficulty = expedition.get('difficulty', 100)
+        difficulty_tier = expedition.get('difficulty_tier', 1)
         encounters = expedition.get('expected_encounters', 5)
         favored = expedition.get('num_favored_affinities', 0)
         disfavored = expedition.get('num_disfavored_affinities', 0)
-        
+        # Add per-encounter affinity info
+        per_encounter_affinity = ""
+        if favored > 0 or disfavored > 0:
+            per_encounter_affinity = f"\n🔮 **Per Encounter:** {favored} favored, {disfavored} disfavored affinities"
         embed.add_field(
             name="⏱️ Duration",
             value=f"{duration_hours} hours",
             inline=True
         )
         embed.add_field(
-            name="⭐ Difficulty", 
-            value=f"{difficulty}",  # Show original difficulty
+            name="⭐ Difficulty",
+            value=f"{difficulty}",
             inline=True
         )
         embed.add_field(
             name="⚔️ Encounters",
-            value=f"~{encounters} battles",
+            value=f"~{encounters} battles{per_encounter_affinity}",
             inline=True
         )
-        
         # Add affinity information
         if favored > 0 or disfavored > 0:
             affinity_pools = expedition.get('affinity_pools', {})
             affinity_text = []
-            
             if favored > 0 and 'favored' in affinity_pools:
                 favored_items = []
                 for category, values in affinity_pools['favored'].items():
@@ -505,7 +487,6 @@ class ExpeditionSelectView(discord.ui.View):
                         favored_items.append(f"**{category.title()}:** {values}")
                 if favored_items:
                     affinity_text.append(f"✅ **Buffs ({favored}):**\n" + "\n".join(favored_items))
-            
             if disfavored > 0 and 'disfavored' in affinity_pools:
                 disfavored_items = []
                 for category, values in affinity_pools['disfavored'].items():
@@ -515,10 +496,9 @@ class ExpeditionSelectView(discord.ui.View):
                         disfavored_items.append(f"**{category.title()}:** {values}")
                 if disfavored_items:
                     affinity_text.append(f"❌ **Debuffs ({disfavored}):**\n" + "\n".join(disfavored_items))
-            
             if affinity_text:
                 embed.add_field(
-                    name="� Affinity Effects",
+                    name="🔮 Affinity Effects",
                     value="\n\n".join(affinity_text),
                     inline=False
                 )
@@ -528,7 +508,6 @@ class ExpeditionSelectView(discord.ui.View):
                     value=f"✅ {favored} character buffs\n❌ {disfavored} character debuffs",
                     inline=False
                 )
-        
         return embed
 
 
@@ -2205,7 +2184,6 @@ class ExpeditionsCog(BaseCommand):
         disfavored = expedition.get('num_disfavored_affinities', 0)
         encounter_tags = expedition.get('encounter_pool_tags', [])
         affinity_pools = expedition.get('affinity_pools', {})
-        
         # Create main embed
         embed = discord.Embed(
             title=f"🗺️ {name}",
@@ -2213,55 +2191,50 @@ class ExpeditionsCog(BaseCommand):
                        f"Complete details for this expedition:",
             color=0x3498DB
         )
-        
         # Basic Information
         duration_text = f"{duration} hours"
         if duration < 1:
-            # Convert to minutes/seconds for very short durations
-            if duration < 0.0167:  # Less than 1 minute
+            if duration < 0.0167:
                 seconds = int(duration * 3600)
                 duration_text = f"{seconds} seconds"
             else:
                 minutes = int(duration * 60)
                 duration_text = f"{minutes} minutes"
-        
         difficulty_emoji = "⭐" * min(difficulty_tier, 5)
-        
+        # Add per-encounter affinity info to basic info
+        per_encounter_affinity = ""
+        if favored > 0 or disfavored > 0:
+            per_encounter_affinity = f"\n🔮 **Per Encounter:** {favored} favored, {disfavored} disfavored affinities"
         embed.add_field(
             name="📊 Basic Information",
             value=f"⏱️ **Duration:** {duration_text}\n"
                   f"{difficulty_emoji} **Difficulty:** {difficulty}\n"
-                  f"⚔️ **Expected Encounters:** ~{encounters} battles",
+                  f"⚔️ **Expected Encounters:** ~{encounters} battles"
+                  f"{per_encounter_affinity}",
             inline=False
         )
-        
         # Comprehensive Affinity Effects
         if favored > 0 or disfavored > 0:
             affinity_text = []
-            
             if favored > 0:
                 if 'favored' in affinity_pools and affinity_pools['favored']:
                     buff_details = []
                     for category, values in affinity_pools['favored'].items():
                         if isinstance(values, list) and values:
-                            # Create detailed explanation for each category
                             category_display = category.title().replace('_', ' ')
                             value_list = ', '.join(f"`{value}`" for value in values)
                             buff_details.append(f"🔸 **{category_display}:** {value_list}")
-                    
                     if buff_details:
                         affinity_text.append(f"✅ **Character Performance Buffs ({favored} categories):**\n" + "\n".join(buff_details))
                     else:
                         affinity_text.append(f"✅ **Character Performance Buffs:** {favored} affinity types (specific details not available)")
                 else:
                     affinity_text.append(f"✅ **Character Performance Buffs:** {favored} affinity types (specific details not available)")
-            
             if disfavored > 0:
                 if 'disfavored' in affinity_pools and affinity_pools['disfavored']:
                     debuff_details = []
                     for category, values in affinity_pools['disfavored'].items():
                         if isinstance(values, list) and values:
-                            # Create detailed explanation for each category
                             category_display = category.title().replace('_', ' ')
                             value_list = ', '.join(f"`{value}`" for value in values)
                             debuff_details.append(f"🔸 **{category_display}:** {value_list}")
@@ -2271,14 +2244,12 @@ class ExpeditionsCog(BaseCommand):
                                 debuff_details.append("     ↳ *Characters with these roles face combat disadvantages*")
                             elif category.lower() in ['personality', 'trait']:
                                 debuff_details.append("     ↳ *Characters with these traits perform worse*")
-                    
                     if debuff_details:
                         affinity_text.append(f"❌ **Character Performance Debuffs ({disfavored} categories):**\n" + "\n".join(debuff_details))
                     else:
                         affinity_text.append(f"❌ **Character Performance Debuffs:** {disfavored} affinity types (specific details not available)")
                 else:
                     affinity_text.append(f"❌ **Character Performance Debuffs:** {disfavored} affinity types (specific details not available)")
-            
             embed.add_field(
                 name="🔮 Character Affinity Effects",
                 value="\n\n".join(affinity_text) if affinity_text else "No affinity effects for this expedition",
@@ -2290,7 +2261,6 @@ class ExpeditionsCog(BaseCommand):
                 value="🎯 **No Affinity Effects** - All characters perform equally on this expedition",
                 inline=False
             )
-        
         # Encounter Information
         if encounter_tags:
             embed.add_field(
@@ -2298,10 +2268,7 @@ class ExpeditionsCog(BaseCommand):
                 value="**Tags:** " + ", ".join(f"`{tag}`" for tag in encounter_tags),
                 inline=False
             )
-        
-        # Footer with usage hint
         embed.set_footer(text=f"Use /nwnl_expeditions_start to begin this expedition • ID: {expedition_id}")
-        
         return embed
 
     @app_commands.command(
