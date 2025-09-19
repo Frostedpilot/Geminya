@@ -1388,26 +1388,34 @@ class ExpeditionResultsView(discord.ui.View):
                     remaining_items = len(dedicated_items) - displayed_items
                     rewards_text += f"\n... and {remaining_items} more dedicated items"
                     break
+                # Use real item name if available
                 if hasattr(item, 'item_id'):
-                    item_name = item.item_id
+                    item_id = item.item_id
+                    item_name = getattr(self, 'item_lookup', {}).get(item_id, {}).get('name', item_id)
                     item_tier = item.rarity.value if hasattr(item.rarity, 'value') else str(item.rarity)
-                    item_value = item.value
+                    item_value = getattr(item, 'value', 0)
                     quantity = getattr(item, 'quantity', 1)
                     if quantity > 1:
                         display_name = f"{quantity}x {item_name}"
                     else:
                         display_name = item_name
                 else:
-                    display_name = item.get('name', 'Unknown Item')
+                    item_id = item.get('item_id', '')
+                    item_name = getattr(self, 'item_lookup', {}).get(item_id, {}).get('name', item.get('name', 'Unknown Item'))
                     item_tier = item.get('tier', 'Common')
                     item_value = item.get('value', 0)
+                    quantity = item.get('quantity', 1)
+                    if quantity > 1:
+                        display_name = f"{quantity}x {item_name}"
+                    else:
+                        display_name = item_name
                 rarity_emoji = {
                     'common': '⚪',
                     'uncommon': '🟢', 
                     'rare': '🔵',
                     'epic': '🟣',
                     'legendary': '🟠'
-                }.get(item_tier.lower(), '⚪')
+                }.get(str(item_tier).lower(), '⚪')
                 rewards_text += f"\n{rarity_emoji} {display_name} ({item_tier})"
                 displayed_items += 1
         
@@ -1523,7 +1531,8 @@ class ExpeditionResultsView(discord.ui.View):
                                     loot_lines.append(f"💠 {item.quantity} Quartzs")
                                 else:
                                     # Use real item name if available
-                                    item_name = self.item_lookup.get(item.item_id, {}).get('name', item.item_id)
+                                    item_id = item.item_id
+                                    item_name = getattr(self, 'item_lookup', {}).get(item_id, {}).get('name', item_id)
                                     rarity = item.rarity.value if hasattr(item.rarity, 'value') else str(item.rarity)
                                     loot_lines.append(f"📦 {item.quantity}x {item_name} ({rarity})")
                             else:
@@ -1534,7 +1543,8 @@ class ExpeditionResultsView(discord.ui.View):
                                     loot_lines.append(f"💠 {item.get('quantity', 1)} Quartzs")
                                 else:
                                     # Use real item name if available
-                                    item_name = self.item_lookup.get(item.get('item_id', ''), {}).get('name', item.get('name', 'Unknown Item'))
+                                    item_id = item.get('item_id', '')
+                                    item_name = getattr(self, 'item_lookup', {}).get(item_id, {}).get('name', item.get('name', 'Unknown Item'))
                                     loot_lines.append(f"📦 {item.get('quantity', 1)}x {item_name}")
                         if loot_lines:
                             loot_info = "\n" + "\n".join(loot_lines)
@@ -1956,8 +1966,8 @@ class ExpeditionsCog(BaseCommand):
             
             # Create detailed expedition results view with pagination
             view = ExpeditionResultsView(completed_expeditions, interaction.user.id)
+            await view.setup_item_lookup(self.expedition_service)
             embed = view.get_current_embed()
-            
             await interaction.followup.send(embed=embed, view=view)
             
         except Exception as e:

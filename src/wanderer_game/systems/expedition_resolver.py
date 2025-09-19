@@ -600,12 +600,39 @@ class ExpeditionResolver:
             expedition.skip_encounters += int(modifier.value)
     
     def _apply_final_multiplier(self, result: ExpeditionResult, team: Team, expedition_difficulty: int):
-        """Calculate and apply the final luck-based multiplier, factoring in expedition difficulty"""
+        """Calculate and apply the final luck-based multiplier, factoring in expedition difficulty
+        Only currency rewards (gems/quartzs) are multiplied; item rewards are unaffected."""
         team_luck = team.get_total_luck()
         final_luck_score = FinalMultiplierTable.calculate_luck_score(
             team_luck, result.great_successes, result.mishaps, expedition_difficulty
         )
         multiplier_name, multiplier_value = FinalMultiplierTable.roll_final_multiplier(final_luck_score)
-        result.loot_pool = result.loot_pool.apply_multiplier(multiplier_value)
+
+        # Separate items into currencies and non-currencies
+        currency_types = {"gems", "quartzs"}
+        currency_items = []
+        non_currency_items = []
+        for item in result.loot_pool.items:
+            if item.item_type.value in currency_types:
+                currency_items.append(item)
+            else:
+                non_currency_items.append(item)
+
+        # Multiply only currency items
+        new_currency_items = []
+        for item in currency_items:
+            # Multiply quantity, but always at least 1 if original was >0
+            new_qty = max(1, int(item.quantity * multiplier_value)) if item.quantity > 0 else 0
+            new_currency_items.append(type(item)(
+                item_type=item.item_type,
+                item_id=item.item_id,
+                quantity=new_qty,
+                rarity=item.rarity,
+                value=item.value
+            ))
+
+        # Rebuild loot pool: non-currency items + adjusted currency items
+    # Use already imported LootPool from module scope
+        result.loot_pool = LootPool(non_currency_items + new_currency_items)
         result.final_luck_score = final_luck_score
         result.final_multiplier = FinalMultiplier(multiplier_name)
