@@ -49,8 +49,8 @@ class LootGenerator:
             ("item_1", 2, LootRarity.EPIC, 700),
             ("item_1", 3, LootRarity.LEGENDARY, 900),
             ("item_3", 1, LootRarity.RARE, 600),
-            ("item_3", 1, LootRarity.EPIC, 900),
-            ("item_3", 1, LootRarity.LEGENDARY, 1200),
+            ("item_3", 2, LootRarity.EPIC, 900),
+            ("item_3", 3, LootRarity.LEGENDARY, 1200),
             ("item_6", 1, LootRarity.EPIC, 700),
             ("item_6", 2, LootRarity.LEGENDARY, 1200),
             ("item_6", 7, LootRarity.LEGENDARY, 2500),
@@ -106,7 +106,7 @@ class LootGenerator:
     def _generate_gems_amount(self, difficulty: int) -> int:
         """Generate sakura crystals amount using normal distribution"""
         # Base amount scales with difficulty
-        base_amount = max(5, difficulty // 3)  # 5 at diff 50, 10 at diff 100, etc.
+        base_amount = max(5, difficulty // 10)  # 5 at diff 50, 10 at diff 100, etc.
         
         # Add some randomness using normal distribution
         # Standard deviation is 20% of base amount
@@ -119,7 +119,7 @@ class LootGenerator:
     def _generate_quartzs_amount(self, difficulty: int) -> int:
         """Generate quartzs amount using normal distribution"""
         # Base amount scales with difficulty (quartzs are more valuable, so fewer)
-        base_amount = max(1, difficulty // 30)  # 1 at diff 50, 2 at diff 100, etc.
+        base_amount = max(1, difficulty // 50)  # 1 at diff 50, 2 at diff 100, etc.
         
         # Add some randomness using normal distribution
         # Standard deviation is 30% of base amount (more variance for rare currency)

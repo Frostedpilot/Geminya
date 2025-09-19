@@ -93,19 +93,19 @@ class ExpeditionTemplate:
         # Select random affinities from pools
         favored_affinities = self.favored_pool.select_random_affinities(self.num_favored_affinities)
         disfavored_affinities = self.disfavored_pool.select_random_affinities(self.num_disfavored_affinities)
-        
+
         # Calculate encounter count based on duration
-        # Formula: floor(DurationInHours * (1.5 + (random_float_0_to_1 * 0.5)))
-        random_factor = random.random() * 0.5  # 0.0 to 0.5
-        encounter_count = int(self.duration_hours * (1.5 + random_factor))
-        
+        # Formula: floor(DurationInHours * (0.5 + random_float_0_to_1 * 1.0))
+        random_factor = random.random()  # 0.0 to 1.0
+        encounter_count = max(1, int(self.duration_hours * (0.5 + random_factor * 1.0)))  # 0.5x to 1.5x
+
         # Build dynamic encounter pool tags
         dynamic_tags = self.encounter_pool_tags.copy()
         if team_series_ids:
             # Add series IDs as tags for series-specific content
             dynamic_tags.extend([str(sid) for sid in team_series_ids])
-        
-        return Expedition(
+
+        expedition = Expedition(
             expedition_id=self.expedition_id,
             name=self.name,
             duration_hours=self.duration_hours,
@@ -115,6 +115,9 @@ class ExpeditionTemplate:
             encounter_pool_tags=dynamic_tags,
             encounter_count=encounter_count
         )
+        # Attach expected_encounters for downstream display/logic
+        setattr(expedition, 'expected_encounters', encounter_count)
+        return expedition
 
 
 @dataclass

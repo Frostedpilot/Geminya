@@ -13,9 +13,9 @@ import math
 import random
 
 from ..models import (
-    Expedition, ActiveExpedition, Team, Character,
+    Expedition, ActiveExpedition, Team,
     Encounter, EncounterType, EncounterResult, EncounterOutcome,
-    ExpeditionResult, LootPool, LootItem, FinalMultiplier,
+    ExpeditionResult, LootPool, FinalMultiplier,
     Affinity, AffinityType, EncounterModifier, ModifierType
 )
 from .chance_table import ChanceTable, FinalMultiplierTable
@@ -71,18 +71,16 @@ class ExpeditionResolver:
         )
         
         # Process each encounter
-        for encounter_num in range(expedition.encounter_count):
+        for _ in range(expedition.encounter_count):
             encounter = self._select_encounter(expedition.encounter_pool_tags, expedition.difficulty)
             if encounter:
                 encounter_result = self._resolve_encounter(encounter, expedition, team)
                 result.add_encounter_result(encounter_result)
-                
                 # Apply encounter effects to expedition state
                 self._apply_encounter_effects(encounter_result, expedition, result.loot_pool)
         
-        # Calculate final multiplier and apply to loot
-        self._apply_final_multiplier(result, team)
-        
+        # Calculate final multiplier and apply to loot, always using expedition.difficulty
+        self._apply_final_multiplier(result, team, expedition.difficulty)
         return result
     
     def _select_encounter(self, available_tags: List[str], expedition_difficulty: int = 0) -> Optional[Encounter]:
@@ -376,17 +374,16 @@ class ExpeditionResolver:
         if encounter_result.loot_value_change > 0:
             # Apply expedition loot multipliers to get effective loot value
             effective_loot_value = int(encounter_result.loot_value_change * expedition.get_effective_loot_multiplier())
-            
             # Calculate total loot value: encounter difficulty + effective loot value
-            encounter_difficulty = encounter_result.encounter.difficulty or 100  # Default if no difficulty set
+            encounter_difficulty = encounter_result.encounter.difficulty or expedition.difficulty
             total_loot_value = encounter_difficulty + effective_loot_value
-            
             # Determine number of rolls based on outcome
             num_rolls = 2 if encounter_result.outcome == EncounterOutcome.GREAT_SUCCESS else 1
-            
             # Generate loot items using the new value-based system
             loot_items = self.loot_generator.generate_loot(total_loot_value, num_rolls)
             loot_pool.add_items(loot_items)
+            # Store generated loot in the encounter result
+            encounter_result.loot_items = loot_items
         elif encounter_result.outcome == EncounterOutcome.MISHAP:
             # Only remove item if mishaps aren't prevented
             if not expedition.prevent_mishaps:
@@ -602,20 +599,13 @@ class ExpeditionResolver:
             # Skip next encounter entirely
             expedition.skip_encounters += int(modifier.value)
     
-    def _apply_final_multiplier(self, result: ExpeditionResult, team: Team):
-        """Calculate and apply the final luck-based multiplier"""
-        # Calculate final luck score
+    def _apply_final_multiplier(self, result: ExpeditionResult, team: Team, expedition_difficulty: int):
+        """Calculate and apply the final luck-based multiplier, factoring in expedition difficulty"""
         team_luck = team.get_total_luck()
         final_luck_score = FinalMultiplierTable.calculate_luck_score(
-            team_luck, result.great_successes, result.mishaps
+            team_luck, result.great_successes, result.mishaps, expedition_difficulty
         )
-        
-        # Roll for multiplier
         multiplier_name, multiplier_value = FinalMultiplierTable.roll_final_multiplier(final_luck_score)
-        
-        # Apply to loot pool
         result.loot_pool = result.loot_pool.apply_multiplier(multiplier_value)
-        
-        # Store results
         result.final_luck_score = final_luck_score
         result.final_multiplier = FinalMultiplier(multiplier_name)

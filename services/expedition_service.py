@@ -10,7 +10,7 @@ This service handles:
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional
 from dataclasses import asdict
 from enum import Enum
@@ -65,6 +65,16 @@ class ExpeditionService:
             self.logger.error("Failed to load expedition/encounter data: %s", e)
             raise
 
+    def _get_multiplier_value(self, multiplier_name: str) -> float:
+        """Convert final multiplier name to numeric value."""
+        multiplier_values = {
+            "catastrophe": 0.25,  # -75%
+            "setback": 0.75,      # -25%
+            "standard": 1.0,      # No change
+            "jackpot": 1.5        # +50%
+        }
+        return multiplier_values.get(multiplier_name, 1.0)
+
     async def get_available_expeditions(self) -> List[Dict[str, Any]]:
         """Get all available expedition templates (simplified lifecycle - no daily refresh needed)"""
         templates = []
@@ -72,9 +82,63 @@ class ExpeditionService:
             # Keep original difficulty value, but calculate tier for rewards logic
             difficulty_tier = max(1, min(5, (template.difficulty + 50) // 100))
             
-            # Estimate encounter count based on duration and difficulty
-            base_encounters = template.duration_hours
-            expected_encounters = max(1, base_encounters + (difficulty_tier - 1))  # Minimum 1 encounter
+            # Calculate encounter count based on duration (0.5-1.5 x hours)
+            # Use a more dynamic range: minimum 0.5x hours, maximum 1.5x hours
+            import random
+            expected_encounters = max(1, int(template.duration_hours * 1.0))
+            
+            # Convert AffinityPool objects to dictionary format for Discord display
+            affinity_pools = {}
+            
+            # Extract favored affinities from the favored_pool
+            if hasattr(template, 'favored_pool') and template.favored_pool:
+                favored_data = {}
+                if template.favored_pool.elemental:
+                    favored_data['elemental'] = template.favored_pool.elemental
+                if template.favored_pool.archetype:
+                    favored_data['archetype'] = template.favored_pool.archetype
+                if template.favored_pool.series_id:
+                    # Convert series IDs to names using character registry
+                    series_names = []
+                    char_registry = self.data_manager.get_character_registry()
+                    for series_id in template.favored_pool.series_id:
+                        # Get characters from this series to get the series name
+                        characters_in_series = char_registry.get_characters_by_series(series_id)
+                        if characters_in_series:
+                            series_name = characters_in_series[0].series  # All characters in series have same series name
+                            series_names.append(series_name)
+                    if series_names:
+                        favored_data['series'] = series_names
+                if template.favored_pool.genre:
+                    favored_data['genre'] = template.favored_pool.genre
+                
+                if favored_data:
+                    affinity_pools['favored'] = favored_data
+            
+            # Extract disfavored affinities from the disfavored_pool  
+            if hasattr(template, 'disfavored_pool') and template.disfavored_pool:
+                disfavored_data = {}
+                if template.disfavored_pool.elemental:
+                    disfavored_data['elemental'] = template.disfavored_pool.elemental
+                if template.disfavored_pool.archetype:
+                    disfavored_data['archetype'] = template.disfavored_pool.archetype
+                if template.disfavored_pool.series_id:
+                    # Convert series IDs to names using character registry
+                    series_names = []
+                    char_registry = self.data_manager.get_character_registry()
+                    for series_id in template.disfavored_pool.series_id:
+                        # Get characters from this series to get the series name
+                        characters_in_series = char_registry.get_characters_by_series(series_id)
+                        if characters_in_series:
+                            series_name = characters_in_series[0].series  # All characters in series have same series name
+                            series_names.append(series_name)
+                    if series_names:
+                        disfavored_data['series'] = series_names
+                if template.disfavored_pool.genre:
+                    disfavored_data['genre'] = template.disfavored_pool.genre
+                
+                if disfavored_data:
+                    affinity_pools['disfavored'] = disfavored_data
             
             templates.append({
                 "expedition_id": template.expedition_id,
@@ -85,7 +149,7 @@ class ExpeditionService:
                 "expected_encounters": expected_encounters,  # Add calculated encounters
                 "num_favored_affinities": template.num_favored_affinities,
                 "num_disfavored_affinities": template.num_disfavored_affinities,
-                "affinity_pools": getattr(template, 'affinity_pools', {}),  # Add affinity pools
+                "affinity_pools": affinity_pools,  # Properly formatted affinity pools
                 "encounter_pool_tags": template.encounter_pool_tags,
                 "description": f"Duration: {template.duration_hours}h, Difficulty: {template.difficulty}, Buffs/Debuffs: {template.num_favored_affinities}/{template.num_disfavored_affinities}"
             })
@@ -99,7 +163,7 @@ class ExpeditionService:
         self.logger.debug(f"[EXPEDITION_GET] Found {len(expeditions)} expeditions for user {discord_id}")
         
         # Add completion status and time remaining for active expeditions
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         in_progress_count = 0
         ready_to_complete = 0
         
@@ -107,6 +171,11 @@ class ExpeditionService:
             if expedition['status'] == 'in_progress':
                 in_progress_count += 1
                 start_time = expedition['started_at']
+                
+                # Ensure timezone awareness - database timestamps are UTC
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(tzinfo=timezone.utc)
+                
                 duration = timedelta(hours=expedition['duration_hours'])
                 end_time = start_time + duration
                 
@@ -238,7 +307,8 @@ class ExpeditionService:
             # No need to generate expedition instance here - just store template reference and team data
             
             # Calculate estimated encounter count for display (actual count will be rolled at completion)
-            estimated_encounter_count = int(template.duration_hours * 1.75)  # Mid-range estimate
+            # Use the midpoint of the 0.5-1.5x range for estimate: 1.0x
+            estimated_encounter_count = max(1, int(template.duration_hours * 1.0))  # Midpoint estimate, minimum 1
             self.logger.debug(f"[EXPEDITION_START] Estimated encounter count: {estimated_encounter_count}")
             
             # Prepare simplified expedition data for database
@@ -338,18 +408,18 @@ class ExpeditionService:
         
         favored_affinities = create_affinities_from_pool(favored_pool_data, num_favored)
         disfavored_affinities = create_affinities_from_pool(disfavored_pool_data, num_disfavored)
-        
+
         # RUNTIME ENCOUNTER COUNT: Roll for encounter count NOW
         duration_hours = template_data.get("duration_hours", 1)
-        random_factor = random.random() * 0.5  # 0.0 to 0.5
-        encounter_count = int(duration_hours * (1.5 + random_factor))
-        
+        random_factor = random.random()  # 0.0 to 1.0
+        encounter_count = max(1, int(duration_hours * (0.5 + random_factor * 1.0)))  # 0.5x to 1.5x
+
         # Build dynamic encounter pool tags
         base_tags = template_data.get("encounter_pool_tags", [])
         team_series_ids = template_data.get("team_series_ids", [])
         dynamic_tags = base_tags.copy()
         dynamic_tags.extend([str(sid) for sid in team_series_ids])
-        
+
         # Create expedition instance with runtime-rolled values
         expedition = Expedition(
             expedition_id=template_data["expedition_id"],
@@ -361,7 +431,7 @@ class ExpeditionService:
             encounter_pool_tags=dynamic_tags,
             encounter_count=encounter_count
         )
-        
+
         self.logger.info(f"Generated expedition at completion: {encounter_count} encounters, {len(favored_affinities)} favored, {len(disfavored_affinities)} disfavored affinities")
         return expedition
 
@@ -372,9 +442,14 @@ class ExpeditionService:
             return None
         
         # Add completion status
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         if expedition['status'] == 'in_progress':
             start_time = expedition['started_at']
+            
+            # Ensure timezone awareness - database timestamps are UTC
+            if start_time.tzinfo is None:
+                start_time = start_time.replace(tzinfo=timezone.utc)
+            
             duration = timedelta(hours=expedition['duration_hours'])
             end_time = start_time + duration
             
@@ -546,13 +621,36 @@ class ExpeditionService:
             expedition_result = self.expedition_resolver.resolve(active_expedition, team)
             
             # Step 5: Distribute loot rewards to user
+            self.logger.info(f"Expedition result - Loot pool exists: {expedition_result.loot_pool is not None}")
+            if expedition_result.loot_pool:
+                self.logger.info(f"Loot pool items count: {len(expedition_result.loot_pool.items) if expedition_result.loot_pool.items else 0}")
+                self.logger.info(f"Loot pool total value: {expedition_result.loot_pool.get_total_value()}")
+                
+                # Log details of each loot item for debugging
+                if expedition_result.loot_pool.items:
+                    for i, item in enumerate(expedition_result.loot_pool.items):
+                        self.logger.info(f"Loot item {i}: type={item.item_type.value if hasattr(item.item_type, 'value') else item.item_type}, id={item.item_id}, quantity={item.quantity}, rarity={item.rarity.value if hasattr(item.rarity, 'value') else item.rarity}, value={item.value}")
+            
             if expedition_result.loot_pool and expedition_result.loot_pool.items:
                 loot_result = await self.db.distribute_loot_rewards(discord_id, expedition_result.loot_pool.items)
+                self.logger.info(f"Distributed loot - Currency: {loot_result.get('currency_rewards', {})}")
             else:
-                loot_result = {"success": True, "total_items": 0, "currency_added": {"sakura_crystals": 0, "quartzs": 0}}
+                loot_result = {"success": True, "total_items": 0, "currency_rewards": {"sakura_crystals": 0, "quartzs": 0}}
+                self.logger.info("No loot pool or no items - no rewards distributed")
             
             # Step 6: Prepare complete expedition results
             expedition_success = expedition_result.great_successes + expedition_result.successes > expedition_result.failures + expedition_result.mishaps
+            
+            # Determine outcome string based on results
+            if expedition_result.great_successes >= expedition_result.successes and expedition_result.great_successes > 0 and expedition_result.failures == 0 and expedition_result.mishaps == 0:
+                outcome_string = "perfect"
+            elif expedition_success and expedition_result.great_successes > 0:
+                outcome_string = "great_success"
+            elif expedition_success:
+                outcome_string = "success"
+            else:
+                outcome_string = "failure"
+            
             final_results = {
                 "expedition_success": expedition_success,
                 "encounters_completed": len(expedition_result.encounter_results),
@@ -561,7 +659,9 @@ class ExpeditionService:
                 "failures": expedition_result.failures,
                 "mishaps": expedition_result.mishaps,
                 "final_multiplier": expedition_result.final_multiplier.value,
+                "final_luck_score": expedition_result.final_luck_score,
                 "expedition_log": expedition_result.generate_log(),
+                "outcome": outcome_string,
                 "loot_summary": {
                     "total_items": len(expedition_result.loot_pool.items) if expedition_result.loot_pool.items else 0,
                     "total_value": expedition_result.loot_pool.get_total_value() if expedition_result.loot_pool else 0
@@ -589,17 +689,22 @@ class ExpeditionService:
                 "expedition_id": expedition_id,
                 "expedition_name": expedition_instance.name,
                 "expedition_success": expedition_success,
+                "outcome": outcome_string,
                 "result_summary": {
                     "encounters": len(expedition_result.encounter_results),
                     "great_successes": expedition_result.great_successes,
                     "successes": expedition_result.successes,
                     "failures": expedition_result.failures,
                     "mishaps": expedition_result.mishaps,
-                    "final_multiplier": expedition_result.final_multiplier.value
+                    "final_multiplier": expedition_result.final_multiplier.value,
+                    "final_multiplier_numeric": self._get_multiplier_value(expedition_result.final_multiplier.value)
                 },
+                "encounter_results": expedition_result.encounter_results,  # Add raw encounter results for difficulty access
                 "loot_result": loot_result,
-                "expedition_log": expedition_result.generate_log()[:10],  # First 10 lines for preview
-                "completion_time": datetime.utcnow().isoformat()
+                "loot_items": expedition_result.loot_pool.items if expedition_result.loot_pool else [],
+                "loot_currency": loot_result.get("currency_rewards", {}),
+                "expedition_log": expedition_result.generate_log(),  # Full log for detailed view
+                "completion_time": datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:
@@ -671,8 +776,8 @@ class ExpeditionService:
     async def complete_user_expeditions(self, discord_id: str) -> List[Dict[str, Any]]:
         """Complete all ready expeditions for a user and return results."""
         try:
-            # Get user's active expeditions
-            expeditions = await self.get_user_expeditions(discord_id, status='active')
+            # Get user's in-progress expeditions
+            expeditions = await self.get_user_expeditions(discord_id, status='in_progress')
             completed_expeditions = []
             
             from datetime import datetime, timedelta
@@ -680,22 +785,38 @@ class ExpeditionService:
             for expedition in expeditions:
                 try:
                     # Check if expedition is ready to complete
-                    start_time = expedition.get('start_time')
+                    start_time = expedition.get('started_at')
                     duration_hours = expedition.get('duration_hours', 4)
                     
                     if start_time:
+                        # Ensure timezone awareness - database timestamps are UTC
+                        if start_time.tzinfo is None:
+                            start_time = start_time.replace(tzinfo=timezone.utc)
+                        
                         end_time = start_time + timedelta(hours=duration_hours)
-                        now = datetime.utcnow()
+                        now = datetime.now(timezone.utc)
                         
                         if now >= end_time:
                             # Complete this expedition
                             result = await self.complete_expedition(expedition['id'], discord_id)
                             if result.get('success'):
+                                # Properly structure the loot data
+                                loot_data = {
+                                    'sakura_crystals': result.get('loot_currency', {}).get('sakura_crystals', 0),
+                                    'quartzs': result.get('loot_currency', {}).get('quartzs', 0),
+                                    'items': result.get('loot_items', [])
+                                }
+                                
                                 completed_expeditions.append({
                                     **expedition,
-                                    'loot': result.get('loot', {}),
+                                    'loot': loot_data,
                                     'outcome': result.get('outcome', 'success'),
-                                    'completion_time': now
+                                    'completion_time': now,
+                                    'expedition_log': result.get('expedition_log', []),
+                                    'result_summary': result.get('result_summary', {}),
+                                    'encounter_results': result.get('encounter_results', []),  # Add encounter results
+                                    'loot_result': result.get('loot_result', {}),
+                                    'expedition_name': result.get('expedition_name', expedition.get('expedition_name', 'Unknown Expedition'))
                                 })
                 
                 except Exception as e:

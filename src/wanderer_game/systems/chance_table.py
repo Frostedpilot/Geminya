@@ -193,19 +193,22 @@ class FinalMultiplierTable:
     }
     
     @classmethod
-    def calculate_luck_score(cls, team_luck: int, great_successes: int, mishaps: int) -> int:
+    def calculate_luck_score(cls, team_luck: int, great_successes: int, mishaps: int, expedition_difficulty: int = 0) -> int:
         """
-        Calculate final luck score for multiplier determination
+        Calculate final luck score for multiplier determination, factoring in expedition difficulty.
+        Harder expeditions require more luck for the best multipliers.
         
         Args:
             team_luck: Total LCK stat of all team members
             great_successes: Number of great successes achieved
             mishaps: Number of mishaps encountered
-            
+            expedition_difficulty: The difficulty of the expedition (higher = harder)
         Returns:
             Final luck score
         """
-        return team_luck + (great_successes * 20) - (mishaps * 40)
+        # Difficulty penalty: for every 10 difficulty, reduce luck score by 5 (tunable)
+        difficulty_penalty = (expedition_difficulty // 20)
+        return team_luck + (great_successes * 20) - (mishaps * 40) - difficulty_penalty
     
     @classmethod
     def roll_final_multiplier(cls, luck_score: int) -> Tuple[str, float]:

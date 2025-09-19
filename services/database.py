@@ -789,7 +789,7 @@ class DatabaseService:
                 location VARCHAR(255) NOT NULL,
                 difficulty VARCHAR(50) NOT NULL,
                 status VARCHAR(50) NOT NULL DEFAULT 'in_progress',
-                duration_hours INTEGER NOT NULL,
+                duration_hours FLOAT NOT NULL,
                 started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 completed_at TIMESTAMP NULL,
                 rewards_claimed BOOLEAN DEFAULT FALSE,
@@ -1680,6 +1680,35 @@ class DatabaseService:
             
             return [dict(row) for row in rows]
 
+    async def get_user_waifus_available_for_expeditions(self, discord_id: str) -> List[Dict[str, Any]]:
+        """Get user's waifus that are NOT currently in active expeditions - for character selection."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                return []
+            user_id = user_row["id"]
+            
+            rows = await conn.fetch(
+                """
+                SELECT uw.id as user_waifu_id, uw.waifu_id, uw.current_star_level, uw.bond_level
+                FROM user_waifus uw
+                WHERE uw.user_id = $1
+                AND uw.id NOT IN (
+                    SELECT DISTINCT ep.user_waifu_id
+                    FROM expedition_participants ep
+                    JOIN user_expeditions ue ON ep.expedition_id = ue.id
+                    WHERE ue.user_id = $1 AND ue.status = 'in_progress'
+                )
+                ORDER BY uw.waifu_id ASC
+                """,
+                user_id
+            )
+            
+            return [dict(row) for row in rows]
+
     async def update_user_waifu_star_level(self, user_waifu_id: int, star_level: int) -> bool:
         """Update a user waifu's star level."""
         if not self.connection_pool:
@@ -1779,38 +1808,44 @@ class DatabaseService:
                             value = loot_item.get('value', 0)
                         else:
                             # Invalid loot item structure - log and skip
-                            print(f"Warning: Invalid loot item structure detected: {type(loot_item)}. Skipping...")
+                            self.logger.warning(f"Invalid loot item structure detected: {type(loot_item)}. Skipping...")
                             continue
+                        
+                        # Log extracted values for debugging
+                        self.logger.info(f"DISTRIBUTE DEBUG: Processing item - type='{item_type}', id='{item_id}', quantity={quantity}")
                         
                         # Validate extracted values
                         if not item_type or not item_id:
-                            print(f"Warning: Loot item missing required fields (item_type: {item_type}, item_id: {item_id}). Skipping...")
+                            self.logger.warning(f"Loot item missing required fields (item_type: {item_type}, item_id: {item_id}). Skipping...")
                             continue
                             
                         # Ensure quantity is a valid number
                         try:
                             quantity = int(quantity)
                             if quantity <= 0:
-                                print(f"Warning: Invalid quantity {quantity} for item {item_id}. Skipping...")
+                                self.logger.warning(f"Invalid quantity {quantity} for item {item_id}. Skipping...")
                                 continue
                         except (ValueError, TypeError):
-                            print(f"Warning: Invalid quantity type for item {item_id}: {type(quantity)}. Skipping...")
+                            self.logger.warning(f"Invalid quantity type for item {item_id}: {type(quantity)}. Skipping...")
                             continue
                         
                     except Exception as e:
-                        print(f"Error processing loot item {loot_item}: {str(e)}. Skipping...")
+                        self.logger.error(f"Error processing loot item {loot_item}: {str(e)}. Skipping...")
                         continue
                     
                     if item_type in ["GEMS", "gems"] and item_id == "sakura_crystals":
                         # Add sakura crystals to user
+                        self.logger.info(f"DISTRIBUTE DEBUG: Adding {quantity} sakura_crystals to user {discord_id}")
                         await conn.execute(
                             "UPDATE users SET sakura_crystals = sakura_crystals + $1 WHERE id = $2",
                             quantity, user_id
                         )
                         currency_rewards["sakura_crystals"] += quantity
+                        self.logger.info(f"DISTRIBUTE DEBUG: sakura_crystals total now: {currency_rewards['sakura_crystals']}")
                         
                     elif item_type in ["QUARTZS", "quartzs"] and item_id == "quartzs":
                         # Add quartzs to user
+                        self.logger.info(f"DISTRIBUTE DEBUG: Adding {quantity} quartzs to user {discord_id}")
                         await conn.execute(
                             "UPDATE users SET quartzs = quartzs + $1 WHERE id = $2",
                             quantity, user_id
@@ -1819,13 +1854,17 @@ class DatabaseService:
                         
                     elif item_type in ["ITEM", "item"]:
                         # Add item to user inventory
+                        self.logger.info(f"DISTRIBUTE DEBUG: Adding item {item_id} x{quantity} to inventory")
                         await self._add_item_to_inventory(conn, user_id, item_id, quantity)
                         item_rewards.append({
                             "item_id": item_id,
                             "quantity": quantity,
                             "value": value
                         })
-                
+                    else:
+                        self.logger.warning(f"DISTRIBUTE DEBUG: Unknown item type '{item_type}' with id '{item_id}' - not processed")
+
+                self.logger.info(f"DISTRIBUTE DEBUG: Final currency_rewards: {currency_rewards}")
                 return {
                     "success": True,
                     "currency_rewards": currency_rewards,

@@ -120,14 +120,3 @@ class DataManager:
     def get_loot_generator(self) -> LootGenerator:
         """Get the loot generator"""
         return self.loot_generator
-    
-    def get_data_summary(self) -> dict:
-        """Get a summary of loaded data"""
-        return {
-            'loaded': self._loaded,
-            'characters': self.character_registry.get_character_count(),
-            'series': self.character_registry.get_series_count(),
-            'expedition_templates': len(self._expedition_templates),
-            'encounters': len(self._encounters),
-            'loot_tables': len(self.loot_generator.get_available_tables())
-        }
