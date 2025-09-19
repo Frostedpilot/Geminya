@@ -22,6 +22,60 @@ from .chance_table import ChanceTable, FinalMultiplierTable
 
 
 class ExpeditionResolver:
+    def _select_encounters_by_type_distribution(self, available_tags, _expedition_difficulty, total_count=10):
+        """
+        Select encounters by fixed type distribution: 6 standard, 2 gated, 1 buff, 1 hazard (favoring in that order).
+        If not enough of a type, fill with next in priority order.
+        """
+        # Gather all valid encounters for the expedition's tags
+        valid_encounters = []
+        for tag in available_tags:
+            if tag in self.encounters_by_tag:
+                valid_encounters.extend(self.encounters_by_tag[tag])
+        # Remove duplicates
+        seen = set()
+        unique_encounters = []
+        for encounter in valid_encounters:
+            if encounter.encounter_id not in seen:
+                unique_encounters.append(encounter)
+                seen.add(encounter.encounter_id)
+        if not unique_encounters:
+            unique_encounters = list(self.encounters.values())
+        # Group by type
+        type_map = {EncounterType.STANDARD: [], EncounterType.GATED: [], EncounterType.BOON: [], EncounterType.HAZARD: []}
+        for encounter in unique_encounters:
+            if encounter.type in type_map:
+                type_map[encounter.type].append(encounter)
+        # Shuffle each group
+        for group in type_map.values():
+            random.shuffle(group)
+        # Distribution: 6 standard, 2 gated, 1 boon, 1 hazard
+        distribution = [
+            (EncounterType.STANDARD, 6),
+            (EncounterType.GATED, 2),
+            (EncounterType.BOON, 1),
+            (EncounterType.HAZARD, 1),
+        ]
+        result = []
+        remaining = total_count
+        for enc_type, count in distribution:
+            take = min(count, len(type_map[enc_type]), remaining)
+            result.extend(type_map[enc_type][:take])
+            type_map[enc_type] = type_map[enc_type][take:]
+            remaining -= take
+        # If not enough, fill with remaining encounters in priority order
+        if remaining > 0:
+            for enc_type, _ in distribution:
+                take = min(len(type_map[enc_type]), remaining)
+                result.extend(type_map[enc_type][:take])
+                remaining -= take
+                if remaining <= 0:
+                    break
+        # If still not enough, fill with any left
+        if remaining > 0:
+            leftovers = [e for group in type_map.values() for e in group]
+            result.extend(leftovers[:remaining])
+        return result[:total_count]
     """
     Stateless service for resolving completed expeditions
     
@@ -70,14 +124,15 @@ class ExpeditionResolver:
             team_character_ids=active_expedition.team_character_ids
         )
         
-        # Process each encounter
-        for _ in range(expedition.encounter_count):
-            encounter = self._select_encounter(expedition.encounter_pool_tags, expedition.difficulty)
-            if encounter:
-                encounter_result = self._resolve_encounter(encounter, expedition, team)
-                result.add_encounter_result(encounter_result)
-                # Apply encounter effects to expedition state
-                self._apply_encounter_effects(encounter_result, expedition, result.loot_pool)
+        # Use fixed distribution for encounters: 6-2-1-1 (standard, gated, boon, hazard)
+        encounter_count = getattr(expedition, 'encounter_count', 10)
+        encounters = self._select_encounters_by_type_distribution(
+            expedition.encounter_pool_tags, expedition.difficulty, encounter_count
+        )
+        for encounter in encounters:
+            encounter_result = self._resolve_encounter(encounter, expedition, team)
+            result.add_encounter_result(encounter_result)
+            self._apply_encounter_effects(encounter_result, expedition, result.loot_pool, team)
         
         # Calculate final multiplier and apply to loot, always using expedition.difficulty
         self._apply_final_multiplier(result, team, expedition.difficulty)
@@ -368,7 +423,7 @@ class ExpeditionResolver:
         
         return False
     
-    def _apply_encounter_effects(self, encounter_result: EncounterResult, expedition: Expedition, loot_pool: LootPool):
+    def _apply_encounter_effects(self, encounter_result: EncounterResult, expedition: Expedition, loot_pool: LootPool, team: Team):
         """Apply the effects of an encounter to the expedition state and loot pool"""
         # Handle loot changes with new value-based system
         if encounter_result.loot_value_change > 0:
@@ -376,7 +431,9 @@ class ExpeditionResolver:
             effective_loot_value = int(encounter_result.loot_value_change * expedition.get_effective_loot_multiplier())
             # Calculate total loot value: encounter difficulty + effective loot value
             encounter_difficulty = encounter_result.encounter.difficulty or expedition.difficulty
-            total_loot_value = encounter_difficulty + effective_loot_value
+            team_score = self._calculate_team_score(encounter_result.encounter.check_stat, expedition, team) if encounter_result.encounter.check_stat else 0
+            
+            total_loot_value = (encounter_difficulty + effective_loot_value + team_score)/2
             # Determine number of rolls based on outcome
             num_rolls = 2 if encounter_result.outcome == EncounterOutcome.GREAT_SUCCESS else 1
             # Generate loot items using the new value-based system
@@ -386,8 +443,11 @@ class ExpeditionResolver:
             encounter_result.loot_items = loot_items
         elif encounter_result.outcome == EncounterOutcome.MISHAP:
             # Only remove item if mishaps aren't prevented
+            removed_item = None
             if not expedition.prevent_mishaps:
-                loot_pool.remove_random_item()
+                removed_item = loot_pool.remove_random_item()
+            # Track the removed item in the encounter result for UI
+            encounter_result.mishap_removed_item = removed_item
         
         # Apply modifiers (BOON/HAZARD effects)
         if encounter_result.modifier_applied:

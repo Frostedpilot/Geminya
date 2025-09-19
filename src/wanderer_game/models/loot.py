@@ -84,14 +84,13 @@ class LootPool:
         """Add multiple items to the loot pool"""
         self.items.extend(items)
     
-    def remove_random_item(self) -> bool:
-        """Remove a random item (for mishaps). Returns True if item was removed."""
+    def remove_random_item(self):
+        """Remove a random item (for mishaps). Returns the removed item, or None if none removed."""
         if not self.items:
-            return False
-        
+            return None
         random_item = random.choice(self.items)
         self.items.remove(random_item)
-        return True
+        return random_item
     
     def apply_multiplier(self, multiplier: float) -> 'LootPool':
         """Apply a final multiplier to the loot pool"""

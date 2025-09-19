@@ -224,16 +224,17 @@ class ExpeditionService:
         self.logger.info(f"[EXPEDITION_START] User {discord_id} attempting to start expedition {expedition_id} with {len(participant_data)} participants")
         
         try:
-            # Check expedition limit - each player can only have up to 3 ongoing expeditions
+            # Check expedition limit - each player can only have up to MAX_EXPEDITION_SLOTS ongoing expeditions
             self.logger.debug(f"[EXPEDITION_START] Checking expedition limit for user {discord_id}")
             active_expeditions = await self.get_user_expeditions(discord_id, status='in_progress')
             self.logger.debug(f"[EXPEDITION_START] User {discord_id} has {len(active_expeditions)} active expeditions")
             
-            if len(active_expeditions) >= 3:
-                self.logger.warning(f"[EXPEDITION_START] User {discord_id} at expedition limit ({len(active_expeditions)}/3)")
+            from cogs.commands.expeditions import MAX_EXPEDITION_SLOTS
+            if len(active_expeditions) >= MAX_EXPEDITION_SLOTS:
+                self.logger.warning(f"[EXPEDITION_START] User {discord_id} at expedition limit ({len(active_expeditions)}/{MAX_EXPEDITION_SLOTS})")
                 return {
-                    "success": False, 
-                    "error": "You can only have up to 3 ongoing expeditions at a time. Complete some expeditions first."
+                    "success": False,
+                    "error": f"You can only have up to {MAX_EXPEDITION_SLOTS} ongoing expeditions at a time. Complete some expeditions first."
                 }
             
             # Validate expedition template exists

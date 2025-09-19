@@ -880,7 +880,7 @@ class DatabaseService:
         """Get user with fresh connection (PostgreSQL)."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
-        self.logger.info(f"get_user_fresh: Starting query for user {discord_id}")
+    # ...removed debug logging...
         async with self.connection_pool.acquire() as conn:
             balance_only = await conn.fetchrow(
                 "SELECT quartzs FROM users WHERE discord_id = $1", discord_id
@@ -1425,8 +1425,7 @@ class DatabaseService:
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         
-        self.logger.info(f"[DB_EXPEDITION_CREATE] Creating expedition for user {discord_id} with {len(participants)} participants")
-        self.logger.debug(f"[DB_EXPEDITION_CREATE] Expedition data: {expedition_data}")
+    # ...removed debug logging...
         
         async with self.connection_pool.acquire() as conn:
             async with conn.transaction():
@@ -1483,7 +1482,7 @@ class DatabaseService:
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         
-        self.logger.debug(f"[DB_EXPEDITION_GET] Getting expeditions for user {discord_id} with status {status}")
+    # ...removed debug logging...
         
         async with self.connection_pool.acquire() as conn:
             user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
@@ -1799,87 +1798,55 @@ class DatabaseService:
                 user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
                 if not user_row:
                     raise ValueError(f"User with discord_id {discord_id} not found")
-                
                 user_id = user_row["id"]
-                
                 # Track rewards for summary
                 currency_rewards = {"sakura_crystals": 0, "quartzs": 0}
                 item_rewards = []
-                
                 for loot_item in loot_items:
-                    # Enhanced input validation and handling for both dict and object access patterns
                     try:
                         if hasattr(loot_item, 'item_type'):
-                            # Object-style access
                             item_type = loot_item.item_type.value if hasattr(loot_item.item_type, 'value') else str(loot_item.item_type)
                             item_id = getattr(loot_item, 'item_id', '')
                             quantity = getattr(loot_item, 'quantity', 0)
                             value = getattr(loot_item, 'value', 0)
                         elif hasattr(loot_item, 'get') and callable(getattr(loot_item, 'get')):
-                            # Dictionary-style access
                             item_type = loot_item.get('item_type', '')
                             item_id = loot_item.get('item_id', '')
                             quantity = loot_item.get('quantity', 0)
                             value = loot_item.get('value', 0)
                         else:
-                            # Invalid loot item structure - log and skip
-                            self.logger.warning(f"Invalid loot item structure detected: {type(loot_item)}. Skipping...")
                             continue
-                        
-                        # Log extracted values for debugging
-                        self.logger.info(f"DISTRIBUTE DEBUG: Processing item - type='{item_type}', id='{item_id}', quantity={quantity}")
-                        
-                        # Validate extracted values
                         if not item_type or not item_id:
-                            self.logger.warning(f"Loot item missing required fields (item_type: {item_type}, item_id: {item_id}). Skipping...")
                             continue
-                            
-                        # Ensure quantity is a valid number
                         try:
                             quantity = int(quantity)
                             if quantity <= 0:
-                                self.logger.warning(f"Invalid quantity {quantity} for item {item_id}. Skipping...")
                                 continue
                         except (ValueError, TypeError):
-                            self.logger.warning(f"Invalid quantity type for item {item_id}: {type(quantity)}. Skipping...")
                             continue
-                        
-                    except Exception as e:
-                        self.logger.error(f"Error processing loot item {loot_item}: {str(e)}. Skipping...")
+                    except Exception:
                         continue
-                    
                     if item_type in ["GEMS", "gems"] and item_id == "sakura_crystals":
-                        # Add sakura crystals to user
-                        self.logger.info(f"DISTRIBUTE DEBUG: Adding {quantity} sakura_crystals to user {discord_id}")
                         await conn.execute(
                             "UPDATE users SET sakura_crystals = sakura_crystals + $1 WHERE id = $2",
                             quantity, user_id
                         )
                         currency_rewards["sakura_crystals"] += quantity
-                        self.logger.info(f"DISTRIBUTE DEBUG: sakura_crystals total now: {currency_rewards['sakura_crystals']}")
-                        
                     elif item_type in ["QUARTZS", "quartzs"] and item_id == "quartzs":
-                        # Add quartzs to user
-                        self.logger.info(f"DISTRIBUTE DEBUG: Adding {quantity} quartzs to user {discord_id}")
                         await conn.execute(
                             "UPDATE users SET quartzs = quartzs + $1 WHERE id = $2",
                             quantity, user_id
                         )
                         currency_rewards["quartzs"] += quantity
-                        
                     elif item_type in ["ITEM", "item"]:
-                        # Add item to user inventory
-                        self.logger.info(f"DISTRIBUTE DEBUG: Adding item {item_id} x{quantity} to inventory")
-                        await self._add_item_to_inventory(conn, user_id, item_id, quantity)
+                        await self._add_item_to_inventory(conn, discord_id, item_id, quantity)
                         item_rewards.append({
                             "item_id": item_id,
                             "quantity": quantity,
                             "value": value
                         })
                     else:
-                        self.logger.warning(f"DISTRIBUTE DEBUG: Unknown item type '{item_type}' with id '{item_id}' - not processed")
-
-                self.logger.info(f"DISTRIBUTE DEBUG: Final currency_rewards: {currency_rewards}")
+                        continue
                 return {
                     "success": True,
                     "currency_rewards": currency_rewards,
@@ -1887,14 +1854,14 @@ class DatabaseService:
                     "total_items": len(loot_items)
                 }
 
-    async def _add_item_to_inventory(self, conn, user_id: int, item_id: str, quantity: int):
+    async def _add_item_to_inventory(self, conn, discord_id: str, item_id: str, quantity: int):
         """
         Add an item to user inventory, stacking if it already exists.
         Uses shop_items table for item details if item_id follows format "item_X" where X is shop_items.id
         
         Args:
             conn: Database connection
-            user_id: User's database ID
+            discord_id: User's Discord ID (string)
             item_id: Item identifier (e.g., "item_1", "item_2") where number is shop_items.id
             quantity: Quantity to add
         """
@@ -1930,8 +1897,8 @@ class DatabaseService:
             """
             SELECT id, quantity FROM user_inventory 
             WHERE user_id = $1 AND item_name = $2
-            """, 
-            str(user_id), item_name
+            """,
+            discord_id, item_name
         )
         
         if existing_item:
@@ -1947,7 +1914,7 @@ class DatabaseService:
                 INSERT INTO user_inventory (user_id, item_name, item_type, quantity, metadata, effects, is_active, acquired_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
                 """,
-                str(user_id), item_name, item_type, quantity, metadata, effects, True
+                discord_id, item_name, item_type, quantity, metadata, effects, True
             )
 
     async def get_user_currency(self, discord_id: str) -> Dict[str, int]:

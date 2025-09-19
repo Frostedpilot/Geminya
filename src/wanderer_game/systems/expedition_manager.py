@@ -44,7 +44,7 @@ class ExpeditionManager:
     - Handle expedition completion and reward claiming
     """
     
-    def __init__(self, max_expedition_slots: int = 3):
+    def __init__(self, max_expedition_slots: int = 10):
         self.max_expedition_slots = max_expedition_slots
         self.available_expeditions: List[Expedition] = []
         self.expedition_slots: Dict[int, ExpeditionSlot] = {}

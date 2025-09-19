@@ -208,7 +208,7 @@ from .loot import LootItem
 
 class EncounterResult:
     """Result of processing an encounter"""
-    def __init__(self, encounter, outcome, description, loot_value_change=0, team_passed_condition=False, modifier_applied=None, loot_items=None):
+    def __init__(self, encounter, outcome, description, loot_value_change=0, team_passed_condition=False, modifier_applied=None, loot_items=None, mishap_removed_item=None):
         self.encounter = encounter
         self.outcome = outcome
         self.description = description or (encounter.get_description_for_outcome(outcome) if encounter else "")
@@ -216,3 +216,4 @@ class EncounterResult:
         self.team_passed_condition = team_passed_condition
         self.modifier_applied = modifier_applied
         self.loot_items = loot_items if loot_items is not None else []
+        self.mishap_removed_item = mishap_removed_item

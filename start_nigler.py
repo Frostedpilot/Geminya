@@ -41,11 +41,12 @@ def check_dependencies():
         except ImportError:
             missing.append(package)
 
+
     if missing:
-        print("❌ Missing required packages:")
+        pass
         for package in missing:
-            print(f"  • {package}")
-        print("\nInstall them with: pip install " + " ".join(missing))
+            pass
+        pass
         return False
 
     return True
@@ -62,10 +63,10 @@ def check_configuration():
 
         return True, config
     except ConfigError as e:
-        print(f"❌ Configuration error: {e}")
+        pass
         return False, None
     except Exception as e:
-        print(f"❌ Failed to load configuration: {e}")
+        pass
         return False, None
 
 
@@ -113,9 +114,9 @@ async def run_bot(config, test_mode=False):
             await bot.start(config.discord_token)
 
     except KeyboardInterrupt:
-        print("\n🛑 Shutdown requested by user")
+        pass
     except Exception as e:
-        print(f"💥 Fatal error: {e}")
+        pass
         raise
 
 
@@ -137,8 +138,8 @@ def main():
 
     args = parser.parse_args()
 
-    print("🐱 Geminya Discord Bot Startup (Nigler Mode)")
-    print("=" * 45)
+    # ...removed debug print...
+    # ...removed debug print...
 
     # Set up environment
     setup_environment()
@@ -157,25 +158,24 @@ def main():
         if not check_dependencies():
             logger.error("Dependency check failed")
             sys.exit(1)
-        print("✅ All dependencies found")
+    # ...removed debug print...
 
     # Check configuration
     if args.check_config or args.verbose:
-        print("🔍 Checking configuration...")
+    # ...removed debug print...
         config_valid, config = check_configuration()
         if not config_valid:
             sys.exit(1)
-        print("✅ Configuration is valid")
+    # ...removed debug print...
 
         if args.check_config:
-            print("\n📋 Configuration Summary:")
-            print(f"  Language: {config.language}")
-            print(f"  Max History: {config.max_history_length}")
-            print(f"  Debug Mode: {config.debug}")
-            print(f"  Default Model: {config.default_model}")
-            print(
-                f"  Active Servers: {len(config.active_servers) if config.active_servers else 'All'}"
-            )
+            pass
+            pass
+            pass
+            pass
+            pass
+            pass
+            print(f"  Active Servers: {len(config.active_servers) if config.active_servers else 'All'}")
             sys.exit(0)
     else:
         config_valid, config = check_configuration()
@@ -184,7 +184,7 @@ def main():
 
     # Run architecture tests if in test mode
     if args.test:
-        print("🧪 Running architecture tests...")
+    # ...removed debug print...
         test_script = Path(__file__).parent / "test_architecture.py"
         if test_script.exists():
             import subprocess
@@ -193,8 +193,8 @@ def main():
                 [sys.executable, str(test_script)], capture_output=True, text=True
             )
             if result.returncode != 0:
-                print("❌ Architecture tests failed:")
-                print(result.stdout)
+                # ...removed debug print...
+                # ...removed debug print...
                 print(result.stderr)
                 sys.exit(1)
             print("✅ Architecture tests passed")

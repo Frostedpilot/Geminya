@@ -1,3 +1,4 @@
+MAX_EXPEDITION_SLOTS = 5  # Should match ExpeditionManager default
 """Expedition system Discord commands with comprehensive UI."""
 
 import discord
@@ -532,6 +533,8 @@ class ExpeditionSelectView(discord.ui.View):
 
 
 class CharacterSelectView(discord.ui.View):
+    # Global cache for series name to series_id
+    _series_name_to_id_cache = None
     """View for selecting characters for expeditions with search and pagination."""
     
     def __init__(self, user_waifus: List[Dict], user_id: int, expedition_service, expedition: Dict):
@@ -589,12 +592,12 @@ class CharacterSelectView(discord.ui.View):
         if filtered_waifus:
             total_pages = (len(filtered_waifus) + self.items_per_page - 1) // self.items_per_page
             if self.current_page >= total_pages:
-                print(f"DEBUG: Current page {self.current_page} beyond total pages {total_pages}, resetting to 0")
+                # ...removed debug print...
                 self.current_page = 0
         
         # DEBUG: Check if we have any waifus at all
         if not filtered_waifus:
-            print(f"DEBUG: No filtered waifus found. Search filter: '{self.search_filter}', Total user waifus: {len(self.user_waifus)}")
+            return  # No waifus to display, exit early
         
         # Calculate page boundaries
         start_idx = self.current_page * self.items_per_page
@@ -603,7 +606,7 @@ class CharacterSelectView(discord.ui.View):
         
         # DEBUG: Check current page waifus
         if not current_waifus and filtered_waifus:
-            print(f"DEBUG: No waifus on current page {self.current_page + 1}. Total filtered: {len(filtered_waifus)}, Items per page: {self.items_per_page}")
+            pass
         
         # Create select menu for characters
         options = []
@@ -689,7 +692,7 @@ class CharacterSelectView(discord.ui.View):
         
         # Final safety check: ensure options list is never empty
         if not options:
-            print(f"DEBUG: Creating emergency placeholder. Current waifus: {len(current_waifus)}, Filtered waifus: {len(filtered_waifus)}")
+            # ...removed debug print...
             options.append(discord.SelectOption(
                 label="⚠️ Error: No characters",
                 description="Please contact support or reload the expedition",
@@ -700,7 +703,7 @@ class CharacterSelectView(discord.ui.View):
         
         # Additional safety: double-check before creating select menu
         if len(options) == 0:
-            print("CRITICAL DEBUG: Options list is still empty after safety checks!")
+            # ...removed debug print...
             options = [discord.SelectOption(
                 label="❌ Critical Error",
                 description="System failure - please restart expedition",
@@ -709,7 +712,7 @@ class CharacterSelectView(discord.ui.View):
             )]
             max_selectable = 1
         
-        print(f"DEBUG: Creating select menu with {len(options)} options")
+    # ...removed debug print...
         
         self.character_select = discord.ui.Select(
             placeholder=placeholder_text,
@@ -880,7 +883,7 @@ class CharacterSelectView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=self)
     
     async def cancel_expedition(self, interaction: discord.Interaction):
-        """Cancel the expedition selection."""
+        """Cancel the expedition selection and disable all controls."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ Only the command user can cancel.", ephemeral=True)
             return
@@ -890,12 +893,10 @@ class CharacterSelectView(discord.ui.View):
             description="The expedition selection has been cancelled.",
             color=0xFF6B6B
         )
-        
         # Disable all interactive components
         for item in self.children:
-            if hasattr(item, 'disabled'):
+            if isinstance(item, (discord.ui.Button, discord.ui.Select)):
                 item.disabled = True
-        
         await interaction.response.edit_message(embed=embed, view=self)
     
     async def character_selected(self, interaction: discord.Interaction):
@@ -1012,10 +1013,10 @@ class CharacterSelectView(discord.ui.View):
                 error_msg = expedition_id.get('error', 'Unknown error occurred')
                 
                 # Handle expedition limit specifically
-                if "3 ongoing expeditions" in error_msg:
+                if f"{MAX_EXPEDITION_SLOTS} ongoing expeditions" in error_msg or "3 ongoing expeditions" in error_msg:
                     embed = discord.Embed(
                         title="🚫 Expedition Limit Reached",
-                        description="You already have **3 ongoing expeditions** - the maximum allowed!\n\n"
+                        description=f"You already have **{MAX_EXPEDITION_SLOTS} ongoing expeditions** - the maximum allowed!\n\n"
                                    "Use `/nwnl_expeditions_complete` to finish some expeditions first, "
                                    "then try starting a new one.",
                         color=0xFF6B6B
@@ -1145,6 +1146,9 @@ class CharacterSelectView(discord.ui.View):
         
         if self.selected_characters:
             character_info = []
+            team_power_raw = 0
+            num_with_stats = 0
+            team_characters = []
             for char_id in self.selected_characters:
                 waifu = next((w for w in self.user_waifus if w['user_waifu_id'] == char_id), None)
                 if waifu:
@@ -1152,23 +1156,114 @@ class CharacterSelectView(discord.ui.View):
                     if character:
                         star_level = waifu.get('current_star_level', 1)
                         character_info.append(f"⭐{star_level} **{character.name}**")
-            
+                        # Set star level for accurate stat preview
+                        character.star_level = star_level
+                        team_characters.append(character)
+                    # --- Team Power calculation (raw, with star-level multiplier) ---
+                    stats = waifu.get('stats')
+                    char_obj = character if character else None
+                    star_level = waifu.get('current_star_level', 1)
+                    star_multiplier = 1 + (star_level - 1) * 0.10
+                    if not stats and char_obj and hasattr(char_obj, 'base_stats'):
+                        base_stats = getattr(char_obj, 'base_stats', None)
+                        if base_stats:
+                            stat_dict = vars(base_stats)
+                            stat_values = [v for v in stat_dict.values() if isinstance(v, (int, float))]
+                            if stat_values:
+                                mean = sum(stat_values) / len(stat_values)
+                                mean *= star_multiplier
+                                team_power_raw += mean
+                                num_with_stats += 1
+                            continue
+                    if stats and isinstance(stats, dict):
+                        stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
+                        if stat_values:
+                            mean = sum(stat_values) / len(stat_values)
+                            mean *= star_multiplier
+                            team_power_raw += mean
+                            num_with_stats += 1
             embed.add_field(
                 name=f"🎯 Selected Characters ({len(self.selected_characters)}/3)",
                 value="\n".join(character_info) if character_info else "None selected",
                 inline=False
             )
+            # Affinity multiplier logic (match backend)
+            affinity_multiplier = 1.0
+            if team_characters and hasattr(self.expedition, 'get'):
+                from src.wanderer_game.models.character import Affinity, AffinityType, Team as WGTeam
+                favored_affinities = []
+                disfavored_affinities = []
+                affinity_pools = self.expedition.get('affinity_pools', {})
+                # Map pool category names to AffinityType enum
+                category_to_enum = {
+                    'elemental': AffinityType.ELEMENTAL,
+                    'archetype': AffinityType.ARCHETYPE,
+                    'series': AffinityType.SERIES_ID,
+                    'genre': AffinityType.GENRE,
+                }
+                # Helper to resolve series name to series_id using global cache
+                def resolve_series_id(series_name):
+                    cls = type(self)
+                    if cls._series_name_to_id_cache is None:
+                        # Build cache on first use
+                        cache = {}
+                        for char in self.char_registry.characters.values():
+                            cache[char.series] = char.series_id
+                        cls._series_name_to_id_cache = cache
+                    return cls._series_name_to_id_cache.get(series_name, series_name)
+
+                for category, values in affinity_pools.get('favored', {}).items():
+                    enum_type = category_to_enum.get(category.lower())
+                    if enum_type:
+                        for value in values:
+                            if enum_type == AffinityType.SERIES_ID:
+                                resolved = resolve_series_id(value)
+                                favored_affinities.append(Affinity(type=enum_type, value=resolved))
+                            else:
+                                favored_affinities.append(Affinity(type=enum_type, value=value))
+                for category, values in affinity_pools.get('disfavored', {}).items():
+                    enum_type = category_to_enum.get(category.lower())
+                    if enum_type:
+                        for value in values:
+                            if enum_type == AffinityType.SERIES_ID:
+                                resolved = resolve_series_id(value)
+                                disfavored_affinities.append(Affinity(type=enum_type, value=resolved))
+                            else:
+                                disfavored_affinities.append(Affinity(type=enum_type, value=value))
+                # Build Team object
+                team_obj = WGTeam(characters=team_characters)
+                favored_matches = team_obj.count_affinity_matches(favored_affinities)
+                disfavored_matches = team_obj.count_affinity_matches(disfavored_affinities)
+                affinity_multiplier = 1.0 + (favored_matches * 0.25) - (disfavored_matches * 0.25)
+                affinity_multiplier = max(0.1, min(3.0, affinity_multiplier))
+            # Show both raw and adjusted Team Power
+            if num_with_stats > 0:
+                embed.add_field(
+                    name="💪 Team Power (Raw)",
+                    value=f"{int(team_power_raw)}",
+                    inline=True
+                )
+                embed.add_field(
+                    name="🔮 Affinity Multiplier",
+                    value=f"x{affinity_multiplier:.2f}",
+                    inline=True
+                )
+                embed.add_field(
+                    name="💥 Team Power (Adjusted)",
+                    value=f"{int(team_power_raw * affinity_multiplier)}",
+                    inline=True
+                )
         else:
             embed.add_field(
                 name="🎯 Selected Characters (0/3)",
                 value="Select characters from any page - your selections are preserved when navigating!",
                 inline=False
             )
-        
+
         embed.add_field(
             name="📋 Expedition Details",
             value=f"**Duration:** {self.expedition.get('duration_hours', 4)} hours\n"
-                  f"**Difficulty:** {self.expedition.get('difficulty', 100)}\n"  # Show original difficulty
+                  f"**Difficulty:** {self.expedition.get('difficulty', 100)}\n"
                   f"**Expected Encounters:** ~{self.expedition.get('expected_encounters', 5)}",
             inline=False
         )
@@ -1196,7 +1291,7 @@ class ExpeditionResultsView(discord.ui.View):
                     self.item_lookup[f"item_{item_id_int}"] = item
         except Exception as e:
             self.item_lookup = {}
-            print(f"Error loading shop items for item lookup: {e}")
+            # ...removed debug print...
         # Fallback: always have a dict
         if not hasattr(self, 'item_lookup'):
             self.item_lookup = {}
@@ -1510,6 +1605,7 @@ class ExpeditionResultsView(discord.ui.View):
                 loot_info = ""
                 description_text = ""
                 # Get the encounter result for this encounter if available
+                encounter_result = None
                 if i <= len(encounter_results):
                     encounter_result = encounter_results[i-1]  # 0-indexed
                     # Difficulty
@@ -1548,8 +1644,32 @@ class ExpeditionResultsView(discord.ui.View):
                                     loot_lines.append(f"📦 {item.get('quantity', 1)}x {item_name}")
                         if loot_lines:
                             loot_info = "\n" + "\n".join(loot_lines)
+                # Mishap: show removed item if present
+                mishap_removed_info = ""
+                if encounter_result is not None:
+                    # Mishap detection: outcome may be an enum or string
+                    outcome_val = getattr(encounter_result, 'outcome', None)
+                    is_mishap = False
+                    if outcome_val is not None:
+                        if hasattr(outcome_val, 'value'):
+                            is_mishap = outcome_val.value == 'mishap'
+                        else:
+                            is_mishap = str(outcome_val) == 'mishap'
+                    if is_mishap:
+                        removed_item = getattr(encounter_result, 'mishap_removed_item', None)
+                        if removed_item:
+                            item_id = getattr(removed_item, 'item_id', None)
+                            item_name = self.item_lookup.get(item_id, {}).get('name', item_id) if item_id else str(removed_item)
+                            quantity = getattr(removed_item, 'quantity', 1)
+                            rarity = getattr(removed_item, 'rarity', None)
+                            rarity_str = ''
+                            if rarity:
+                                rarity_str = getattr(rarity, 'value', str(rarity))
+                            mishap_removed_info = f"\n💥 **Item Lost:** {quantity}x {item_name} {f'({rarity_str})' if rarity_str else ''}"
+                        else:
+                            mishap_removed_info = "\n💥 **Item Lost:** None (no items left to lose)"
                 # Add the encounter as a field
-                value_text = (description_text + loot_info) if (description_text or loot_info) else "No details."
+                value_text = (description_text + loot_info + mishap_removed_info) if (description_text or loot_info or mishap_removed_info) else "No details."
                 embed.add_field(
                     name=f"{title}{difficulty_text}",
                     value=value_text,
@@ -1799,19 +1919,19 @@ class ExpeditionsCog(BaseCommand):
             self.logger.info(f"[DISCORD_EXPEDITION_START] User {discord_id} has {len(active_expeditions)} active expeditions, {len(expeditions)} expeditions available")
             
             # Check if user has reached expedition limit
-            if len(active_expeditions) >= 3:
-                self.logger.warning(f"[DISCORD_EXPEDITION_START] User {discord_id} at expedition limit (3/3)")
+            if len(active_expeditions) >= MAX_EXPEDITION_SLOTS:
+                self.logger.warning(f"[DISCORD_EXPEDITION_START] User {discord_id} at expedition limit ({MAX_EXPEDITION_SLOTS}/{MAX_EXPEDITION_SLOTS})")
                 embed = discord.Embed(
                     title="🗺️ Available Expeditions",
-                    description=f"🚫 **Expedition Limit Reached (3/3)**\n\n"
-                               f"You have reached the maximum of 3 ongoing expeditions.\n"
+                    description=f"🚫 **Expedition Limit Reached ({MAX_EXPEDITION_SLOTS}/{MAX_EXPEDITION_SLOTS})**\n\n"
+                               f"You have reached the maximum of {MAX_EXPEDITION_SLOTS} ongoing expeditions.\n"
                                f"Complete some expeditions first before starting new ones.\n\n"
                                f"Use `/nwnl_expeditions_complete` to claim rewards!",
                     color=0xFF6B6B
                 )
                 
                 # Still show available expeditions for reference
-                for i, expedition in enumerate(expeditions[:3]):
+                for i, expedition in enumerate(expeditions[:MAX_EXPEDITION_SLOTS]):
                     duration = expedition.get('duration_hours', 4)
                     difficulty = expedition.get('difficulty', 100)  # Use original difficulty
                     embed.add_field(
@@ -1832,7 +1952,7 @@ class ExpeditionsCog(BaseCommand):
             embed = await view._create_expedition_list_embed()
             
             # Add expedition slots info at the top
-            embed.description = f"**Expedition Slots:** {slots_used}/3 used\n\n{embed.description}"
+            embed.description = f"**Expedition Slots:** {slots_used}/{MAX_EXPEDITION_SLOTS} used\n\n{embed.description}"
             
             await interaction.followup.send(embed=embed, view=view)
             self.logger.info(f"[DISCORD_EXPEDITION_START] Successfully sent expedition selection to user {discord_id}")
@@ -1872,7 +1992,7 @@ class ExpeditionsCog(BaseCommand):
             # Create status embed
             embed = discord.Embed(
                 title="📊 Your Expedition Status",
-                description=f"**Expedition Slots:** {len(expeditions)}/3 used\n\n"
+                description=f"**Expedition Slots:** {len(expeditions)}/{MAX_EXPEDITION_SLOTS} used\n\n"
                            f"You have {len(expeditions)} expedition(s) in progress:",
                 color=0x3498DB
             )
@@ -1928,7 +2048,7 @@ class ExpeditionsCog(BaseCommand):
                     inline=True
                 )
             
-            embed.set_footer(text="Maximum 3 expeditions allowed • Use /nwnl_expeditions_complete to claim rewards!")
+            embed.set_footer(text=f"Maximum {MAX_EXPEDITION_SLOTS} expeditions allowed • Use /nwnl_expeditions_complete to claim rewards!")
             
             await interaction.followup.send(embed=embed)
             

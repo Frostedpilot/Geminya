@@ -207,7 +207,7 @@ class FinalMultiplierTable:
             Final luck score
         """
         # Difficulty penalty: for every 10 difficulty, reduce luck score by 5 (tunable)
-        difficulty_penalty = (expedition_difficulty // 20)
+        difficulty_penalty = (expedition_difficulty // 10) * 5
         return team_luck + (great_successes * 20) - (mishaps * 40) - difficulty_penalty
     
     @classmethod
