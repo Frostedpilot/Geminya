@@ -7,7 +7,7 @@ EXPEDITIONS_PATH = os.path.join('data', 'expeditions', 'base_expeditions.json')
 # Output file for selected expedition IDs
 OUTPUT_PATH = os.path.join('data', 'expeditions', 'selected_expedition_ids.json')
 
-SIZE = 1000
+SIZE = 2
 
 def main():
     # Read expeditions
