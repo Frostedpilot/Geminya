@@ -586,34 +586,40 @@ class CharacterSelectView(discord.ui.View):
         def calc_affinity_count(character, favored_affinities, disfavored_affinities):
             if not character:
                 return 0
-            count = 0
+            # Cap max buffs/debuffs per character to 3 each
+            buff_matches = 0
+            debuff_matches = 0
             for affinity in favored_affinities:
+                if buff_matches >= 3:
+                    break
                 if affinity.type.name == 'SERIES_ID' and hasattr(character, 'series_id'):
                     if str(character.series_id) == str(affinity.value):
-                        count += 1
+                        buff_matches += 1
                 elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
                     if affinity.value in getattr(character, 'elemental_types', []):
-                        count += 1
+                        buff_matches += 1
                 elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
                     if affinity.value == getattr(character, 'archetype', None):
-                        count += 1
+                        buff_matches += 1
                 elif affinity.type.name == 'GENRE' and hasattr(character, 'genres'):
                     if affinity.value in getattr(character, 'genres', []):
-                        count += 1
+                        buff_matches += 1
             for affinity in disfavored_affinities:
+                if debuff_matches >= 3:
+                    break
                 if affinity.type.name == 'SERIES_ID' and hasattr(character, 'series_id'):
                     if str(character.series_id) == str(affinity.value):
-                        count -= 1
+                        debuff_matches += 1
                 elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
                     if affinity.value in getattr(character, 'elemental_types', []):
-                        count -= 1
+                        debuff_matches += 1
                 elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
                     if affinity.value == getattr(character, 'archetype', None):
-                        count -= 1
+                        debuff_matches += 1
                 elif affinity.type.name == 'GENRE' and hasattr(character, 'genres'):
                     if affinity.value in getattr(character, 'genres', []):
-                        count -= 1
-            return count
+                        debuff_matches += 1
+            return buff_matches - debuff_matches
 
         # Prepare affinity objects for this expedition
         from src.wanderer_game.models.character import Affinity, AffinityType

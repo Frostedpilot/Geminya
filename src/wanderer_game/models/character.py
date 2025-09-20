@@ -184,12 +184,16 @@ class Team:
         return self.get_total_stat('lck')
     
     def count_affinity_matches(self, affinities: List[Affinity]) -> int:
-        """Count how many characters match any of the given affinities"""
+        """Count how many affinity matches, max 3 per character"""
         matches = 0
         for character in self.characters:
+            char_matches = 0
             for affinity in affinities:
                 if character.matches_affinity(affinity):
-                    matches += 1
+                    char_matches += 1
+                    if char_matches >= 3:
+                        break
+            matches += min(char_matches, 3)
         return matches
     
     def get_series_ids(self) -> List[int]:

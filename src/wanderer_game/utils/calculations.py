@@ -18,12 +18,16 @@ class AffinityCalculator:
     
     @staticmethod
     def count_team_matches(team: Team, affinities: List[Affinity]) -> int:
-        """Count how many team members match any of the given affinities"""
+        """Count how many affinity matches, max 3 per character (matches backend logic)"""
         matches = 0
         for character in team.characters:
+            char_matches = 0
             for affinity in affinities:
                 if character.matches_affinity(affinity):
-                    matches += 1
+                    char_matches += 1
+                    if char_matches >= 3:
+                        break
+            matches += min(char_matches, 3)
         return matches
 
 
