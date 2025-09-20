@@ -33,8 +33,8 @@ class LootGenerator:
             ("item_4", 4, LootRarity.UNCOMMON, 650),
             ("item_4", 5, LootRarity.UNCOMMON, 800),
             ("item_4", 6, LootRarity.RARE, 950),
-            ("item_4", 30, LootRarity.LEGENDARY, 1800),
-            ("item_4", 100, LootRarity.LEGENDARY, 3000),
+            ("item_4", 30, LootRarity.LEGENDARY, 2400),
+            ("item_4", 100, LootRarity.LEGENDARY, 3500),
             #Item 2: 2* series ticket
             ("item_2", 1, LootRarity.COMMON, 350),
             ("item_2", 2, LootRarity.UNCOMMON, 550),
@@ -47,7 +47,7 @@ class LootGenerator:
             ("item_5", 3, LootRarity.RARE, 900),
             ("item_5", 4, LootRarity.EPIC, 1150),
             ("item_5", 5, LootRarity.LEGENDARY, 1400),
-            ("item_5", 27, LootRarity.LEGENDARY, 3200),
+            ("item_5", 27, LootRarity.LEGENDARY, 3500),
             #Item 1: 3* gurantee ticket
             ("item_1", 1, LootRarity.RARE, 1000),
             ("item_1", 2, LootRarity.EPIC, 1500),
@@ -77,7 +77,7 @@ class LootGenerator:
             Dictionary with probabilities for 'gems', 'quartzs', 'items'
         """
         # Clamp difficulty to reasonable range
-        diff = max(1, min(10000, difficulty))
+        diff = max(1, min(2000, difficulty))
         
         # Item probability: 1% below diff 500, scaling to 20% at diff 1000
         if diff <= 500:
@@ -174,10 +174,10 @@ class LootGenerator:
         if distance == 0:
             return 1.0
         
-        # Much more forgiving k value: 1000 distance = 0.01% (0.0001)
+        # Much more forgiving k value: 1500 distance = 0.01% (0.0001)
         # Using formula: weight = exp(-k * distance)
-        # At distance 1000: should be 0.0001 (0.01%)
-        k = -math.log(0.00001) / 1000  # ≈ 0.00921
+        # At distance 1500: should be 0.0001 (0.01%)
+        k = -math.log(0.0001) / 1500
         weight = math.exp(-k * distance)
         
         return max(weight, 0.000001)  # Very small minimum threshold

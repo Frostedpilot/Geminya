@@ -1213,8 +1213,8 @@ class CharacterSelectView(discord.ui.View):
                 team_obj = WGTeam(characters=team_characters)
                 favored_matches = team_obj.count_affinity_matches(favored_affinities)
                 disfavored_matches = team_obj.count_affinity_matches(disfavored_affinities)
-                affinity_multiplier = 1.25**(favored_matches) * (0.6**(disfavored_matches))
-                affinity_multiplier = max(0.1, min(5.0, affinity_multiplier))
+                affinity_multiplier = 1.2**(favored_matches) * (0.6**(disfavored_matches))
+                affinity_multiplier = max(0.1, min(3.0, affinity_multiplier))
             # Show both raw and adjusted Team Power
             if num_with_stats > 0:
                 embed.add_field(
