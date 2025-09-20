@@ -13,13 +13,8 @@ class AffinityCalculator:
     
     @staticmethod
     def calculate_multiplier(favored_matches: int, disfavored_matches: int) -> float:
-        """
-        Calculate affinity multiplier based on matches
-        Formula: 1.0 + (favored_matches * 0.25) - (disfavored_matches * 0.25)
-        Clamped between 0.1 and 3.0
-        """
-        multiplier = 1.0 + (favored_matches * 0.25) - (disfavored_matches * 0.25)
-        return max(0.1, min(3.0, multiplier))
+        multiplier = 1.25**(favored_matches) * (0.6**(disfavored_matches))
+        return max(0.1, min(5.0, multiplier))
     
     @staticmethod
     def count_team_matches(team: Team, affinities: List[Affinity]) -> int:
@@ -29,7 +24,6 @@ class AffinityCalculator:
             for affinity in affinities:
                 if character.matches_affinity(affinity):
                     matches += 1
-                    break  # Only count each character once
         return matches
 
 

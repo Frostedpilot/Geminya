@@ -26,35 +26,42 @@ class LootGenerator:
         """Initialize item configurations for the item selection stage"""
         # Items only (for stage 2 when item type is selected)
         item_configs = [
-            ("item_4", 1, LootRarity.COMMON, 80),
-            ("item_4", 2, LootRarity.COMMON, 120),
-            ("item_4", 3, LootRarity.COMMON, 200),
-            ("item_4", 4, LootRarity.UNCOMMON, 280),
-            ("item_4", 5, LootRarity.UNCOMMON, 320),
-            ("item_4", 6, LootRarity.RARE, 400),
-            ("item_4", 30, LootRarity.LEGENDARY, 1600),
-            ("item_4", 100, LootRarity.LEGENDARY, 2000),
-            ("item_2", 1, LootRarity.COMMON, 200),
-            ("item_2", 2, LootRarity.UNCOMMON, 300),
-            ("item_2", 3, LootRarity.UNCOMMON, 400),
-            ("item_2", 4, LootRarity.RARE, 500),
-            ("item_2", 5, LootRarity.RARE, 600),
-            ("item_5", 1, LootRarity.UNCOMMON, 300),
-            ("item_5", 2, LootRarity.RARE, 450),
-            ("item_5", 3, LootRarity.RARE, 600),
-            ("item_5", 4, LootRarity.EPIC, 750),
-            ("item_5", 5, LootRarity.LEGENDARY, 900),
-            ("item_5", 27, LootRarity.LEGENDARY, 2000),
-            ("item_1", 1, LootRarity.RARE, 400),
-            ("item_1", 2, LootRarity.EPIC, 700),
-            ("item_1", 3, LootRarity.LEGENDARY, 900),
-            ("item_3", 1, LootRarity.RARE, 600),
-            ("item_3", 2, LootRarity.EPIC, 900),
-            ("item_3", 3, LootRarity.LEGENDARY, 1200),
-            ("item_6", 1, LootRarity.EPIC, 700),
-            ("item_6", 2, LootRarity.LEGENDARY, 1200),
-            ("item_6", 7, LootRarity.LEGENDARY, 2500),
-            ("item_7", 1, LootRarity.LEGENDARY, 1400),
+            #Item 4: 1* selectix
+            ("item_4", 1, LootRarity.COMMON, 200),
+            ("item_4", 2, LootRarity.COMMON, 350),
+            ("item_4", 3, LootRarity.COMMON, 500),
+            ("item_4", 4, LootRarity.UNCOMMON, 650),
+            ("item_4", 5, LootRarity.UNCOMMON, 800),
+            ("item_4", 6, LootRarity.RARE, 950),
+            ("item_4", 30, LootRarity.LEGENDARY, 1800),
+            ("item_4", 100, LootRarity.LEGENDARY, 3000),
+            #Item 2: 2* series ticket
+            ("item_2", 1, LootRarity.COMMON, 350),
+            ("item_2", 2, LootRarity.UNCOMMON, 550),
+            ("item_2", 3, LootRarity.UNCOMMON, 750),
+            ("item_2", 4, LootRarity.RARE, 950),
+            ("item_2", 5, LootRarity.RARE, 1150),
+            #Item 5: 2* selectix ticket
+            ("item_5", 1, LootRarity.UNCOMMON, 400),
+            ("item_5", 2, LootRarity.RARE, 650),
+            ("item_5", 3, LootRarity.RARE, 900),
+            ("item_5", 4, LootRarity.EPIC, 1150),
+            ("item_5", 5, LootRarity.LEGENDARY, 1400),
+            ("item_5", 27, LootRarity.LEGENDARY, 3200),
+            #Item 1: 3* gurantee ticket
+            ("item_1", 1, LootRarity.RARE, 1000),
+            ("item_1", 2, LootRarity.EPIC, 1500),
+            ("item_1", 3, LootRarity.LEGENDARY, 2000),
+            #Item 3: 3* series ticket
+            ("item_3", 1, LootRarity.RARE, 1200),
+            ("item_3", 2, LootRarity.EPIC, 1800),
+            ("item_3", 3, LootRarity.LEGENDARY, 2600),
+            #Item 6: 3* selectix ticket
+            ("item_6", 1, LootRarity.EPIC, 1500),
+            ("item_6", 2, LootRarity.LEGENDARY, 2500),
+            ("item_6", 7, LootRarity.LEGENDARY, 3500),
+            #Item 7: 10x 3* gurantee ticket
+            ("item_7", 1, LootRarity.LEGENDARY, 2600),
         ]
         
         return item_configs
@@ -70,17 +77,17 @@ class LootGenerator:
             Dictionary with probabilities for 'gems', 'quartzs', 'items'
         """
         # Clamp difficulty to reasonable range
-        diff = max(1, min(1000, difficulty))
+        diff = max(1, min(10000, difficulty))
         
         # Item probability: 1% below diff 500, scaling to 20% at diff 1000
         if diff <= 500:
             item_prob = 0.01  # 1%
         else:
-            # Scale from 1% to 20% between diff 500-1000
-            item_prob = 0.01 + (0.19 * (diff - 500) / 500)
+            # Scale from 1% to 10% between diff 500-2000
+            item_prob = 0.01 + (0.09 * (diff - 500) / 1500)
         
-        # Quartzs probability: Scale from ~2% to 10% across diff 1-1000
-        quartzs_prob = 0.02 + (0.08 * (diff - 1) / 999)
+        # Quartzs probability: Scale from ~2% to 25% across diff 1-2000
+        quartzs_prob = 0.02 + (0.23 * (diff - 1) / 1999)
         
         # Gems probability: Takes the remainder (always the most common)
         gems_prob = 1.0 - item_prob - quartzs_prob
@@ -106,8 +113,10 @@ class LootGenerator:
     def _generate_gems_amount(self, difficulty: int) -> int:
         """Generate sakura crystals amount using normal distribution"""
         # Base amount scales with difficulty
-        base_amount = max(5, difficulty // 10)  # 5 at diff 50, 10 at diff 100, etc.
-        
+        if difficulty < 1000:
+            base_amount = max(5, difficulty // 10)  # 5 at diff 50, 10 at diff 100, etc.
+        else:
+            base_amount = 200 + (difficulty - 1000) // 20  # Slower scaling above 1000
         # Add some randomness using normal distribution
         # Standard deviation is 20% of base amount
         std_dev = max(1, base_amount * 0.2)
@@ -119,7 +128,10 @@ class LootGenerator:
     def _generate_quartzs_amount(self, difficulty: int) -> int:
         """Generate quartzs amount using normal distribution"""
         # Base amount scales with difficulty (quartzs are more valuable, so fewer)
-        base_amount = max(1, difficulty // 50)  # 1 at diff 50, 2 at diff 100, etc.
+        if difficulty < 1000:
+            base_amount = max(1, difficulty // 50) 
+        else:
+            base_amount = 20 + (difficulty - 1000) // 100
         
         # Add some randomness using normal distribution
         # Standard deviation is 30% of base amount (more variance for rare currency)
@@ -165,7 +177,7 @@ class LootGenerator:
         # Much more forgiving k value: 1000 distance = 0.01% (0.0001)
         # Using formula: weight = exp(-k * distance)
         # At distance 1000: should be 0.0001 (0.01%)
-        k = -math.log(0.0001) / 1000  # ≈ 0.00921
+        k = -math.log(0.00001) / 1000  # ≈ 0.00921
         weight = math.exp(-k * distance)
         
         return max(weight, 0.000001)  # Very small minimum threshold

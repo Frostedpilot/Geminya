@@ -379,10 +379,10 @@ class ExpeditionResolver:
         favored_matches = team.count_affinity_matches(favored_affinities)
         disfavored_matches = team.count_affinity_matches(disfavored_affinities)
         
-        multiplier = 1.0 + (favored_matches * 0.25) - (disfavored_matches * 0.25)
+        #+ Make buff and nerf multiplicative. Make nerf very stronger, to 40%. Make buff weaker, to 20%
         
-        # Clamp between 0.1 and 3.0
-        return max(0.1, min(3.0, multiplier))
+        multiplier = 1.25**(favored_matches) * (0.6**(disfavored_matches))
+        return max(0.1, min(5.0, multiplier))
     
     def _check_team_condition(self, condition, team: Team) -> bool:
         """Check if the team meets a gated encounter condition"""

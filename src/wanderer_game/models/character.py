@@ -190,7 +190,6 @@ class Team:
             for affinity in affinities:
                 if character.matches_affinity(affinity):
                     matches += 1
-                    break  # Only count each character once
         return matches
     
     def get_series_ids(self) -> List[int]:
