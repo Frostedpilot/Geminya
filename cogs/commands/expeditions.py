@@ -218,13 +218,24 @@ class ExpeditionSelectView(discord.ui.View):
     
     def __init__(self, expeditions: List[Dict], user_id: int, expedition_service):
         super().__init__(timeout=300.0)
-        self.expeditions = expeditions
         self.user_id = user_id
         self.expedition_service = expedition_service
         self.selected_expedition = None
         self.current_page = 0
         self.items_per_page = 25  # Discord select menu limit
-        
+
+        # Load allowed expedition IDs from file
+        import json, os
+        allowed_path = os.path.join('data', 'expeditions', 'selected_expedition_ids.json')
+        try:
+            with open(allowed_path, 'r', encoding='utf-8') as f:
+                allowed_ids = set(json.load(f))
+        except Exception:
+            allowed_ids = set()
+
+        # Only allow expeditions in the allowed list
+        self.expeditions = [e for e in expeditions if e.get('expedition_id') in allowed_ids]
+
         self._setup_ui()
     
     def _setup_ui(self):
@@ -576,19 +587,32 @@ class CharacterSelectView(discord.ui.View):
             if not character:
                 return 0
             count = 0
-            for affinity in favored_affinities + disfavored_affinities:
+            for affinity in favored_affinities:
                 if affinity.type.name == 'SERIES_ID' and hasattr(character, 'series_id'):
                     if str(character.series_id) == str(affinity.value):
                         count += 1
-                elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_type'):
-                    if affinity.value in getattr(character, 'elemental_type', []):
+                elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
+                    if affinity.value in getattr(character, 'elemental_types', []):
                         count += 1
                 elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
                     if affinity.value == getattr(character, 'archetype', None):
                         count += 1
-                elif affinity.type.name == 'GENRE' and hasattr(character, 'genre'):
-                    if affinity.value == getattr(character, 'genre', None):
+                elif affinity.type.name == 'GENRE' and hasattr(character, 'genres'):
+                    if affinity.value in getattr(character, 'genres', []):
                         count += 1
+            for affinity in disfavored_affinities:
+                if affinity.type.name == 'SERIES_ID' and hasattr(character, 'series_id'):
+                    if str(character.series_id) == str(affinity.value):
+                        count -= 1
+                elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
+                    if affinity.value in getattr(character, 'elemental_types', []):
+                        count -= 1
+                elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
+                    if affinity.value == getattr(character, 'archetype', None):
+                        count -= 1
+                elif affinity.type.name == 'GENRE' and hasattr(character, 'genres'):
+                    if affinity.value in getattr(character, 'genres', []):
+                        count -= 1
             return count
 
         # Prepare affinity objects for this expedition
@@ -2203,18 +2227,30 @@ class ExpeditionsCog(BaseCommand):
         name="nwnl_expeditions_list",
         description="📜 Browse all available expeditions (catalog view)"
     )
-    async def nwnl_expeditions_list(self, interaction: discord.Interaction):
-        """List all available expeditions in a browsable catalog format."""
+    @app_commands.describe(available_only="Show only expeditions currently available to start")
+    async def nwnl_expeditions_list(self, interaction: discord.Interaction, available_only: bool = False):
+        """List all expeditions, or only those available to start, in a browsable catalog format."""
         discord_id = str(interaction.user.id)
         self.logger.info(f"[DISCORD_EXPEDITION_CATALOG] User {discord_id} ({interaction.user.display_name}) requested expedition catalog")
-        
+
         await interaction.response.defer()
-        
+
         try:
             # Get available expeditions
             self.logger.debug(f"[DISCORD_EXPEDITION_CATALOG] Loading available expeditions")
             expeditions = await self.expedition_service.get_available_expeditions()
-            
+
+            # If available_only, filter by selected_expedition_ids.json
+            if available_only:
+                import json, os
+                allowed_path = os.path.join('data', 'expeditions', 'selected_expedition_ids.json')
+                try:
+                    with open(allowed_path, 'r', encoding='utf-8') as f:
+                        allowed_ids = set(json.load(f))
+                except Exception:
+                    allowed_ids = set()
+                expeditions = [e for e in expeditions if e.get('expedition_id') in allowed_ids]
+
             if not expeditions:
                 self.logger.warning(f"[DISCORD_EXPEDITION_CATALOG] No expeditions available for user {discord_id}")
                 embed = discord.Embed(
@@ -2224,22 +2260,22 @@ class ExpeditionsCog(BaseCommand):
                 )
                 await interaction.followup.send(embed=embed)
                 return
-            
+
             self.logger.info(f"[DISCORD_EXPEDITION_CATALOG] User {discord_id} browsing {len(expeditions)} expeditions")
-            
+
             # Create list view
             self.logger.debug(f"[DISCORD_EXPEDITION_CATALOG] Creating catalog view for user {discord_id}")
             view = ExpeditionListView(expeditions, interaction.user.id)
             embed = await view._create_expedition_list_embed()
-            
+
             await interaction.followup.send(embed=embed, view=view)
             self.logger.info(f"[DISCORD_EXPEDITION_CATALOG] Successfully sent expedition catalog to user {discord_id}")
-            
+
         except Exception as e:
             self.logger.error(f"[DISCORD_EXPEDITION_CATALOG] Error in expeditions catalog for user {discord_id}: {e}", exc_info=True)
             embed = discord.Embed(
                 title="❌ Error",
-                description=f"Failed to load expedition catalog: {str(e)}",
+                description=f"Failed to load expeditions: {str(e)}",
                 color=0xFF0000
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
