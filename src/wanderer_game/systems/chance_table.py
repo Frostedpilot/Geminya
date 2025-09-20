@@ -21,35 +21,59 @@ class ChanceTable:
     # Chance table mapping success threshold ranges to outcome probabilities
     # Format: (threshold_min, threshold_max): {outcome: (min_roll, max_roll)}
     CHANCE_TABLE = {
-        (0.0, 0.5): {
-            EncounterOutcome.GREAT_SUCCESS: (1, 0),    # 0%
-            EncounterOutcome.SUCCESS: (1, 5),          # 5%
-            EncounterOutcome.FAILURE: (6, 85),         # 80%
-            EncounterOutcome.MISHAP: (86, 100)         # 15%
+        (0.0, 0.25): {
+            EncounterOutcome.GREAT_SUCCESS: (1, 0),    
+            EncounterOutcome.SUCCESS: (1, 5),          
+            EncounterOutcome.FAILURE: (6, 70),        
+            EncounterOutcome.MISHAP: (71, 100)         
         },
-        (0.5, 1.0): {
-            EncounterOutcome.GREAT_SUCCESS: (1, 5),    # 5%
-            EncounterOutcome.SUCCESS: (6, 40),         # 35%
-            EncounterOutcome.FAILURE: (41, 95),        # 55%
-            EncounterOutcome.MISHAP: (96, 100)         # 5%
+        (0.25, 0.5): {
+            EncounterOutcome.GREAT_SUCCESS: (1, 0),    
+            EncounterOutcome.SUCCESS: (1, 15),          
+            EncounterOutcome.FAILURE: (16, 85),         
+            EncounterOutcome.MISHAP: (86, 100)         
         },
-        (1.0, 1.5): {
-            EncounterOutcome.GREAT_SUCCESS: (1, 15),   # 15%
-            EncounterOutcome.SUCCESS: (16, 85),        # 70%
-            EncounterOutcome.FAILURE: (86, 98),        # 13%
-            EncounterOutcome.MISHAP: (99, 100)         # 2%
+        (0.5, 0.75): {
+            EncounterOutcome.GREAT_SUCCESS: (1, 0),   
+            EncounterOutcome.SUCCESS: (1, 25),      
+            EncounterOutcome.FAILURE: (26, 90),       
+            EncounterOutcome.MISHAP: (91, 100)        
         },
-        (1.5, 2.0): {
-            EncounterOutcome.GREAT_SUCCESS: (1, 35),   # 35%
-            EncounterOutcome.SUCCESS: (36, 95),        # 60%
-            EncounterOutcome.FAILURE: (96, 100),       # 5%
-            EncounterOutcome.MISHAP: (101, 100)        # 0% (impossible range)
+        (0.75, 1.0): {
+            EncounterOutcome.GREAT_SUCCESS: (1, 3),    
+            EncounterOutcome.SUCCESS: (4, 40),         
+            EncounterOutcome.FAILURE: (41, 90),       
+            EncounterOutcome.MISHAP: (91, 100)         
+        },
+        (1.0, 1.25): {
+            EncounterOutcome.GREAT_SUCCESS: (1, 5),    
+            EncounterOutcome.SUCCESS: (6, 60),         
+            EncounterOutcome.FAILURE: (61, 95),        
+            EncounterOutcome.MISHAP: (96, 100)         
+        },
+        (1.25, 1.5): {
+            EncounterOutcome.GREAT_SUCCESS: (1, 10),    
+            EncounterOutcome.SUCCESS: (11, 75),         
+            EncounterOutcome.FAILURE: (76, 95),        
+            EncounterOutcome.MISHAP: (96, 100)         
+        },
+        (1.5, 1.75): {
+            EncounterOutcome.GREAT_SUCCESS: (1, 15),   
+            EncounterOutcome.SUCCESS: (16, 85),        
+            EncounterOutcome.FAILURE: (86, 98),        
+            EncounterOutcome.MISHAP: (99, 100)         
+        },
+        (1.75, 2.0): {
+            EncounterOutcome.GREAT_SUCCESS: (1, 30),   
+            EncounterOutcome.SUCCESS: (30, 97),       
+            EncounterOutcome.FAILURE: (98, 100),       
+            EncounterOutcome.MISHAP: (101, 100)        
         },
         (2.0, float('inf')): {
-            EncounterOutcome.GREAT_SUCCESS: (1, 60),   # 60%
-            EncounterOutcome.SUCCESS: (61, 100),       # 40%
-            EncounterOutcome.FAILURE: (101, 100),      # 0% (impossible range)
-            EncounterOutcome.MISHAP: (101, 100)        # 0% (impossible range)
+            EncounterOutcome.GREAT_SUCCESS: (1, 60),  
+            EncounterOutcome.SUCCESS: (61, 100),      
+            EncounterOutcome.FAILURE: (101, 100),      
+            EncounterOutcome.MISHAP: (101, 100)        
         }
     }
     

@@ -549,15 +549,15 @@ class CharacterSelectView(discord.ui.View):
         self.search_filter = ""
         self.current_page = 0
         self.items_per_page = 25  # Discord select menu limit
-        
+        # Sorting mode: 'raw_power' or 'affinity_count'. Default is 'raw_power'.
+        self.sorting_mode = 'raw_power'  # or 'affinity_count'
         # Get character registry for names
         self.char_registry = expedition_service.data_manager.get_character_registry()
-        
         # Filter and setup UI
         self._setup_ui()
     
     def _get_filtered_waifus(self) -> List[Dict]:
-        """Get waifus filtered by search term, annotated with raw stats and affinity count, sorted by raw stats value."""
+        """Get waifus filtered by search term, annotated with raw stats and affinity count, sorted by selected mode."""
         # Helper to calculate raw stats value
         def calc_raw_stats(waifu, character, dominant_stats):
             stats = waifu.get('stats')
@@ -673,14 +673,31 @@ class CharacterSelectView(discord.ui.View):
                     waifu['__raw_stats'] = raw_stats
                     waifu['__affinity_count'] = affinity_count
                     filtered_waifus.append(waifu)
-        # Sort by raw stats value descending
-        filtered_waifus.sort(key=lambda w: w.get('__raw_stats', 0), reverse=True)
+        # Double sorting logic
+        if self.sorting_mode == 'raw_power':
+            # Primary: raw stats, Secondary: affinity count
+            filtered_waifus.sort(key=lambda w: (w.get('__raw_stats', 0), w.get('__affinity_count', 0)), reverse=True)
+        else:
+            # Primary: affinity count, Secondary: raw stats
+            filtered_waifus.sort(key=lambda w: (w.get('__affinity_count', 0), w.get('__raw_stats', 0)), reverse=True)
         return filtered_waifus
     
     def _setup_ui(self):
         """Setup the UI components based on current page and filter."""
         self.clear_items()
-        
+
+        # Add sorting toggle button
+        sorting_label = (
+            "Sort: Raw Power > Affinity" if self.sorting_mode == 'raw_power' else "Sort: Affinity > Raw Power"
+        )
+        sorting_button = discord.ui.Button(
+            label=sorting_label,
+            style=discord.ButtonStyle.primary,
+            custom_id="toggle_sorting_mode"
+        )
+        sorting_button.callback = self.toggle_sorting_mode
+        self.add_item(sorting_button)
+
         # Add search modal button
         search_button = discord.ui.Button(
             label="🔍 Search Characters",
@@ -689,35 +706,26 @@ class CharacterSelectView(discord.ui.View):
         )
         search_button.callback = self.open_search_modal
         self.add_item(search_button)
-        
+
         # Get filtered waifus
         filtered_waifus = self._get_filtered_waifus()
-        
+
         # Safety check: if current page is beyond available pages, reset to page 0
         if filtered_waifus:
             total_pages = (len(filtered_waifus) + self.items_per_page - 1) // self.items_per_page
             if self.current_page >= total_pages:
-                # ...removed debug print...
                 self.current_page = 0
-        
-        # DEBUG: Check if we have any waifus at all
+
         if not filtered_waifus:
             return  # No waifus to display, exit early
-        
+
         # Calculate page boundaries
         start_idx = self.current_page * self.items_per_page
         end_idx = min(start_idx + self.items_per_page, len(filtered_waifus))
         current_waifus = filtered_waifus[start_idx:end_idx]
-        
-        # DEBUG: Check current page waifus
-        if not current_waifus and filtered_waifus:
-            pass
-        
-        # Create select menu for characters
+
         options = []
-        # Track which characters on this page are already selected
         selected_on_page = []
-        
         for waifu in current_waifus:
             character = self.char_registry.get_character(waifu['waifu_id'])
             user_waifu_id = waifu['user_waifu_id']
@@ -725,7 +733,6 @@ class CharacterSelectView(discord.ui.View):
             if is_selected:
                 selected_on_page.append(str(user_waifu_id))
             name_prefix = "✅ " if is_selected else ""
-            # Show raw stats and affinity count if available
             raw_stats = waifu.get('__raw_stats', 0)
             affinity_count = waifu.get('__affinity_count', 0)
             star_level = waifu.get('current_star_level', 1)
@@ -745,10 +752,8 @@ class CharacterSelectView(discord.ui.View):
                 emoji=emoji,
                 default=is_selected
             ))
-        
-        # ALWAYS ensure we have at least one option to prevent Discord API errors
+
         if not options:
-            # Add a placeholder if no characters available
             if self.search_filter:
                 options.append(discord.SelectOption(
                     label="No characters found",
@@ -763,29 +768,25 @@ class CharacterSelectView(discord.ui.View):
                     value="none",
                     emoji="❌"
                 ))
-        
+
         placeholder_text = f"Choose characters (up to 3)... | Selected: {len(self.selected_characters)}/3"
         if self.search_filter:
             placeholder_text += f" | Filter: '{self.search_filter}'"
         if len(filtered_waifus) > self.items_per_page:
             total_pages = (len(filtered_waifus) + self.items_per_page - 1) // self.items_per_page
             placeholder_text += f" | Page {self.current_page + 1}/{total_pages}"
-        
-        # Calculate max values: allow deselection + new selections up to limit of 3
-        # Account for special options like "none", "error", and "critical_error"
+
         character_options = [opt for opt in options if opt.value not in ["none", "error", "critical_error"]]
         if options[0].value == "none":
             max_selectable = 1
         elif options[0].value == "error":
-            max_selectable = 1  # Error is a single action
+            max_selectable = 1
         elif options[0].value == "critical_error":
-            max_selectable = 1  # Critical error is a single action
+            max_selectable = 1
         else:
             max_selectable = min(len(character_options), 3)
-        
-        # Final safety check: ensure options list is never empty
+
         if not options:
-            # ...removed debug print...
             options.append(discord.SelectOption(
                 label="⚠️ Error: No characters",
                 description="Please contact support or reload the expedition",
@@ -793,10 +794,8 @@ class CharacterSelectView(discord.ui.View):
                 emoji="⚠️"
             ))
             max_selectable = 1
-        
-        # Additional safety: double-check before creating select menu
+
         if len(options) == 0:
-            # ...removed debug print...
             options = [discord.SelectOption(
                 label="❌ Critical Error",
                 description="System failure - please restart expedition",
@@ -804,9 +803,7 @@ class CharacterSelectView(discord.ui.View):
                 emoji="💥"
             )]
             max_selectable = 1
-        
-    # ...removed debug print...
-        
+
         self.character_select = discord.ui.Select(
             placeholder=placeholder_text,
             options=options,
@@ -815,11 +812,9 @@ class CharacterSelectView(discord.ui.View):
         )
         self.character_select.callback = self.character_selected
         self.add_item(self.character_select)
-        
-        # Add pagination buttons if needed
+
         self._add_pagination_buttons(filtered_waifus)
-        
-        # Add clear search button if there's an active filter
+
         if self.search_filter:
             clear_button = discord.ui.Button(
                 label="❌ Clear Search",
@@ -828,8 +823,7 @@ class CharacterSelectView(discord.ui.View):
             )
             clear_button.callback = self.clear_search
             self.add_item(clear_button)
-        
-        # Add clear selections button if characters are selected
+
         if self.selected_characters:
             clear_selections_button = discord.ui.Button(
                 label="🗑️ Clear All",
@@ -838,8 +832,7 @@ class CharacterSelectView(discord.ui.View):
             )
             clear_selections_button.callback = self.clear_selections
             self.add_item(clear_selections_button)
-        
-        # Add cancel button
+
         cancel_button = discord.ui.Button(
             label="❌ Cancel",
             style=discord.ButtonStyle.danger,
@@ -847,8 +840,7 @@ class CharacterSelectView(discord.ui.View):
         )
         cancel_button.callback = self.cancel_expedition
         self.add_item(cancel_button)
-        
-        # Add start expedition button
+
         if options[0].value != "none":
             self.start_button = discord.ui.Button(
                 label="🚀 Start Expedition",
@@ -858,6 +850,17 @@ class CharacterSelectView(discord.ui.View):
             )
             self.start_button.callback = self.start_expedition
             self.add_item(self.start_button)
+
+    async def toggle_sorting_mode(self, interaction: discord.Interaction):
+        """Toggle between sorting modes and refresh UI."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the command user can change sorting mode.", ephemeral=True)
+            return
+        self.sorting_mode = 'affinity_count' if self.sorting_mode == 'raw_power' else 'raw_power'
+        self.current_page = 0
+        self._setup_ui()
+        embed = await self._create_character_selection_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
     
     def _add_pagination_buttons(self, filtered_waifus: List[Dict]):
         """Add pagination buttons if needed."""
