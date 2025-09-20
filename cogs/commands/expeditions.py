@@ -1291,6 +1291,8 @@ class CharacterSelectView(discord.ui.View):
             )
             # Affinity multiplier logic (match backend)
             affinity_multiplier = 1.0
+            series_multiplier = 1.0
+            series_bonus_text = ""
             if team_characters and hasattr(self.expedition, 'get'):
                 from src.wanderer_game.models.character import Affinity, AffinityType, Team as WGTeam
                 favored_affinities = []
@@ -1338,6 +1340,12 @@ class CharacterSelectView(discord.ui.View):
                 disfavored_matches = team_obj.count_affinity_matches(disfavored_affinities)
                 affinity_multiplier = 1.2**(favored_matches) * (0.6**(disfavored_matches))
                 affinity_multiplier = max(0.1, min(3.0, affinity_multiplier))
+                # Series multiplier: 1.2x if all 3 team members are from the same series
+                if len(team_characters) == 3:
+                    series_ids = [getattr(c, 'series_id', None) for c in team_characters]
+                    if all(sid is not None for sid in series_ids) and len(set(series_ids)) == 1:
+                        series_multiplier = 1.2
+                        series_bonus_text = "🌟 **Series Bonus Active!** All 3 characters are from the same series. Team Power is multiplied by 1.2x."
             # Show both raw and adjusted Team Power
             if num_with_stats > 0:
                 embed.add_field(
@@ -1350,11 +1358,23 @@ class CharacterSelectView(discord.ui.View):
                     value=f"x{affinity_multiplier:.2f}",
                     inline=True
                 )
+                if series_multiplier > 1.0:
+                    embed.add_field(
+                        name="🌟 Series Multiplier",
+                        value=f"x{series_multiplier:.2f} (All 3 from same series)",
+                        inline=True
+                    )
                 embed.add_field(
                     name="💥 Team Power (Adjusted)",
-                    value=f"{int(team_power_raw * affinity_multiplier)}",
+                    value=f"{int(team_power_raw * affinity_multiplier * series_multiplier)}",
                     inline=True
                 )
+                if series_bonus_text:
+                    embed.add_field(
+                        name="Bonus",
+                        value=series_bonus_text,
+                        inline=False
+                    )
         else:
             embed.add_field(
                 name="🎯 Selected Characters (0/3)",
@@ -1645,7 +1665,16 @@ class ExpeditionResultsView(discord.ui.View):
         # Final multiplier outcome and value (always show)
         final_multiplier_numeric = result_summary.get('final_multiplier_numeric', 1.0)
         final_multiplier_name = result_summary.get('final_multiplier', 'standard')
-        
+        # Series multiplier: check if present in result_summary or infer from team
+        series_multiplier = 1.0
+        series_bonus_text = ""
+        if 'team' in expedition:
+            team = expedition['team']
+            if isinstance(team, list) and len(team) == 3:
+                series_ids = [getattr(c, 'series_id', None) if hasattr(c, 'series_id') else c.get('series_id') for c in team]
+                if all(sid is not None for sid in series_ids) and len(set(series_ids)) == 1:
+                    series_multiplier = 1.2
+                    series_bonus_text = "🌟 **Series Bonus Active!** All 3 characters were from the same series. Team Power was multiplied by 1.2x."
         # Emoji for outcome
         multiplier_emoji = {
             'catastrophe': '💥',
@@ -1668,6 +1697,18 @@ class ExpeditionResultsView(discord.ui.View):
             value=multiplier_text,
             inline=False
         )
+        if series_multiplier > 1.0:
+            embed.add_field(
+                name="🌟 Series Multiplier",
+                value=f"x{series_multiplier:.2f} (All 3 from same series)",
+                inline=True
+            )
+        if series_bonus_text:
+            embed.add_field(
+                name="Bonus",
+                value=series_bonus_text,
+                inline=False
+            )
 
         embed.set_footer(text="Use the buttons below to view detailed encounters and rewards!")
         return embed

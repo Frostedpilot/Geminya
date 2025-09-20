@@ -360,18 +360,25 @@ class ExpeditionResolver:
     def _calculate_team_score(self, stat_name: str, expedition: Expedition, team: Team) -> float:
         """
         Calculate the team's total score for a stat check
-        Includes affinity multipliers and expedition modifiers
+        Includes affinity multipliers, expedition modifiers, and series multiplier
         """
         # Get base stat sum (with star bonuses already applied)
         base_stat_sum = team.get_total_stat(stat_name)
-        
+
         # Apply expedition stat modifiers
         effective_stat_sum = expedition.get_effective_stat(base_stat_sum, stat_name)
-        
+
         # Calculate affinity multiplier
         affinity_multiplier = self._calculate_affinity_multiplier(expedition, team)
-        
-        return effective_stat_sum * affinity_multiplier
+
+        # Calculate series multiplier: 1.2x if all 3 team members are from the same series
+        series_multiplier = 1.0
+        if len(team.characters) == 3:
+            series_ids = [getattr(c, 'series_id', None) for c in team.characters]
+            if all(sid is not None for sid in series_ids) and len(set(series_ids)) == 1:
+                series_multiplier = 1.2
+
+        return effective_stat_sum * affinity_multiplier * series_multiplier
     
     def _calculate_affinity_multiplier(self, expedition: Expedition, team: Team) -> float:
         """
