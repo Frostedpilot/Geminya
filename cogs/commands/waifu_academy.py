@@ -65,8 +65,21 @@ class WaifuAcademyCog(BaseCommand):
                     return False
                 filtered = [w for w in filtered if element_matches(w)]
 
-            # Sort by star level (desc), then name
-            sorted_collection = sorted(filtered, key=lambda w: (-w.get("current_star_level", w["rarity"]), -w["character_shards"], w["name"]))
+            # Calculate raw stats value for each waifu, including star multiplier
+            def calc_raw_stats(waifu):
+                stats = waifu.get('stats')
+                star_level = waifu.get('current_star_level', waifu.get('rarity', 1))
+                multiplier = 1 + (star_level - 1) * 0.10
+                if stats and isinstance(stats, dict):
+                    stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
+                    if stat_values:
+                        mean = sum(stat_values) / len(stat_values)
+                        return mean * multiplier
+                return 0.0
+            for w in filtered:
+                w['__raw_stats'] = calc_raw_stats(w)
+            # Sort by raw stats value (desc), then star level, then name
+            sorted_collection = sorted(filtered, key=lambda w: (-w.get('__raw_stats', 0), -w.get("current_star_level", w["rarity"]), -w["character_shards"], w["name"]))
 
             class SearchPaginator(discord.ui.View):
                 def __init__(self, ctx, waifus):
@@ -91,16 +104,15 @@ class WaifuAcademyCog(BaseCommand):
                         for w in waifu_page:
                             stars = "⭐" * w.get("current_star_level", w["rarity"])
                             shards = w.get("character_shards", 0)
-                            # Element display: join list or show string
                             etype = w.get("elemental_type")
                             if isinstance(etype, list):
                                 elements = ", ".join(str(e) for e in etype) if etype else "?"
                             else:
                                 elements = etype if etype else "?"
-                            # Archetype display: always show string or "?"
                             archetype_val = w.get("archetype")
                             archetype = archetype_val if isinstance(archetype_val, str) and archetype_val.strip() else "?"
-                            value = f"{stars} | {w['series']} | {shards} shards\n**Element:** {elements}\n**Archetype:** {archetype}"
+                            raw_stats = w.get("__raw_stats", 0)
+                            value = f"{stars} | {w['series']} | {shards} shards\n**Element:** {elements}\n**Archetype:** {archetype}\n**Stats:** {raw_stats:.1f}"
                             embed.add_field(
                                 name=w["name"],
                                 value=value,

@@ -151,6 +151,7 @@ class ExpeditionService:
                 "num_disfavored_affinities": template.num_disfavored_affinities,
                 "affinity_pools": affinity_pools,  # Properly formatted affinity pools
                 "encounter_pool_tags": template.encounter_pool_tags,
+                "dominant_stats": getattr(template, "dominant_stats", []),
                 "description": f"Duration: {template.duration_hours}h, Difficulty: {template.difficulty}, Buffs/Debuffs: {template.num_favored_affinities}/{template.num_disfavored_affinities}"
             })
         return templates
@@ -328,7 +329,8 @@ class ExpeditionService:
                     "num_disfavored_affinities": template.num_disfavored_affinities,
                     "favored_pool": serialize_for_json(template.favored_pool),
                     "disfavored_pool": serialize_for_json(template.disfavored_pool),
-                    "team_series_ids": team_series_ids  # Store for runtime encounter tag generation
+                    "team_series_ids": team_series_ids,  # Store for runtime encounter tag generation
+                    "dominant_stats": getattr(template, "dominant_stats", [])
                 }
             }
             
@@ -430,7 +432,8 @@ class ExpeditionService:
             favored_affinities=favored_affinities,
             disfavored_affinities=disfavored_affinities,
             encounter_pool_tags=dynamic_tags,
-            encounter_count=encounter_count
+            encounter_count=encounter_count,
+            dominant_stats=template_data.get("dominant_stats", [])
         )
 
         self.logger.info(f"Generated expedition at completion: {encounter_count} encounters, {len(favored_affinities)} favored, {len(disfavored_affinities)} disfavored affinities")

@@ -79,8 +79,21 @@ class WaifuSummonCog(BaseCommand):
             filtered_collection = collection
             if series_id is not None:
                 filtered_collection = [w for w in collection if w.get("series_id") == series_id]
-            # Always sort by star level (desc), then name
-            sorted_collection = sorted(filtered_collection, key=lambda w: (-w.get("current_star_level", w["rarity"]), -w["character_shards"], w["name"]))
+            # Calculate raw stats value for each waifu, including star multiplier
+            def calc_raw_stats(waifu):
+                stats = waifu.get('stats')
+                star_level = waifu.get('current_star_level', waifu.get('rarity', 1))
+                multiplier = 1 + (star_level - 1) * 0.10
+                if stats and isinstance(stats, dict):
+                    stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
+                    if stat_values:
+                        mean = sum(stat_values) / len(stat_values)
+                        return mean * multiplier
+                return 0.0
+            for w in filtered_collection:
+                w['__raw_stats'] = calc_raw_stats(w)
+            # Sort by raw stats value (desc), then star level, then name
+            sorted_collection = sorted(filtered_collection, key=lambda w: (-w.get('__raw_stats', 0), -w.get("current_star_level", w["rarity"]), -w["character_shards"], w["name"]))
 
             class CollectionPaginator(discord.ui.View):
                 def __init__(self, ctx, waifus, user, series_id):
@@ -109,7 +122,8 @@ class WaifuSummonCog(BaseCommand):
                         for w in waifu_page:
                             stars = "⭐" * w.get("current_star_level", w["rarity"])
                             shards = w.get("character_shards", 0)
-                            value = f"{stars} | {w['series']} | {shards} shards"
+                            raw_stats = w.get("__raw_stats", 0)
+                            value = f"{stars} | {w['series']} | {shards} shards\n**Stats:** {raw_stats:.1f}"
                             embed.add_field(
                                 name=w["name"],
                                 value=value,

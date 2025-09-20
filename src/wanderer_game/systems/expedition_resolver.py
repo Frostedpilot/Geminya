@@ -22,10 +22,11 @@ from .chance_table import ChanceTable, FinalMultiplierTable
 
 
 class ExpeditionResolver:
-    def _select_encounters_by_type_distribution(self, available_tags, _expedition_difficulty, total_count=10):
+    def _select_encounters_by_type_distribution(self, available_tags, _expedition_difficulty, total_count=10, expedition=None):
         """
         Select encounters by fixed type distribution: 6 standard, 2 gated, 1 buff, 1 hazard (favoring in that order).
         If not enough of a type, fill with next in priority order.
+        If expedition is provided and has dominant_stats, filter STANDARD encounters to only those whose check_stat is in dominant_stats.
         """
         # Gather all valid encounters for the expedition's tags
         valid_encounters = []
@@ -45,7 +46,12 @@ class ExpeditionResolver:
         type_map = {EncounterType.STANDARD: [], EncounterType.GATED: [], EncounterType.BOON: [], EncounterType.HAZARD: []}
         for encounter in unique_encounters:
             if encounter.type in type_map:
-                type_map[encounter.type].append(encounter)
+                # Filter STANDARD encounters by dominant_stats if present
+                if encounter.type == EncounterType.STANDARD and expedition is not None and getattr(expedition, 'dominant_stats', None):
+                    if encounter.check_stat and encounter.check_stat in expedition.dominant_stats:
+                        type_map[encounter.type].append(encounter)
+                else:
+                    type_map[encounter.type].append(encounter)
         # Shuffle each group
         for group in type_map.values():
             random.shuffle(group)
@@ -127,7 +133,7 @@ class ExpeditionResolver:
         # Use fixed distribution for encounters: 6-2-1-1 (standard, gated, boon, hazard)
         encounter_count = getattr(expedition, 'encounter_count', 10)
         encounters = self._select_encounters_by_type_distribution(
-            expedition.encounter_pool_tags, expedition.difficulty, encounter_count
+            expedition.encounter_pool_tags, expedition.difficulty, encounter_count, expedition=expedition
         )
         for encounter in encounters:
             encounter_result = self._resolve_encounter(encounter, expedition, team)

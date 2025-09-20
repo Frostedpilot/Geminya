@@ -174,6 +174,10 @@ class ExpeditionListView(discord.ui.View):
                 f"{difficulty_emoji} **Difficulty:** {difficulty}",
                 f"⚔️ **Encounters:** {encounters_str}"
             ]
+            # Add dominant_stats if present
+            dominant_stats = expedition.get('dominant_stats', [])
+            if dominant_stats:
+                description_parts.append(f"📊 **Dominant Stats:** {', '.join(dominant_stats)}")
             # Add per-encounter affinity info
             if favored > 0 or disfavored > 0:
                 description_parts.append(f"🔮 **Per Encounter:** {favored} favored, {disfavored} disfavored affinities")
@@ -455,6 +459,14 @@ class ExpeditionSelectView(discord.ui.View):
         encounters = expedition.get('expected_encounters', 5)
         favored = expedition.get('num_favored_affinities', 0)
         disfavored = expedition.get('num_disfavored_affinities', 0)
+        # Add dominant_stats if present
+        dominant_stats = expedition.get('dominant_stats', [])
+        if dominant_stats:
+            embed.add_field(
+                name="📊 Dominant Stats",
+                value=", ".join(dominant_stats),
+                inline=False
+            )
         # Add per-encounter affinity info
         per_encounter_affinity = ""
         if favored > 0 or disfavored > 0:
@@ -534,21 +546,105 @@ class CharacterSelectView(discord.ui.View):
         self._setup_ui()
     
     def _get_filtered_waifus(self) -> List[Dict]:
-        """Get waifus filtered by search term."""
-        if not self.search_filter:
-            return self.user_waifus
-        
+        """Get waifus filtered by search term, annotated with raw stats and affinity count, sorted by raw stats value."""
+        # Helper to calculate raw stats value
+        def calc_raw_stats(waifu, character, dominant_stats):
+            stats = waifu.get('stats')
+            star_level = waifu.get('current_star_level', waifu.get('rarity', 1))
+            multiplier = 1 + (star_level - 1) * 0.10
+            stat_values = []
+            if not stats and character and hasattr(character, 'base_stats'):
+                base_stats = getattr(character, 'base_stats', None)
+                if base_stats:
+                    stat_dict = vars(base_stats)
+                    if dominant_stats:
+                        stat_values = [v for k, v in stat_dict.items() if k in dominant_stats and isinstance(v, (int, float))]
+                    else:
+                        stat_values = [v for v in stat_dict.values() if isinstance(v, (int, float))]
+            elif stats and isinstance(stats, dict):
+                if dominant_stats:
+                    stat_values = [v for k, v in stats.items() if k in dominant_stats and isinstance(v, (int, float))]
+                else:
+                    stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
+            if stat_values:
+                mean = sum(stat_values) / len(stat_values)
+                return mean * multiplier
+            return 0.0
+
+        # Helper to count affinity matches
+        def calc_affinity_count(character, favored_affinities, disfavored_affinities):
+            if not character:
+                return 0
+            count = 0
+            for affinity in favored_affinities + disfavored_affinities:
+                if affinity.type.name == 'SERIES_ID' and hasattr(character, 'series_id'):
+                    if str(character.series_id) == str(affinity.value):
+                        count += 1
+                elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_type'):
+                    if affinity.value in getattr(character, 'elemental_type', []):
+                        count += 1
+                elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
+                    if affinity.value == getattr(character, 'archetype', None):
+                        count += 1
+                elif affinity.type.name == 'GENRE' and hasattr(character, 'genre'):
+                    if affinity.value == getattr(character, 'genre', None):
+                        count += 1
+            return count
+
+        # Prepare affinity objects for this expedition
+        from src.wanderer_game.models.character import Affinity, AffinityType
+        affinity_pools = self.expedition.get('affinity_pools', {})
+        dominant_stats = self.expedition.get('dominant_stats', [])
+        favored_affinities = []
+        disfavored_affinities = []
+        category_to_enum = {
+            'elemental': AffinityType.ELEMENTAL,
+            'archetype': AffinityType.ARCHETYPE,
+            'series': AffinityType.SERIES_ID,
+            'genre': AffinityType.GENRE,
+        }
+        def resolve_series_id(series_name):
+            cls = type(self)
+            if cls._series_name_to_id_cache is None:
+                cache = {}
+                for char in self.char_registry.characters.values():
+                    cache[char.series] = char.series_id
+                cls._series_name_to_id_cache = cache
+            return cls._series_name_to_id_cache.get(series_name, series_name)
+        for category, values in affinity_pools.get('favored', {}).items():
+            enum_type = category_to_enum.get(category.lower())
+            if enum_type:
+                for value in values:
+                    if enum_type == AffinityType.SERIES_ID:
+                        resolved = resolve_series_id(value)
+                        favored_affinities.append(Affinity(type=enum_type, value=resolved))
+                    else:
+                        favored_affinities.append(Affinity(type=enum_type, value=value))
+        for category, values in affinity_pools.get('disfavored', {}).items():
+            enum_type = category_to_enum.get(category.lower())
+            if enum_type:
+                for value in values:
+                    if enum_type == AffinityType.SERIES_ID:
+                        resolved = resolve_series_id(value)
+                        disfavored_affinities.append(Affinity(type=enum_type, value=resolved))
+                    else:
+                        disfavored_affinities.append(Affinity(type=enum_type, value=value))
+
+        # Filter and annotate waifus
         filtered_waifus = []
-        search_lower = self.search_filter.lower()
-        
+        search_lower = self.search_filter.lower() if self.search_filter else None
         for waifu in self.user_waifus:
             character = self.char_registry.get_character(waifu['waifu_id'])
             if character:
-                # Search in character name and series
-                if (search_lower in character.name.lower() or 
-                    search_lower in character.series.lower()):
+                if not search_lower or (search_lower in character.name.lower() or search_lower in character.series.lower()):
+                    raw_stats = calc_raw_stats(waifu, character, dominant_stats)
+                    affinity_count = calc_affinity_count(character, favored_affinities, disfavored_affinities)
+                    waifu = dict(waifu)  # Copy to annotate
+                    waifu['__raw_stats'] = raw_stats
+                    waifu['__affinity_count'] = affinity_count
                     filtered_waifus.append(waifu)
-        
+        # Sort by raw stats value descending
+        filtered_waifus.sort(key=lambda w: w.get('__raw_stats', 0), reverse=True)
         return filtered_waifus
     
     def _setup_ui(self):
@@ -594,43 +690,31 @@ class CharacterSelectView(discord.ui.View):
         
         for waifu in current_waifus:
             character = self.char_registry.get_character(waifu['waifu_id'])
+            user_waifu_id = waifu['user_waifu_id']
+            is_selected = user_waifu_id in self.selected_characters
+            if is_selected:
+                selected_on_page.append(str(user_waifu_id))
+            name_prefix = "✅ " if is_selected else ""
+            # Show raw stats and affinity count if available
+            raw_stats = waifu.get('__raw_stats', 0)
+            affinity_count = waifu.get('__affinity_count', 0)
+            star_level = waifu.get('current_star_level', 1)
             if character:
-                star_level = waifu.get('current_star_level', 1)
-                bond_level = waifu.get('bond_level', 1)
-                user_waifu_id = waifu['user_waifu_id']
-                
-                # Check if this character is already selected
-                is_selected = user_waifu_id in self.selected_characters
-                if is_selected:
-                    selected_on_page.append(str(user_waifu_id))
-                
-                # Add selection indicator
-                name_prefix = "✅ " if is_selected else ""
-                
-                options.append(discord.SelectOption(
-                    label=f"{name_prefix}{character.name}"[:100],  # Discord limit
-                    description=f"⭐{star_level} | {character.series[:40]}",
-                    value=str(user_waifu_id),
-                    emoji="👤",
-                    default=is_selected  # Mark as default if selected
-                ))
+                label = f"{name_prefix}{character.name}"[:100]
+                desc = f"⭐{star_level} | {character.series[:40]} | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
+                emoji = "👤"
             else:
-                # If character not found in registry, add fallback option
-                user_waifu_id = waifu['user_waifu_id']
-                is_selected = user_waifu_id in self.selected_characters
-                if is_selected:
-                    selected_on_page.append(str(user_waifu_id))
-                
-                name_prefix = "✅ " if is_selected else ""
                 fallback_name = waifu.get('name', f'Character {waifu["waifu_id"]}')
-                
-                options.append(discord.SelectOption(
-                    label=f"{name_prefix}{fallback_name}"[:100],
-                    description=f"⭐{waifu.get('current_star_level', 1)} | Unknown series",
-                    value=str(user_waifu_id),
-                    emoji="❓",
-                    default=is_selected
-                ))
+                label = f"{name_prefix}{fallback_name}"[:100]
+                desc = f"⭐{star_level} | Unknown series | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
+                emoji = "❓"
+            options.append(discord.SelectOption(
+                label=label,
+                description=desc,
+                value=str(user_waifu_id),
+                emoji=emoji,
+                default=is_selected
+            ))
         
         # ALWAYS ensure we have at least one option to prevent Discord API errors
         if not options:
@@ -1097,6 +1181,17 @@ class CharacterSelectView(discord.ui.View):
             await interaction.followup.send(embed=embed)
     
     async def _create_character_selection_embed(self) -> discord.Embed:
+        # Prepare affinity display for the expedition
+        affinity_pools = self.expedition.get('affinity_pools', {})
+        def format_affinities(pool):
+            if not pool:
+                return 'None'
+            lines = []
+            for category, values in pool.items():
+                if values:
+                    lines.append(f"**{category.title()}:** {', '.join(str(v) for v in values)}")
+            return '\n'.join(lines) if lines else 'None'
+
         """Create character selection embed."""
         filtered_waifus = self._get_filtered_waifus()
         total_pages = (len(filtered_waifus) + self.items_per_page - 1) // self.items_per_page if filtered_waifus else 1
@@ -1122,12 +1217,14 @@ class CharacterSelectView(discord.ui.View):
             description=description,
             color=0x9B59B6
         )
-        
+
         if self.selected_characters:
             character_info = []
             team_power_raw = 0
             num_with_stats = 0
             team_characters = []
+            # Determine which stats to use for preview
+            dominant_stats = self.expedition.get('dominant_stats', [])
             for char_id in self.selected_characters:
                 waifu = next((w for w in self.user_waifus if w['user_waifu_id'] == char_id), None)
                 if waifu:
@@ -1143,24 +1240,26 @@ class CharacterSelectView(discord.ui.View):
                     char_obj = character if character else None
                     star_level = waifu.get('current_star_level', 1)
                     star_multiplier = 1 + (star_level - 1) * 0.10
+                    stat_values = []
                     if not stats and char_obj and hasattr(char_obj, 'base_stats'):
                         base_stats = getattr(char_obj, 'base_stats', None)
                         if base_stats:
                             stat_dict = vars(base_stats)
-                            stat_values = [v for v in stat_dict.values() if isinstance(v, (int, float))]
-                            if stat_values:
-                                mean = sum(stat_values) / len(stat_values)
-                                mean *= star_multiplier
-                                team_power_raw += mean
-                                num_with_stats += 1
-                            continue
-                    if stats and isinstance(stats, dict):
-                        stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
-                        if stat_values:
-                            mean = sum(stat_values) / len(stat_values)
-                            mean *= star_multiplier
-                            team_power_raw += mean
-                            num_with_stats += 1
+                            # Only use dominant_stats if present, else all
+                            if dominant_stats:
+                                stat_values = [v for k, v in stat_dict.items() if k in dominant_stats and isinstance(v, (int, float))]
+                            else:
+                                stat_values = [v for v in stat_dict.values() if isinstance(v, (int, float))]
+                    elif stats and isinstance(stats, dict):
+                        if dominant_stats:
+                            stat_values = [v for k, v in stats.items() if k in dominant_stats and isinstance(v, (int, float))]
+                        else:
+                            stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
+                    if stat_values:
+                        mean = sum(stat_values) / len(stat_values)
+                        mean *= star_multiplier
+                        team_power_raw += mean
+                        num_with_stats += 1
             embed.add_field(
                 name=f"🎯 Selected Characters ({len(self.selected_characters)}/3)",
                 value="\n".join(character_info) if character_info else "None selected",
@@ -1239,13 +1338,33 @@ class CharacterSelectView(discord.ui.View):
                 inline=False
             )
 
+        # Add dominant_stats if present
+        dominant_stats = self.expedition.get('dominant_stats', [])
+        details_value = f"**Duration:** {self.expedition.get('duration_hours', 4)} hours\n" \
+                        f"**Difficulty:** {self.expedition.get('difficulty', 100)}\n" \
+                        f"**Expected Encounters:** ~{self.expedition.get('expected_encounters', 5)}"
+        if dominant_stats:
+            details_value += f"\n📊 **Dominant Stats:** {', '.join(dominant_stats)}"
         embed.add_field(
             name="📋 Expedition Details",
-            value=f"**Duration:** {self.expedition.get('duration_hours', 4)} hours\n"
-                  f"**Difficulty:** {self.expedition.get('difficulty', 100)}\n"
-                  f"**Expected Encounters:** ~{self.expedition.get('expected_encounters', 5)}",
+            value=details_value,
             inline=False
         )
+
+        # Add favored/disfavored affinities if present
+        favored = affinity_pools.get('favored', {})
+        disfavored = affinity_pools.get('disfavored', {})
+        if favored or disfavored:
+            affinity_text = ''
+            if favored:
+                affinity_text += f"🟢 **Favored Affinities:**\n{format_affinities(favored)}\n"
+            if disfavored:
+                affinity_text += f"🔴 **Disfavored Affinities:**\n{format_affinities(disfavored)}"
+            embed.add_field(
+                name="✨ Expedition Affinities",
+                value=affinity_text.strip(),
+                inline=False
+            )
         
         # Add search tip
         if not self.search_filter and len(self.user_waifus) > 25:
@@ -1913,9 +2032,11 @@ class ExpeditionsCog(BaseCommand):
                 for i, expedition in enumerate(expeditions[:MAX_EXPEDITION_SLOTS]):
                     duration = expedition.get('duration_hours', 4)
                     difficulty = expedition.get('difficulty', 100)  # Use original difficulty
+                    dominant_stats = expedition.get('dominant_stats', [])
+                    dom_stats_text = f"\n📊 **Dominant Stats:** {', '.join(dominant_stats)}" if dominant_stats else ""
                     embed.add_field(
                         name=f"🗺️ {expedition['name']}",
-                        value=f"⏱️ {duration}h | ⭐ {difficulty} | (Available after completing current expeditions)",
+                        value=f"⏱️ {duration}h | ⭐ {difficulty}{dom_stats_text} | (Available after completing current expeditions)",
                         inline=False
                     )
                 
@@ -2173,7 +2294,7 @@ class ExpeditionsCog(BaseCommand):
             await interaction.followup.send(embed=embed, ephemeral=True)
     
     async def _create_detailed_expedition_embed(self, expedition: Dict) -> discord.Embed:
-        """Create a comprehensive detailed view of an expedition."""
+        """Create a comprehensive detailed view of an expedition, including dominant stats."""
         name = expedition.get('name', 'Unknown Expedition')
         expedition_id = expedition.get('expedition_id', 'unknown')
         duration = expedition.get('duration_hours', 4)
@@ -2184,13 +2305,14 @@ class ExpeditionsCog(BaseCommand):
         disfavored = expedition.get('num_disfavored_affinities', 0)
         encounter_tags = expedition.get('encounter_pool_tags', [])
         affinity_pools = expedition.get('affinity_pools', {})
-        # Create main embed
+        dominant_stats = expedition.get('dominant_stats', [])
+
         embed = discord.Embed(
             title=f"🗺️ {name}",
-            description=f"**Expedition ID:** `{expedition_id}`\n\n"
-                       f"Complete details for this expedition:",
+            description=f"**Expedition ID:** `{expedition_id}`\n\nComplete details for this expedition:",
             color=0x3498DB
         )
+
         # Basic Information
         duration_text = f"{duration} hours"
         if duration < 1:
@@ -2201,18 +2323,27 @@ class ExpeditionsCog(BaseCommand):
                 minutes = int(duration * 60)
                 duration_text = f"{minutes} minutes"
         difficulty_emoji = "⭐" * min(difficulty_tier, 5)
+
+        # Add dominant_stats if present
+        dom_stats_text = ""
+        if dominant_stats:
+            dom_stats_text = f"\n📊 **Dominant Stats:** {', '.join(dominant_stats)}"
+
         # Add per-encounter affinity info to basic info
         per_encounter_affinity = ""
         if favored > 0 or disfavored > 0:
             per_encounter_affinity = f"\n🔮 **Per Encounter:** {favored} favored, {disfavored} disfavored affinities"
+
         embed.add_field(
             name="📊 Basic Information",
             value=f"⏱️ **Duration:** {duration_text}\n"
                   f"{difficulty_emoji} **Difficulty:** {difficulty}\n"
                   f"⚔️ **Expected Encounters:** ~{encounters} battles"
+                  f"{dom_stats_text}"
                   f"{per_encounter_affinity}",
             inline=False
         )
+
         # Comprehensive Affinity Effects
         if favored > 0 or disfavored > 0:
             affinity_text = []
@@ -2261,6 +2392,7 @@ class ExpeditionsCog(BaseCommand):
                 value="🎯 **No Affinity Effects** - All characters perform equally on this expedition",
                 inline=False
             )
+
         # Encounter Information
         if encounter_tags:
             embed.add_field(

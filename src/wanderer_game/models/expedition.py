@@ -70,12 +70,13 @@ class ExpeditionTemplate:
     favored_pool: AffinityPool
     disfavored_pool: AffinityPool
     encounter_pool_tags: List[str]
+    dominant_stats: List[str] = field(default_factory=list)
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'ExpeditionTemplate':
         """Create ExpeditionTemplate from dictionary (JSON data)"""
         affinity_pools = data.get('affinity_pools', {})
-        
+        dominant_stats = data.get('dominant_stats', [])
         return cls(
             expedition_id=data['expedition_id'],
             name=data['name'],
@@ -85,7 +86,8 @@ class ExpeditionTemplate:
             num_disfavored_affinities=data['num_disfavored_affinities'],
             favored_pool=AffinityPool.from_dict(affinity_pools.get('favored', {})),
             disfavored_pool=AffinityPool.from_dict(affinity_pools.get('disfavored', {})),
-            encounter_pool_tags=data['encounter_pool_tags']
+            encounter_pool_tags=data['encounter_pool_tags'],
+            dominant_stats=dominant_stats
         )
     
     def generate_expedition(self, team_series_ids: Optional[List[int]] = None) -> 'Expedition':
@@ -113,7 +115,8 @@ class ExpeditionTemplate:
             favored_affinities=favored_affinities,
             disfavored_affinities=disfavored_affinities,
             encounter_pool_tags=dynamic_tags,
-            encounter_count=encounter_count
+            encounter_count=encounter_count,
+            dominant_stats=self.dominant_stats.copy() if self.dominant_stats else []
         )
         # Attach expected_encounters for downstream display/logic
         setattr(expedition, 'expected_encounters', encounter_count)
@@ -133,6 +136,7 @@ class Expedition:
     disfavored_affinities: List[Affinity]
     encounter_pool_tags: List[str]
     encounter_count: int
+    dominant_stats: List[str] = field(default_factory=list)
     
     # Dynamic modifiers that can be applied during expedition
     dynamic_favored_affinities: List[Affinity] = field(default_factory=list)
