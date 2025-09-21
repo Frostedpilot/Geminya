@@ -220,7 +220,7 @@ class ExpeditionService:
             
         return characters
 
-    async def start_expedition(self, discord_id: str, expedition_id: str, participant_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def start_expedition(self, discord_id: str, expedition_id: str, participant_data: List[Dict[str, Any]], equipped_equipment_id: Optional[int] = None) -> Dict[str, Any]:
         """Start a new expedition with the given participants - simplified lifecycle"""
         self.logger.info(f"[EXPEDITION_START] User {discord_id} attempting to start expedition {expedition_id} with {len(participant_data)} participants")
         
@@ -336,10 +336,12 @@ class ExpeditionService:
             
             # Create expedition in database
             self.logger.info(f"[EXPEDITION_START] Creating expedition in database for user {discord_id}")
+            # Pass equipped_equipment_id to DB if provided
             expedition_db_id = await self.db.create_expedition(
-                discord_id, 
-                expedition_data, 
-                db_participants
+                discord_id,
+                expedition_data,
+                db_participants,
+                equipped_equipment_id=equipped_equipment_id
             )
             
             if expedition_db_id:
@@ -603,14 +605,49 @@ class ExpeditionService:
                 character = character_registry.get_character(participant["waifu_id"])
                 if not character:
                     return {"success": False, "error": f"Character data not found for waifu_id {participant['waifu_id']}"}
-                
                 # Apply star level used in expedition
                 character.star_level = participant["star_level_used"]
                 team_characters.append(character)
-            
             team = Team(team_characters)
-            
-            # Step 3: Create ActiveExpedition object for resolution
+
+            # Step 3: Fetch equipped equipment and sub slots, parse EncounterModifier effects
+            equipped_equipment_id = expedition.get('equipped_equipment_id')
+            equipment_obj = None
+            if equipped_equipment_id:
+                equipment_row = await self.db.get_equipment_by_id(equipped_equipment_id)
+                if equipment_row:
+                    from src.wanderer_game.models.equipment import Equipment, EquipmentSubSlot
+                    from src.wanderer_game.models.encounter import EncounterModifier
+                    import json
+                    # Parse main_effect as EncounterModifier
+                    main_effect_data = json.loads(equipment_row['main_effect']) if isinstance(equipment_row['main_effect'], str) else equipment_row['main_effect']
+                    main_effect = EncounterModifier.from_dict(main_effect_data) if main_effect_data else None
+                    # Fetch sub slots
+                    sub_slots_rows = await self.db.get_equipment_sub_slots(equipped_equipment_id)
+                    sub_slots = []
+                    for slot_row in sub_slots_rows:
+                        effect_data = json.loads(slot_row['effect']) if slot_row['effect'] else None
+                        effect = EncounterModifier.from_dict(effect_data) if effect_data else None
+                        sub_slots.append(EquipmentSubSlot(
+                            slot_index=slot_row['slot_index'],
+                            effect=effect,
+                            is_unlocked=slot_row['is_unlocked']
+                        ))
+                    equipment_obj = Equipment(
+                        id=equipment_row['id'],
+                        discord_id=equipment_row['discord_id'],
+                        main_effect=main_effect,
+                        unlocked_sub_slots=equipment_row.get('unlocked_sub_slots', 0),
+                        sub_slots=sub_slots,
+                        created_at=str(equipment_row.get('created_at')) if equipment_row.get('created_at') else None,
+                        updated_at=str(equipment_row.get('updated_at')) if equipment_row.get('updated_at') else None
+                    )
+
+            # Step 3.5: Award equipment after each encounter
+            from src.wanderer_game.models.equipment import random_equipment_no_subslots
+            awarded_equipment = []
+
+            # Step 4: Create ActiveExpedition object for resolution
             import time
             current_time = time.time()
             active_expedition = ActiveExpedition(
@@ -619,22 +656,44 @@ class ExpeditionService:
                 start_timestamp=current_time,
                 end_timestamp=current_time  # Immediately complete for resolution
             )
-            
-            # Step 4: Resolve expedition through wanderer game engine
+
+            # Step 5: Resolve expedition through wanderer game engine, passing equipment_obj
             self.logger.info(f"Resolving expedition {expedition_id} with {expedition_instance.encounter_count} encounters")
-            expedition_result = self.expedition_resolver.resolve(active_expedition, team)
-            
+            expedition_result = self.expedition_resolver.resolve(active_expedition, team, equipment_obj)
+
+            # Award equipment after each encounter, enforcing a max of 20 per player
+            user_equipment = await self.db.get_user_equipment(discord_id)
+            max_equipment = 20
+            num_to_award = max(0, max_equipment - len(user_equipment))
+            encounters_to_award = min(num_to_award, len(expedition_result.encounter_results))
+            for _ in range(encounters_to_award):
+                new_equipment = random_equipment_no_subslots(discord_id)
+                if new_equipment.main_effect is None:
+                    self.logger.warning(f"Skipping equipment award: generated equipment has no main_effect (discord_id={discord_id})")
+                    continue
+                import json as _json
+                main_effect_json = _json.dumps({
+                    "type": getattr(new_equipment.main_effect.type, 'value', None),
+                    "affinity": getattr(new_equipment.main_effect, 'affinity', None),
+                    "category": getattr(new_equipment.main_effect, 'category', None),
+                    "value": getattr(new_equipment.main_effect, 'value', None),
+                    "stat": getattr(new_equipment.main_effect, 'stat', None)
+                })
+                equipment_id = await self.db.add_equipment(discord_id, main_effect_json, unlocked_sub_slots=0)
+                new_equipment.id = equipment_id
+                awarded_equipment.append(new_equipment)
+            if encounters_to_award < len(expedition_result.encounter_results):
+                self.logger.info(f"User {discord_id} has reached the equipment cap ({max_equipment}). No more equipment awarded.")
+
             # Step 5: Distribute loot rewards to user
             self.logger.info(f"Expedition result - Loot pool exists: {expedition_result.loot_pool is not None}")
             if expedition_result.loot_pool:
                 self.logger.info(f"Loot pool items count: {len(expedition_result.loot_pool.items) if expedition_result.loot_pool.items else 0}")
                 self.logger.info(f"Loot pool total value: {expedition_result.loot_pool.get_total_value()}")
-                
                 # Log details of each loot item for debugging
                 if expedition_result.loot_pool.items:
                     for i, item in enumerate(expedition_result.loot_pool.items):
                         self.logger.info(f"Loot item {i}: type={item.item_type.value if hasattr(item.item_type, 'value') else item.item_type}, id={item.item_id}, quantity={item.quantity}, rarity={item.rarity.value if hasattr(item.rarity, 'value') else item.rarity}, value={item.value}")
-            
             if expedition_result.loot_pool and expedition_result.loot_pool.items:
                 loot_result = await self.db.distribute_loot_rewards(discord_id, expedition_result.loot_pool.items)
                 self.logger.info(f"Distributed loot - Currency: {loot_result.get('currency_rewards', {})}")
@@ -708,7 +767,23 @@ class ExpeditionService:
                 "loot_items": expedition_result.loot_pool.items if expedition_result.loot_pool else [],
                 "loot_currency": loot_result.get("currency_rewards", {}),
                 "expedition_log": expedition_result.generate_log(),  # Full log for detailed view
-                "completion_time": datetime.now(timezone.utc).isoformat()
+                "completion_time": datetime.now(timezone.utc).isoformat(),
+                "awarded_equipment": [
+                    {
+                        "id": eq.id,
+                        "discord_id": eq.discord_id,
+                        "main_effect": {
+                            "type": eq.main_effect.type.value,
+                            "affinity": eq.main_effect.affinity,
+                            "category": eq.main_effect.category,
+                            "value": eq.main_effect.value,
+                            "stat": eq.main_effect.stat
+                        },
+                        "created_at": eq.created_at,
+                        "updated_at": eq.updated_at
+                    }
+                    for eq in awarded_equipment
+                ]
             }
             
         except Exception as e:
@@ -778,28 +853,28 @@ class ExpeditionService:
             return []
 
     async def complete_user_expeditions(self, discord_id: str) -> List[Dict[str, Any]]:
-        """Complete all ready expeditions for a user and return results."""
+        """Complete all ready expeditions for a user and return results, including awarded equipment."""
         try:
             # Get user's in-progress expeditions
             expeditions = await self.get_user_expeditions(discord_id, status='in_progress')
             completed_expeditions = []
-            
+
             from datetime import datetime, timedelta
-            
+
             for expedition in expeditions:
                 try:
                     # Check if expedition is ready to complete
                     start_time = expedition.get('started_at')
                     duration_hours = expedition.get('duration_hours', 4)
-                    
+
                     if start_time:
                         # Ensure timezone awareness - database timestamps are UTC
                         if start_time.tzinfo is None:
                             start_time = start_time.replace(tzinfo=timezone.utc)
-                        
+
                         end_time = start_time + timedelta(hours=duration_hours)
                         now = datetime.now(timezone.utc)
-                        
+
                         if now >= end_time:
                             # Complete this expedition
                             result = await self.complete_expedition(expedition['id'], discord_id)
@@ -810,7 +885,10 @@ class ExpeditionService:
                                     'quartzs': result.get('loot_currency', {}).get('quartzs', 0),
                                     'items': result.get('loot_items', [])
                                 }
-                                
+
+                                # Include awarded_equipment in the result if present
+                                awarded_equipment = result.get('awarded_equipment', [])
+
                                 completed_expeditions.append({
                                     **expedition,
                                     'loot': loot_data,
@@ -820,15 +898,16 @@ class ExpeditionService:
                                     'result_summary': result.get('result_summary', {}),
                                     'encounter_results': result.get('encounter_results', []),  # Add encounter results
                                     'loot_result': result.get('loot_result', {}),
-                                    'expedition_name': result.get('expedition_name', expedition.get('expedition_name', 'Unknown Expedition'))
+                                    'expedition_name': result.get('expedition_name', expedition.get('expedition_name', 'Unknown Expedition')),
+                                    'awarded_equipment': awarded_equipment
                                 })
-                
+
                 except Exception as e:
                     self.logger.error(f"Error completing expedition {expedition.get('id')}: {e}")
                     continue
-            
+
             return completed_expeditions
-            
+
         except Exception as e:
             self.logger.error(f"Error completing user expeditions: {e}")
             return []

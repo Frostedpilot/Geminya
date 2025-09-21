@@ -12,6 +12,135 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+    # === EQUIPMENT SYSTEM METHODS ===
+    async def add_equipment(self, discord_id: str, main_effect: str, unlocked_sub_slots: int = 0) -> int:
+        """Add a new equipment for a user."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO equipment (discord_id, main_effect, unlocked_sub_slots)
+                VALUES ($1, $2, $3)
+                RETURNING id
+                """,
+                discord_id, main_effect, unlocked_sub_slots
+            )
+            return row["id"] if row else 0
+
+    async def get_equipment_by_id(self, equipment_id: int) -> Optional[Dict[str, Any]]:
+        """Get equipment by its id."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM equipment WHERE id = $1", equipment_id)
+            return dict(row) if row else None
+
+    async def get_user_equipment(self, discord_id: str) -> List[Dict[str, Any]]:
+        """Get all equipment for a user."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM equipment WHERE discord_id = $1 ORDER BY created_at DESC", discord_id)
+            return [dict(row) for row in rows]
+
+    async def update_equipment(self, equipment_id: int, main_effect: Optional[str] = None, unlocked_sub_slots: Optional[int] = None) -> bool:
+        """Update equipment fields."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        set_clauses = []
+        values = []
+        if main_effect is not None:
+            set_clauses.append("main_effect = $%d" % (len(values)+1))
+            values.append(main_effect)
+        if unlocked_sub_slots is not None:
+            set_clauses.append("unlocked_sub_slots = $%d" % (len(values)+1))
+            values.append(unlocked_sub_slots)
+        if not set_clauses:
+            return False
+        values.append(equipment_id)
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                f"""
+                UPDATE equipment SET {', '.join(set_clauses)}, updated_at = CURRENT_TIMESTAMP WHERE id = ${len(values)}
+                """,
+                *values
+            )
+            return result.startswith("UPDATE")
+
+    async def delete_equipment(self, equipment_id: int) -> bool:
+        """Delete equipment by id."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute("DELETE FROM equipment WHERE id = $1", equipment_id)
+            return result.endswith('1')
+
+    async def add_equipment_sub_slot(self, equipment_id: int, slot_index: int, effect: Optional[str] = None, is_unlocked: bool = False) -> int:
+        """Add a sub slot to equipment."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO equipment_sub_slots (equipment_id, slot_index, effect, is_unlocked)
+                VALUES ($1, $2, $3, $4)
+                RETURNING id
+                """,
+                equipment_id, slot_index, effect, is_unlocked
+            )
+            return row["id"] if row else 0
+
+    async def get_equipment_sub_slots(self, equipment_id: int) -> List[Dict[str, Any]]:
+        """Get all sub slots for a given equipment."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM equipment_sub_slots WHERE equipment_id = $1 ORDER BY slot_index ASC", equipment_id)
+            return [dict(row) for row in rows]
+
+    async def update_equipment_sub_slot(self, sub_slot_id: int, effect: Optional[str] = None, is_unlocked: Optional[bool] = None) -> bool:
+        """Update a sub slot's effect or unlock status."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        set_clauses = []
+        values = []
+        if effect is not None:
+            set_clauses.append("effect = $%d" % (len(values)+1))
+            values.append(effect)
+        if is_unlocked is not None:
+            set_clauses.append("is_unlocked = $%d" % (len(values)+1))
+            values.append(is_unlocked)
+        if not set_clauses:
+            return False
+        values.append(sub_slot_id)
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                f"""
+                UPDATE equipment_sub_slots SET {', '.join(set_clauses)} WHERE id = ${len(values)}
+                """,
+                *values
+            )
+            return result.startswith("UPDATE")
+
+    async def delete_equipment_sub_slot(self, sub_slot_id: int) -> bool:
+        """Delete a sub slot by id."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute("DELETE FROM equipment_sub_slots WHERE id = $1", sub_slot_id)
+            return result.endswith('1')
+
+    async def equip_equipment_for_expedition(self, expedition_id: int, equipment_id: Optional[int]) -> bool:
+        """Set the equipped equipment for a user expedition (can be None to unequip)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE user_expeditions SET equipped_equipment_id = $1 WHERE id = $2",
+                equipment_id, expedition_id
+            )
+            return result.startswith("UPDATE")
 
     async def get_series_genres(self, series_id: int) -> list:
         """Fetch and parse genres for a given series_id from the series table. Genres are pipe-separated (e.g., 'Comedy|Romance')."""
@@ -526,6 +655,34 @@ class DatabaseService:
 
 
     async def _create_tables_postgres(self, conn):
+        # Equipment system tables
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS equipment (
+                id SERIAL PRIMARY KEY,
+                discord_id VARCHAR(100) NOT NULL REFERENCES users(discord_id) ON DELETE CASCADE,
+                main_effect TEXT NOT NULL,
+                unlocked_sub_slots INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_equipment_discord_id ON equipment(discord_id);
+            """
+        )
+
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS equipment_sub_slots (
+                id SERIAL PRIMARY KEY,
+                equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+                slot_index INTEGER NOT NULL CHECK (slot_index >= 1 AND slot_index <= 5),
+                effect TEXT,
+                is_unlocked BOOLEAN DEFAULT FALSE
+            );
+            CREATE INDEX IF NOT EXISTS idx_equipment_id ON equipment_sub_slots(equipment_id);
+            """
+        )
+
         """Create all required tables for PostgreSQL."""
         # Users table
         await conn.execute(
@@ -810,7 +967,8 @@ class DatabaseService:
                 rewards_claimed BOOLEAN DEFAULT FALSE,
                 expedition_data TEXT NOT NULL DEFAULT '{}',
                 final_results TEXT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                equipped_equipment_id INTEGER REFERENCES equipment(id)
             );
             CREATE INDEX IF NOT EXISTS idx_user_expeditions_user_id ON user_expeditions(user_id);
             CREATE INDEX IF NOT EXISTS idx_user_expeditions_status ON user_expeditions(status);
@@ -1420,7 +1578,7 @@ class DatabaseService:
 
     # === EXPEDITION SYSTEM METHODS ===
     
-    async def create_expedition(self, discord_id: str, expedition_data: Dict[str, Any], participants: List[Dict[str, Any]]) -> int:
+    async def create_expedition(self, discord_id: str, expedition_data: Dict[str, Any], participants: List[Dict[str, Any]], equipped_equipment_id: Optional[int] = None) -> int:
         """Create a new expedition for a user with participants."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
@@ -1438,22 +1596,41 @@ class DatabaseService:
                 
                 # Create expedition
                 self.logger.debug(f"[DB_EXPEDITION_CREATE] Creating expedition record for user_id {user_id}")
-                expedition_row = await conn.fetchrow(
-                    """
-                    INSERT INTO user_expeditions (
-                        user_id, expedition_name, location, difficulty, 
-                        duration_hours, expedition_data, status
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    RETURNING id
-                    """,
-                    user_id,
-                    expedition_data["name"],
-                    expedition_data["location"],
-                    expedition_data["difficulty"],
-                    expedition_data["duration_hours"],
-                    json.dumps(expedition_data),
-                    "in_progress"
-                )
+                if equipped_equipment_id is not None:
+                    expedition_row = await conn.fetchrow(
+                        """
+                        INSERT INTO user_expeditions (
+                            user_id, expedition_name, location, difficulty, 
+                            duration_hours, expedition_data, status, equipped_equipment_id
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        RETURNING id
+                        """,
+                        user_id,
+                        expedition_data["name"],
+                        expedition_data["location"],
+                        expedition_data["difficulty"],
+                        expedition_data["duration_hours"],
+                        json.dumps(expedition_data),
+                        "in_progress",
+                        equipped_equipment_id
+                    )
+                else:
+                    expedition_row = await conn.fetchrow(
+                        """
+                        INSERT INTO user_expeditions (
+                            user_id, expedition_name, location, difficulty, 
+                            duration_hours, expedition_data, status
+                        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        RETURNING id
+                        """,
+                        user_id,
+                        expedition_data["name"],
+                        expedition_data["location"],
+                        expedition_data["difficulty"],
+                        expedition_data["duration_hours"],
+                        json.dumps(expedition_data),
+                        "in_progress"
+                    )
                 
                 expedition_id = expedition_row["id"]
                 self.logger.info(f"[DB_EXPEDITION_CREATE] Created expedition {expedition_id} for user {discord_id}")

@@ -2,6 +2,7 @@ MAX_EXPEDITION_SLOTS = 5  # Should match ExpeditionManager default
 """Expedition system Discord commands with comprehensive UI."""
 
 import discord
+from src.wanderer_game.utils.equipment_utils import format_equipment_compact, format_equipment_full
 from discord.ext import commands
 from discord import app_commands
 from typing import List, Dict
@@ -440,9 +441,10 @@ class ExpeditionSelectView(discord.ui.View):
                     )
                 return
             
-            # Create character selection view
+            # Fetch equipment asynchronously before creating the view
+            equipment_list = await self.expedition_service.db.get_user_equipment(discord_id)
             character_view = CharacterSelectView(
-                user_waifus, self.user_id, self.expedition_service, self.selected_expedition
+                user_waifus, self.user_id, self.expedition_service, self.selected_expedition, equipment_list
             )
             
             embed = await self._create_expedition_details_embed(self.selected_expedition)
@@ -539,7 +541,7 @@ class CharacterSelectView(discord.ui.View):
     _series_name_to_id_cache = None
     """View for selecting characters for expeditions with search and pagination."""
     
-    def __init__(self, user_waifus: List[Dict], user_id: int, expedition_service, expedition: Dict):
+    def __init__(self, user_waifus: List[Dict], user_id: int, expedition_service, expedition: Dict, equipment_list: list):
         super().__init__(timeout=300.0)
         self.user_waifus = user_waifus
         self.user_id = user_id
@@ -549,11 +551,11 @@ class CharacterSelectView(discord.ui.View):
         self.search_filter = ""
         self.current_page = 0
         self.items_per_page = 25  # Discord select menu limit
-        # Sorting mode: 'raw_power' or 'affinity_count'. Default is 'raw_power'.
         self.sorting_mode = 'raw_power'  # or 'affinity_count'
-        # Get character registry for names
         self.char_registry = expedition_service.data_manager.get_character_registry()
-        # Filter and setup UI
+        # Equipment selection state
+        self.equipment_list = equipment_list or []
+        self.selected_equipment_id = None
         self._setup_ui()
     
     def _get_filtered_waifus(self) -> List[Dict]:
@@ -707,6 +709,36 @@ class CharacterSelectView(discord.ui.View):
         search_button.callback = self.open_search_modal
         self.add_item(search_button)
 
+        # Equipment select menu (if any equipment exists)
+        equipment_options = []
+        if self.equipment_list:
+            for eq in self.equipment_list:
+                label = format_equipment_compact(eq)
+                value = str(eq['id'])
+                emoji = "🛡️"
+                equipment_options.append(discord.SelectOption(
+                    label=label,
+                    value=value,
+                    emoji=emoji,
+                    default=(self.selected_equipment_id is not None and str(self.selected_equipment_id) == value)
+                ))
+            # Add a "No Equipment" option
+            equipment_options.insert(0, discord.SelectOption(
+                label="No Equipment",
+                description="Go without equipment for this expedition",
+                value="none",
+                emoji="❌",
+                default=(self.selected_equipment_id is None)
+            ))
+            self.equipment_select = discord.ui.Select(
+                placeholder="Choose equipment (optional)...",
+                options=equipment_options,
+                custom_id="equipment_select",
+                max_values=1
+            )
+            self.equipment_select.callback = self.equipment_selected
+            self.add_item(self.equipment_select)
+
         # Get filtered waifus
         filtered_waifus = self._get_filtered_waifus()
 
@@ -850,6 +882,19 @@ class CharacterSelectView(discord.ui.View):
             )
             self.start_button.callback = self.start_expedition
             self.add_item(self.start_button)
+    async def equipment_selected(self, interaction: discord.Interaction):
+        """Handle equipment selection."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the command user can select equipment.", ephemeral=True)
+            return
+        selected = self.equipment_select.values[0] if self.equipment_select.values else "none"
+        if selected == "none":
+            self.selected_equipment_id = None
+        else:
+            self.selected_equipment_id = int(selected)
+        self._setup_ui()
+        embed = await self._create_character_selection_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
 
     async def toggle_sorting_mode(self, interaction: discord.Interaction):
         """Toggle between sorting modes and refresh UI."""
@@ -1067,24 +1112,23 @@ class CharacterSelectView(discord.ui.View):
         return filtered_waifus[start_idx:end_idx]
     
     async def start_expedition(self, interaction: discord.Interaction):
-        """Start the expedition with selected characters."""
+        """Start the expedition with selected characters and equipment."""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ Only the command user can start expeditions.", ephemeral=True)
             return
-        
+
         if not self.selected_characters:
             await interaction.response.send_message("❌ Please select at least one character.", ephemeral=True)
             return
-        
+
         await interaction.response.defer()
-        
+
         try:
             discord_id = str(interaction.user.id)
-            
+
             # Convert selected character IDs to the format expected by expedition service
             participant_data = []
             for char_id in self.selected_characters:
-                # Find the character data from user_waifus
                 waifu = next((w for w in self.user_waifus if w['user_waifu_id'] == char_id), None)
                 if waifu:
                     participant_data.append({
@@ -1093,21 +1137,23 @@ class CharacterSelectView(discord.ui.View):
                         "current_star_level": waifu.get('current_star_level', 1),
                         "bond_level": waifu.get('bond_level', 1)
                     })
-            
+
             if not participant_data:
                 await interaction.response.send_message("❌ Failed to prepare character data for expedition.", ephemeral=True)
                 return
-            
+
+            # Pass selected_equipment_id to backend (None if not selected)
             expedition_id = await self.expedition_service.start_expedition(
-                discord_id, 
-                self.expedition['expedition_id'], 
-                participant_data
+                discord_id,
+                self.expedition['expedition_id'],
+                participant_data,
+                self.selected_equipment_id
             )
-            
+
             # Check if expedition starting failed
             if not expedition_id.get('success', False):
                 error_msg = expedition_id.get('error', 'Unknown error occurred')
-                
+
                 # Handle expedition limit specifically
                 if f"{MAX_EXPEDITION_SLOTS} ongoing expeditions" in error_msg or "3 ongoing expeditions" in error_msg:
                     embed = discord.Embed(
@@ -1128,10 +1174,10 @@ class CharacterSelectView(discord.ui.View):
                         description=f"Error: {error_msg}",
                         color=0xFF0000
                     )
-                
+
                 await interaction.followup.send(embed=embed)
                 return
-            
+
             # Create success embed
             actual_expedition_id = expedition_id.get('expedition_id')
             embed = discord.Embed(
@@ -1139,14 +1185,14 @@ class CharacterSelectView(discord.ui.View):
                 description=f"Your expedition **{self.expedition['name']}** has begun!",
                 color=0x00FF00
             )
-            
+
             # Get the actual expedition record to use the real started_at timestamp
             try:
                 created_expedition = await self.expedition_service.db.get_expedition_with_participants(actual_expedition_id)
                 if created_expedition:
                     actual_start_time = created_expedition.get('started_at')
                     duration_hours = self.expedition.get('duration_hours', 4)
-                    
+
                     if actual_start_time:
                         # Ensure the timestamp is timezone-aware (UTC)
                         if actual_start_time.tzinfo is None:
@@ -1163,7 +1209,7 @@ class CharacterSelectView(discord.ui.View):
                 # Fallback to current time on any error
                 duration_hours = self.expedition.get('duration_hours', 4)
                 completion_time = datetime.now(timezone.utc) + timedelta(hours=duration_hours)
-            
+
             embed.add_field(
                 name="⏱️ Duration",
                 value=f"{duration_hours} hours",
@@ -1179,7 +1225,7 @@ class CharacterSelectView(discord.ui.View):
                 value=f"`{actual_expedition_id}`",
                 inline=True
             )
-            
+
             # Add selected characters info
             character_names = []
             for char_id in self.selected_characters:
@@ -1189,22 +1235,41 @@ class CharacterSelectView(discord.ui.View):
                     if character:
                         star_level = waifu.get('current_star_level', 1)
                         character_names.append(f"⭐{star_level} {character.name}")
-            
+
             if character_names:
                 embed.add_field(
                     name="👥 Expedition Team",
                     value="\n".join(character_names),
                     inline=False
                 )
-            
+
+            # Add selected equipment info
+            if self.equipment_list:
+                if self.selected_equipment_id is None:
+                    embed.add_field(
+                        name="🛡️ Equipment",
+                        value="No equipment selected",
+                        inline=False
+                    )
+                else:
+                    eq = next((e for e in self.equipment_list if e['id'] == self.selected_equipment_id), None)
+                    if eq:
+                        from src.wanderer_game.utils.equipment_utils import format_equipment_full
+                        eq_str = format_equipment_full(eq)
+                        embed.add_field(
+                            name="🛡️ Equipment",
+                            value=eq_str,
+                            inline=False
+                        )
+
             embed.add_field(
                 name="💡 Tip",
                 value="Use `/nwnl_expeditions status` to check your expedition progress!",
                 inline=False
             )
-            
+
             await interaction.followup.send(embed=embed)
-            
+
         except Exception as e:
             embed = discord.Embed(
                 title="❌ Expedition Failed to Start",
@@ -1230,21 +1295,30 @@ class CharacterSelectView(discord.ui.View):
         total_pages = (len(filtered_waifus) + self.items_per_page - 1) // self.items_per_page if filtered_waifus else 1
         
         title = f"👥 Select Team for: {self.expedition['name']}"
+
         description = f"Choose up to 3 characters for this expedition:\n\n"
-        
         # Add filter info
         if self.search_filter:
             description += f"🔍 **Filter:** '{self.search_filter}' | **Found:** {len(filtered_waifus)} characters\n"
         else:
             description += f"**Available Characters:** {len(self.user_waifus)}\n"
-        
         # Add note about excluded characters
         description += f"💡 *Characters already on expeditions are automatically excluded*\n"
-        
         # Add pagination info
         if total_pages > 1:
             description += f"📄 **Page:** {self.current_page + 1}/{total_pages}\n"
-        
+
+        # Equipment selection summary
+        if self.equipment_list:
+            if self.selected_equipment_id is None:
+                description += "\n🛡️ **Equipment:** _No equipment selected (optional)_"
+            else:
+                eq = next((e for e in self.equipment_list if e['id'] == self.selected_equipment_id), None)
+                if eq:
+                    description += f"\n🛡️ **Equipment:** {format_equipment_full(eq)}"
+                else:
+                    description += "\n🛡️ **Equipment:** _Unknown equipment_"
+
         embed = discord.Embed(
             title=title,
             description=description,
@@ -1965,6 +2039,16 @@ class ExpeditionResultsView(discord.ui.View):
                 inline=False
             )
         
+        # Show awarded equipment (full details)
+        awarded_equipment = expedition.get('awarded_equipment', [])
+        if awarded_equipment:
+            eq_text = "\n\n".join(format_equipment_full(eq) for eq in awarded_equipment)
+            embed.add_field(
+                name=f"🆕 Awarded Equipment ({len(awarded_equipment)})",
+                value=eq_text,
+                inline=False
+            )
+
         # Total value
         loot_result = expedition.get('loot_result', {})
         total_value = loot_result.get('total_value', 0)

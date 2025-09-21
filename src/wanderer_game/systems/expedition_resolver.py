@@ -109,14 +109,14 @@ class ExpeditionResolver:
                     self.encounters_by_tag[tag] = []
                 self.encounters_by_tag[tag].append(encounter)
     
-    def resolve(self, active_expedition: ActiveExpedition, team: Team) -> ExpeditionResult:
+    def resolve(self, active_expedition: ActiveExpedition, team: Team, equipment=None) -> ExpeditionResult:
         """
         Resolve a complete expedition
         
         Args:
             active_expedition: The expedition to resolve
             team: The team that was dispatched
-            
+            equipment: Equipment object (with main_effect and sub_slots)
         Returns:
             Complete expedition result with log and loot
         """
@@ -126,7 +126,22 @@ class ExpeditionResolver:
             expedition_name=expedition.name,
             team_character_ids=active_expedition.team_character_ids
         )
-        
+
+        # === EQUIPMENT EFFECTS: Apply all EncounterModifier effects from equipment (main and sub slots) ===
+        if equipment:
+            # Apply main_effect if present
+            if getattr(equipment, 'main_effect', None):
+                self._apply_modifier(equipment.main_effect, expedition)
+            # Apply all sub slot effects if present
+            sub_slots = getattr(equipment, 'sub_slots', None)
+            if sub_slots:
+                # Ensure sub_slots is iterable (list/tuple), handle single object gracefully
+                if not isinstance(sub_slots, (list, tuple)):
+                    sub_slots = [sub_slots]
+                for sub in sub_slots:
+                    if getattr(sub, 'effect', None):
+                        self._apply_modifier(sub.effect, expedition)
+
         # Use fixed distribution for encounters: 6-2-1-1 (standard, gated, boon, hazard)
         encounter_count = getattr(expedition, 'encounter_count', 10)
         encounters = self._select_encounters_by_type_distribution(
@@ -136,7 +151,7 @@ class ExpeditionResolver:
             encounter_result = self._resolve_encounter(encounter, expedition, team)
             result.add_encounter_result(encounter_result)
             self._apply_encounter_effects(encounter_result, expedition, result.loot_pool, team)
-        
+
         # Calculate final multiplier and apply to loot, always using expedition.difficulty
         self._apply_final_multiplier(result, team, expedition.difficulty)
         return result
