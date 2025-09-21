@@ -1,3 +1,4 @@
+from config.constants import MAX_EQUIPMENT_PER_USER
 """Database service for Waifu Academy system with PostgreSQL support only."""
 
 import asyncpg
@@ -12,11 +13,47 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
-    # === EQUIPMENT SYSTEM METHODS ===
-    async def add_equipment(self, discord_id: str, main_effect: str, unlocked_sub_slots: int = 0) -> int:
-        """Add a new equipment for a user."""
+    async def delete_all_equipment_sub_slots(self, equipment_id: int) -> int:
+        """Delete all sub slots for a given equipment."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute("DELETE FROM equipment_sub_slots WHERE equipment_id = $1", equipment_id)
+            # Returns number of deleted rows as integer
+            try:
+                return int(result.split()[-1])
+            except Exception:
+                return 0
+
+    async def unlock_subslot_by_consuming_equipment(self, target_equipment_id: int, consumed_equipment_id: int) -> bool:
+        """Unlock a new subslot on target equipment by consuming another equipment (atomic)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            # Start a transaction
+            async with conn.transaction():
+                # Get current unlocked_sub_slots
+                row = await conn.fetchrow("SELECT unlocked_sub_slots FROM equipment WHERE id = $1 FOR UPDATE", target_equipment_id)
+                if not row:
+                    return False
+                unlocked = row["unlocked_sub_slots"]
+                if unlocked >= 5:
+                    return False  # Already at max
+                # Increment unlocked_sub_slots
+                await conn.execute("UPDATE equipment SET unlocked_sub_slots = unlocked_sub_slots + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1", target_equipment_id)
+                # Delete the consumed equipment
+                await conn.execute("DELETE FROM equipment WHERE id = $1", consumed_equipment_id)
+                # Optionally: transfer effect/subslot here if needed
+                return True
+    # === EQUIPMENT SYSTEM METHODS ===
+    async def add_equipment(self, discord_id: str, main_effect: str, unlocked_sub_slots: int = 0) -> int:
+        """Add a new equipment for a user, enforcing the global cap."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        # Enforce equipment cap per user
+        user_equipment = await self.get_user_equipment(discord_id)
+        if len(user_equipment) >= MAX_EQUIPMENT_PER_USER:
+            return -1  # Cap reached
         async with self.connection_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
@@ -29,20 +66,32 @@ class DatabaseService:
             return row["id"] if row else 0
 
     async def get_equipment_by_id(self, equipment_id: int) -> Optional[Dict[str, Any]]:
-        """Get equipment by its id."""
+        """Get equipment by its id, including sub slots."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         async with self.connection_pool.acquire() as conn:
             row = await conn.fetchrow("SELECT * FROM equipment WHERE id = $1", equipment_id)
-            return dict(row) if row else None
+            if not row:
+                return None
+            equipment_dict = dict(row)
+            # Fetch sub slots
+            sub_slots = await conn.fetch("SELECT * FROM equipment_sub_slots WHERE equipment_id = $1 ORDER BY slot_index ASC", equipment_id)
+            equipment_dict["sub_slots"] = [dict(sub) for sub in sub_slots]
+            return equipment_dict
 
     async def get_user_equipment(self, discord_id: str) -> List[Dict[str, Any]]:
-        """Get all equipment for a user."""
+        """Get all equipment for a user, including sub slots for each equipment."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         async with self.connection_pool.acquire() as conn:
             rows = await conn.fetch("SELECT * FROM equipment WHERE discord_id = $1 ORDER BY created_at DESC", discord_id)
-            return [dict(row) for row in rows]
+            equipment_list = []
+            for row in rows:
+                equipment_dict = dict(row)
+                sub_slots = await conn.fetch("SELECT * FROM equipment_sub_slots WHERE equipment_id = $1 ORDER BY slot_index ASC", row["id"])
+                equipment_dict["sub_slots"] = [dict(sub) for sub in sub_slots]
+                equipment_list.append(equipment_dict)
+            return equipment_list
 
     async def update_equipment(self, equipment_id: int, main_effect: Optional[str] = None, unlocked_sub_slots: Optional[int] = None) -> bool:
         """Update equipment fields."""

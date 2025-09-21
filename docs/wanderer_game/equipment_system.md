@@ -129,10 +129,6 @@ Only the following effects are allowed for equipment:
    - Increases the quality or quantity of loot gained from expeditions.
    - Only available in the main slot.
 
-- **final_roll_bonus** (Main Slot):
-   - Provides a bonus to the final outcome roll of an expedition.
-   - Only available in the main slot.
-
 - **encounter_count_add** (Main Slot):
    - Adds extra encounters to the expedition, increasing potential rewards and risk.
    - Only available in the main slot.

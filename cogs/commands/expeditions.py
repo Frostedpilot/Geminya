@@ -1,3 +1,185 @@
+# --- Equipment Inventory UI ---
+import discord
+from config.constants import MAX_EQUIPMENT_PER_USER
+from src.wanderer_game.utils.equipment_utils import format_equipment_full
+
+class EquipmentInventoryView(discord.ui.View):
+    class ReturnButton(discord.ui.Button):
+        def __init__(self, parent, label="⬅️ Return"):
+            super().__init__(label=label, style=discord.ButtonStyle.secondary)
+            self.parent = parent
+
+        async def callback(self, interaction):
+            # Always return to main inventory list
+            self.parent.state = "select"
+            self.parent.clear_items()
+            self.parent.add_item(self.parent.EquipmentSelect(self.parent))
+            embed = await self.parent.create_initial_embed()
+            await interaction.response.edit_message(embed=embed, view=self.parent)
+    def __init__(self, equipment_list, expedition_service, discord_id):
+        super().__init__(timeout=180)
+        self.equipment_list = equipment_list
+        self.expedition_service = expedition_service
+        self.discord_id = discord_id
+        self.selected_equipment_id = None
+        self.state = "select"  # or "detail" or "add_subslot"
+        self.add_item(self.EquipmentSelect(self))
+
+    async def create_initial_embed(self):
+        count = len(self.equipment_list)
+        embed = discord.Embed(title="🧰 Equipment Inventory", color=0x3498DB)
+        embed.description = f"You have **{count} / {MAX_EQUIPMENT_PER_USER}** equipment."
+        return embed
+
+    async def show_equipment_detail(self, interaction, equipment_id):
+        self.selected_equipment_id = equipment_id
+        self.state = "detail"
+        eq = next((e for e in self.equipment_list if e['id'] == equipment_id), None)
+        if eq is None:
+            embed = discord.Embed(title=f"🔎 Equipment Detail (ID: {equipment_id})", color=0x9B59B6)
+            embed.description = "Equipment not found."
+            self.clear_items()
+            self.add_item(self.ReturnButton(self))
+            await interaction.response.edit_message(embed=embed, view=self)
+            return
+        embed = discord.Embed(title=f"🔎 Equipment Detail (ID: {equipment_id})", color=0x9B59B6)
+        embed.description = format_equipment_full(eq)
+        self.clear_items()
+        self.add_item(self.RemoveButton(self))
+        self.add_item(self.RemoveAllSubslotsButton(self))
+        if eq['unlocked_sub_slots'] < 5 and len(self.equipment_list) > 1:
+            self.add_item(self.AddSubslotButton(self))
+        self.add_item(self.ReturnButton(self))
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    async def show_add_subslot(self, interaction):
+        self.state = "add_subslot"
+        from src.wanderer_game.utils.equipment_utils import format_equipment_compact
+        options = [
+            discord.SelectOption(
+                label=(l if len(l := format_equipment_compact(eq)) <= 100 else l[:97] + '...'),
+                value=str(eq['id'])
+            )
+            for eq in self.equipment_list if eq['id'] != self.selected_equipment_id
+        ]
+        embed = discord.Embed(title="➕ Add Subslot: Select Equipment to Consume", color=0xF1C40F)
+        embed.description = "Choose another equipment to consume. It will be destroyed, and a new subslot will be unlocked."
+        self.clear_items()
+        self.add_item(self.ConsumeEquipmentSelect(self, options))
+        self.add_item(self.ReturnButton(self))
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    class EquipmentSelect(discord.ui.Select):
+        def __init__(self, parent):
+            self.parent = parent
+            from src.wanderer_game.utils.equipment_utils import format_equipment_compact
+            options = [
+                discord.SelectOption(
+                    label=(l if len(l := format_equipment_compact(eq)) <= 100 else l[:97] + '...'),
+                    value=str(eq['id'])
+                )
+                for eq in parent.equipment_list
+            ]
+            super().__init__(placeholder="Select equipment...", min_values=1, max_values=1, options=options)
+
+        async def callback(self, interaction):
+            await self.parent.show_equipment_detail(interaction, int(self.values[0]))
+
+    class RemoveButton(discord.ui.Button):
+        def __init__(self, parent):
+            super().__init__(label="🗑️ Remove Equipment", style=discord.ButtonStyle.danger)
+            self.parent = parent
+
+        async def callback(self, interaction):
+            # Show confirmation dialog
+            self.parent.state = "confirm_remove"
+            embed = discord.Embed(title="⚠️ Confirm Remove Equipment", description="Are you sure you want to remove this equipment? This cannot be undone.", color=0xE74C3C)
+            self.parent.clear_items()
+            self.parent.add_item(self.parent.ConfirmRemoveButton(self.parent))
+            self.parent.add_item(self.parent.CancelButton(self.parent, return_to="detail"))
+            await interaction.response.edit_message(embed=embed, view=self.parent)
+
+    class ConfirmRemoveButton(discord.ui.Button):
+        def __init__(self, parent):
+            super().__init__(label="✅ Yes, Remove", style=discord.ButtonStyle.danger)
+            self.parent = parent
+
+        async def callback(self, interaction):
+            await self.parent.expedition_service.db.delete_equipment(self.parent.selected_equipment_id)
+            self.parent.equipment_list = [e for e in self.parent.equipment_list if e['id'] != self.parent.selected_equipment_id]
+            if not self.parent.equipment_list:
+                await interaction.response.edit_message(embed=discord.Embed(title="Inventory Empty", description="You have no equipment left.", color=0xFF0000), view=None)
+                return
+            self.parent.state = "select"
+            self.parent.clear_items()
+            self.parent.add_item(self.parent.EquipmentSelect(self.parent))
+            embed = await self.parent.create_initial_embed()
+            await interaction.response.edit_message(embed=embed, view=self.parent)
+
+    class CancelButton(discord.ui.Button):
+        def __init__(self, parent, return_to="select"):
+            super().__init__(label="❌ Cancel", style=discord.ButtonStyle.secondary)
+            self.parent = parent
+            self.return_to = return_to
+
+        async def callback(self, interaction):
+            if self.return_to == "detail":
+                await self.parent.show_equipment_detail(interaction, self.parent.selected_equipment_id)
+            else:
+                self.parent.state = "select"
+                self.parent.clear_items()
+                self.parent.add_item(self.parent.EquipmentSelect(self.parent))
+                embed = await self.parent.create_initial_embed()
+                await interaction.response.edit_message(embed=embed, view=self.parent)
+
+    class RemoveAllSubslotsButton(discord.ui.Button):
+        def __init__(self, parent):
+            super().__init__(label="🧹 Remove All Subslots", style=discord.ButtonStyle.secondary)
+            self.parent = parent
+
+        async def callback(self, interaction):
+            # Show confirmation dialog
+            self.parent.state = "confirm_remove_subslots"
+            embed = discord.Embed(title="⚠️ Confirm Remove All Subslots", description="Are you sure you want to remove all subslots from this equipment? This cannot be undone.", color=0xE67E22)
+            self.parent.clear_items()
+            self.parent.add_item(self.parent.ConfirmRemoveAllSubslotsButton(self.parent))
+            self.parent.add_item(self.parent.CancelButton(self.parent, return_to="detail"))
+            await interaction.response.edit_message(embed=embed, view=self.parent)
+
+    class ConfirmRemoveAllSubslotsButton(discord.ui.Button):
+        def __init__(self, parent):
+            super().__init__(label="✅ Yes, Remove All Subslots", style=discord.ButtonStyle.danger)
+            self.parent = parent
+
+        async def callback(self, interaction):
+            await self.parent.expedition_service.remove_all_subslots(self.parent.selected_equipment_id)
+            # Refetch equipment list to get latest data
+            self.parent.equipment_list = await self.parent.expedition_service.db.get_user_equipment(self.parent.discord_id)
+            await self.parent.show_equipment_detail(interaction, self.parent.selected_equipment_id)
+
+    class AddSubslotButton(discord.ui.Button):
+        def __init__(self, parent):
+            super().__init__(label="➕ Add Subslot (Consume)", style=discord.ButtonStyle.success)
+            self.parent = parent
+
+        async def callback(self, interaction):
+            await self.parent.show_add_subslot(interaction)
+
+    class ConsumeEquipmentSelect(discord.ui.Select):
+        def __init__(self, parent, options):
+            self.parent = parent
+            super().__init__(placeholder="Select equipment to consume...", min_values=1, max_values=1, options=options)
+
+        async def callback(self, interaction):
+            target_id = self.parent.selected_equipment_id
+            consumed_id = int(self.values[0])
+            ok = await self.parent.expedition_service.unlock_subslot_by_consuming_equipment(target_id, consumed_id)
+            if ok:
+                # Refetch equipment list to get latest data
+                self.parent.equipment_list = await self.parent.expedition_service.db.get_user_equipment(self.parent.discord_id)
+                await self.parent.show_equipment_detail(interaction, target_id)
+            else:
+                await interaction.response.send_message("Failed to add subslot (maybe already max or invalid selection).", ephemeral=True)
 MAX_EXPEDITION_SLOTS = 5  # Should match ExpeditionManager default
 """Expedition system Discord commands with comprehensive UI."""
 
@@ -1668,11 +1850,22 @@ class ExpeditionResultsView(discord.ui.View):
             f"💥 Mishaps: {mishaps}"
         )
         
+
         embed.add_field(
             name="⚔️ Encounter Results",
             value=encounters_text,
             inline=True
         )
+
+        # Notify if equipment cap was reached and user could not gain more equipment (now only one equipment per expedition)
+        awarded_equipment = expedition.get('awarded_equipment', [])
+        if isinstance(awarded_equipment, list) and len(awarded_equipment) == 0:
+            from config.constants import MAX_EQUIPMENT_PER_USER
+            embed.add_field(
+                name="⚠️ Equipment Inventory Full",
+                value=f"You have reached the maximum equipment inventory size (**{MAX_EQUIPMENT_PER_USER}**). No equipment could be awarded. Please remove some equipment to claim new ones in future expeditions.",
+                inline=False
+            )
         
         # Rewards summary
         loot = expedition.get('loot', {})
@@ -2136,6 +2329,24 @@ class ExpeditionResultsView(discord.ui.View):
 
 
 class ExpeditionsCog(BaseCommand):
+
+    @app_commands.command(
+        name="equipment",
+        description="🧰 Manage your equipment inventory"
+    )
+    async def equipment(self, interaction: discord.Interaction):
+        """Open the equipment inventory UI for the user."""
+        discord_id = str(interaction.user.id)
+        await interaction.response.defer()
+        # Fetch user's equipment
+        equipment_list = await self.expedition_service.db.get_user_equipment(discord_id)
+        if not equipment_list:
+            await interaction.followup.send("You have no equipment in your inventory.", ephemeral=True)
+            return
+        # Show the inventory view
+        view = EquipmentInventoryView(equipment_list, self.expedition_service, discord_id)
+        embed = await view.create_initial_embed()
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
     """Discord commands for the expedition system."""
     
     def __init__(self, bot: commands.Bot, services: ServiceContainer):

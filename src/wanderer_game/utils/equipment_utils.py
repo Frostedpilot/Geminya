@@ -1,5 +1,4 @@
 def format_equipment_compact(equipment) -> str:
-    print(equipment)
     """
     Return a compact, single-line summary of the equipment for use in lists.
     Accepts a dict (from DB), not an Equipment object.
@@ -15,7 +14,7 @@ def format_equipment_compact(equipment) -> str:
     if main:
         main_type = main.get('type')
         if main_type == 'affinity_add':
-            main_str = f"Favored {main.get('category', '')} ({main.get('value', '')})"
+            main_str = f"{main.get('category', '')} ({main.get('value', '')})"
         elif main_type == 'loot_pool_bonus':
             main_str = f"Loot+{main.get('value', '')}"
         elif main_type == 'final_roll_bonus':
@@ -30,6 +29,7 @@ def format_equipment_compact(equipment) -> str:
     # Sub stats (short)
     sub_slots = equipment.get('sub_slots', [])
     substat_strs = []
+    stat_names = ["atk", "def", "spd", "int", "luk", "vit", "mag"]
     for slot in sub_slots:
         if slot.get('is_unlocked', False):
             effect = slot.get('effect')
@@ -40,17 +40,21 @@ def format_equipment_compact(equipment) -> str:
                     effect = None
             if effect:
                 t = effect.get('type')
+                value = effect.get('value', '')
+                stat = effect.get('stat', '')
                 if t == 'stat_check_bonus':
-                    substat_strs.append(f"{effect.get('stat', '')}+{effect.get('value', '')}")
+                    substat_strs.append(f"{stat}+{value}")
                 elif t == 'final_stat_check_bonus':
-                    substat_strs.append(f"{effect.get('stat', '')}+{effect.get('value', '')}f")
+                    substat_strs.append(f"{stat}+{value}f")
                 else:
                     substat_strs.append(str(t))
         else:
             substat_strs.append("🔒")
     substat_summary = ", ".join(substat_strs) if substat_strs else "-"
 
-    return f"[{main_str}] | Subs: {substat_summary}"
+    eq_id = equipment.get('id', None)
+    id_str = f"#{eq_id} " if eq_id is not None else ""
+    return f"{id_str}[{main_str}] | Subs: {substat_summary}"
 
 def format_equipment_full(equipment) -> str:
     """
@@ -129,10 +133,15 @@ def format_equipment_effect_detail(effect) -> str:
         return f"Final Roll Bonus: +{effect.get('value', '')}"
     elif t == 'encounter_count_add':
         return f"Encounter Count Add: +{effect.get('value', '')} encounter(s)"
-    elif t == 'stat_check_bonus':
-        return f"Stat Check Bonus: +{effect.get('value', '')} to {effect.get('stat', '')}"
-    elif t == 'final_stat_check_bonus':
-        return f"Final Stat Check Bonus: +{effect.get('value', '')} to {effect.get('stat', '')} (final)"
+    elif t == 'stat_check_bonus' or t == 'final_stat_check_bonus':
+        value = effect.get('value', '')
+        stat = effect.get('stat', '')
+        is_final = (t == 'final_stat_check_bonus')
+        label = "Final Stat Check Bonus" if is_final else "Stat Check Bonus"
+        if stat == 'all':
+            return f"{label}: +{value} to ALL" + (" (final)" if is_final else "")
+        else:
+            return f"{label}: +{value} to {stat.upper()}" + (" (final)" if is_final else "")
     else:
         return str(effect)
 import random
@@ -148,7 +157,6 @@ def random_main_stat_modifier():
     main_effect_types = [
         ModifierType.AFFINITY_ADD,
         ModifierType.LOOT_POOL_BONUS,
-        ModifierType.FINAL_ROLL_BONUS,
         ModifierType.ENCOUNTER_COUNT_ADD
     ]
     mod_type = random.choice(main_effect_types)
@@ -161,11 +169,9 @@ def random_main_stat_modifier():
         category = random.choice(["elemental"])
         value = random.choice(["fire", "water", "earth", "wind"])
     elif mod_type == ModifierType.LOOT_POOL_BONUS:
-        value = random.randint(1, 3)
-    elif mod_type == ModifierType.FINAL_ROLL_BONUS:
-        value = random.randint(1, 5)
+        value = random.randint(10, 20)
     elif mod_type == ModifierType.ENCOUNTER_COUNT_ADD:
-        value = random.randint(1, 2)
+        value = random.randint(1, 3)
     return EncounterModifier(
         type=mod_type,
         affinity=affinity,
@@ -189,9 +195,12 @@ def random_sub_stat_modifier():
     category = None
     value = None
     stat = None
-    if mod_type in [ModifierType.STAT_CHECK_BONUS, ModifierType.FINAL_STAT_CHECK_BONUS]:
-        stat = random.choice(["atk", "def", "spd", "int", "luk"])
-        value = random.randint(1, 7)
+    if mod_type == ModifierType.STAT_CHECK_BONUS:
+        stat = random.choice(["atk", "spr", "spd", "int", "lck", "vit", "mag", "all"])
+        value = random.randint(5, 20)
+    elif mod_type == ModifierType.FINAL_STAT_CHECK_BONUS:
+        stat = random.choice(["atk", "spr", "spd", "int", "lck", "vit", "mag", "all"])
+        value = random.randint(12, 48)
     return EncounterModifier(
         type=mod_type,
         affinity=affinity,

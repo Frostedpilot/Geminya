@@ -1,3 +1,4 @@
+from config.constants import MAX_EQUIPMENT_PER_USER
 """
 Expedition Service - Bridge between Discord Bot, Database, and Wanderer Game
 
@@ -41,12 +42,34 @@ def serialize_for_json(obj):
 
 
 class ExpeditionService:
-    """Service for managing expeditions with database persistence"""
-    
+
+    async def remove_all_subslots(self, equipment_id: int) -> int:
+        """Remove all subslots from an equipment and reset unlocked_sub_slots to 0."""
+        # Remove all subslots
+        deleted = await self.db.delete_all_equipment_sub_slots(equipment_id)
+        # Reset unlocked_sub_slots to 0
+        await self.db.update_equipment(equipment_id, unlocked_sub_slots=0)
+        return deleted
+
+    async def unlock_subslot_by_consuming_equipment(self, target_equipment_id: int, consumed_equipment_id: int) -> bool:
+        """Unlock a new subslot on target equipment by consuming another equipment, and roll the effect for that slot."""
+        # First, unlock in DB (increments unlocked_sub_slots and deletes consumed equipment)
+        success = await self.db.unlock_subslot_by_consuming_equipment(target_equipment_id, consumed_equipment_id)
+        if not success:
+            return False
+        # Get current subslots to determine next slot index
+        subslots = await self.db.get_equipment_sub_slots(target_equipment_id)
+        next_slot_index = len(subslots) + 1  # 1-based index for slot_index (1-5)
+        # Roll a random effect for the new subslot
+        from src.wanderer_game.utils.equipment_utils import random_sub_stat_modifier
+        effect = random_sub_stat_modifier()
+        effect_json = json.dumps(serialize_for_json(effect))
+        await self.db.add_equipment_sub_slot(target_equipment_id, next_slot_index, effect=effect_json, is_unlocked=True)
+        return True
+
     def __init__(self, database_service: DatabaseService):
         self.db = database_service
         self.logger = logging.getLogger(__name__)
-        
         # Initialize wanderer game data manager
         self.data_manager = DataManager()
         
@@ -622,11 +645,10 @@ class ExpeditionService:
                     # Parse main_effect as EncounterModifier
                     main_effect_data = json.loads(equipment_row['main_effect']) if isinstance(equipment_row['main_effect'], str) else equipment_row['main_effect']
                     main_effect = EncounterModifier.from_dict(main_effect_data) if main_effect_data else None
-                    # Fetch sub slots
-                    sub_slots_rows = await self.db.get_equipment_sub_slots(equipped_equipment_id)
+                    # Use sub_slots from equipment_row dict
                     sub_slots = []
-                    for slot_row in sub_slots_rows:
-                        effect_data = json.loads(slot_row['effect']) if slot_row['effect'] else None
+                    for slot_row in equipment_row.get('sub_slots', []):
+                        effect_data = json.loads(slot_row['effect']) if slot_row.get('effect') else None
                         effect = EncounterModifier.from_dict(effect_data) if effect_data else None
                         sub_slots.append(EquipmentSubSlot(
                             slot_index=slot_row['slot_index'],
@@ -661,29 +683,26 @@ class ExpeditionService:
             self.logger.info(f"Resolving expedition {expedition_id} with {expedition_instance.encounter_count} encounters")
             expedition_result = self.expedition_resolver.resolve(active_expedition, team, equipment_obj)
 
-            # Award equipment after each encounter, enforcing a max of 20 per player
+            # Award only one equipment per expedition, enforcing the global cap
             user_equipment = await self.db.get_user_equipment(discord_id)
-            max_equipment = 20
-            num_to_award = max(0, max_equipment - len(user_equipment))
-            encounters_to_award = min(num_to_award, len(expedition_result.encounter_results))
-            for _ in range(encounters_to_award):
+            if len(user_equipment) < MAX_EQUIPMENT_PER_USER:
                 new_equipment = random_equipment_no_subslots(discord_id)
                 if new_equipment.main_effect is None:
-                    self.logger.warning(f"Skipping equipment award: generated equipment has no main_effect (discord_id={discord_id})")
-                    continue
-                import json as _json
-                main_effect_json = _json.dumps({
-                    "type": getattr(new_equipment.main_effect.type, 'value', None),
-                    "affinity": getattr(new_equipment.main_effect, 'affinity', None),
-                    "category": getattr(new_equipment.main_effect, 'category', None),
-                    "value": getattr(new_equipment.main_effect, 'value', None),
-                    "stat": getattr(new_equipment.main_effect, 'stat', None)
-                })
-                equipment_id = await self.db.add_equipment(discord_id, main_effect_json, unlocked_sub_slots=0)
-                new_equipment.id = equipment_id
-                awarded_equipment.append(new_equipment)
-            if encounters_to_award < len(expedition_result.encounter_results):
-                self.logger.info(f"User {discord_id} has reached the equipment cap ({max_equipment}). No more equipment awarded.")
+                    self.logger.warning("Skipping equipment award: generated equipment has no main_effect (discord_id=%s)", discord_id)
+                else:
+                    import json as _json
+                    main_effect_json = _json.dumps({
+                        "type": getattr(new_equipment.main_effect.type, 'value', None),
+                        "affinity": getattr(new_equipment.main_effect, 'affinity', None),
+                        "category": getattr(new_equipment.main_effect, 'category', None),
+                        "value": getattr(new_equipment.main_effect, 'value', None),
+                        "stat": getattr(new_equipment.main_effect, 'stat', None)
+                    })
+                    equipment_id = await self.db.add_equipment(discord_id, main_effect_json, unlocked_sub_slots=0)
+                    new_equipment.id = equipment_id
+                    awarded_equipment.append(new_equipment)
+            else:
+                self.logger.info("User %s has reached the equipment cap (%d). No equipment awarded.", discord_id, MAX_EQUIPMENT_PER_USER)
 
             # Step 5: Distribute loot rewards to user
             self.logger.info(f"Expedition result - Loot pool exists: {expedition_result.loot_pool is not None}")
