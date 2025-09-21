@@ -1,3 +1,46 @@
+import os
+import pandas as pd
+import json as _json
+# --- Affinity Value Pool Loader ---
+def load_affinity_pools():
+    """
+    Loads and caches all unique values for series_id, archetype, elemental, and genre from data files.
+    Returns a dict: { 'series_id': set, 'archetype': set, 'elemental': set, 'genre': set }
+    """
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../data'))
+    pools = {'series_id': set(), 'archetype': set(), 'elemental': set(), 'genre': set()}
+    anime_df = pd.read_csv(os.path.join(base_dir, 'anime_final.csv'))
+    for _, row in anime_df.iterrows():
+        series_id = row.get('series_id')
+        if pd.notna(series_id):
+            pools['series_id'].add(series_id)
+        genre = row.get('genres')
+        if pd.notna(genre):
+            genres = genre.split("|")
+            for g in genres:
+                g = g.strip()
+                if g:
+                    pools['genre'].add(g)
+    # --- archetypes.json: archetype names ---
+    arch_json = os.path.join(base_dir, 'archetypes.json')
+    try:
+        with open(arch_json, encoding='utf-8') as f:
+            data = _json.load(f)
+            for a in data.get('archetypes', []):
+                name = a.get('name')
+                if name:
+                    pools['archetype'].add(name)
+    except Exception as e:
+        pass
+    # --- characters_with_stats.csv: elemental_type ---
+    chars_pd = pd.read_csv(os.path.join(base_dir, 'character_final.csv'))
+    for _, row in chars_pd.iterrows():
+        elem = row.get('elemental_type')
+        elems = _json.loads(elem)
+        for e in elems:
+            pools['elemental'].add(e)
+    return {k: sorted(list(v)) for k, v in pools.items()}
+_AFFINITY_POOLS =  load_affinity_pools()
 def format_equipment_compact(equipment) -> str:
     """
     Return a compact, single-line summary of the equipment for use in lists.
@@ -159,15 +202,16 @@ def random_main_stat_modifier():
         ModifierType.LOOT_POOL_BONUS,
         ModifierType.ENCOUNTER_COUNT_ADD
     ]
-    mod_type = random.choice(main_effect_types)
+    weights = [90,5,5]
+    mod_type = random.choices(main_effect_types, weights=weights)[0]
     affinity = None
     category = None
     value = None
     stat = None
     if mod_type == ModifierType.AFFINITY_ADD:
         affinity = random.choice(["favored"])
-        category = random.choice(["elemental"])
-        value = random.choice(["fire", "water", "earth", "wind"])
+        category = random.choice(list(_AFFINITY_POOLS.keys()))
+        value = random.choice(_AFFINITY_POOLS[category])
     elif mod_type == ModifierType.LOOT_POOL_BONUS:
         value = random.randint(10, 20)
     elif mod_type == ModifierType.ENCOUNTER_COUNT_ADD:
