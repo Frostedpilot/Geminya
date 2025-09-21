@@ -143,6 +143,8 @@ class Expedition:
     dynamic_disfavored_affinities: List[Affinity] = field(default_factory=list)
     stat_bonuses: Dict[str, int] = field(default_factory=dict)
     difficulty_modifiers: List[float] = field(default_factory=list)
+    # Final stat check bonuses (applied after all multipliers, per stat)
+    final_stat_check_bonuses: Dict[str, int] = field(default_factory=dict)
     
     # Complex state tracking for encounter-affecting modifiers
     guaranteed_success_encounters: int = 0

@@ -82,12 +82,9 @@ class ExpeditionResolver:
             leftovers = [e for group in type_map.values() for e in group]
             result.extend(leftovers[:remaining])
         return result[:total_count]
-    """
-    Stateless service for resolving completed expeditions
-    
-    Takes an ActiveExpedition and Team, simulates the journey through
-    all encounters, and returns a complete ExpeditionResult.
-    """
+    # Stateless service for resolving completed expeditions
+    # Takes an ActiveExpedition and Team, simulates the journey through
+    # all encounters, and returns a complete ExpeditionResult.
     
     def __init__(self, encounters_data: List[Dict], loot_generator):
         """
@@ -361,6 +358,7 @@ class ExpeditionResolver:
         """
         Calculate the team's total score for a stat check
         Includes affinity multipliers, expedition modifiers, and series multiplier
+        Applies final_stat_check_bonuses after all multipliers.
         """
         # Get base stat sum (with star bonuses already applied)
         base_stat_sum = team.get_total_stat(stat_name)
@@ -378,7 +376,15 @@ class ExpeditionResolver:
             if all(sid is not None for sid in series_ids) and len(set(series_ids)) == 1:
                 series_multiplier = 1.2
 
-        return effective_stat_sum * affinity_multiplier * series_multiplier
+        # Calculate base score with all multipliers
+        score = effective_stat_sum * affinity_multiplier * series_multiplier
+
+        # Apply final stat check bonus (after all multipliers)
+        bonus = 0
+        if hasattr(expedition, 'final_stat_check_bonuses') and expedition.final_stat_check_bonuses:
+            # Try stat-specific bonus first
+            bonus = expedition.final_stat_check_bonuses.get(stat_name, 0)
+        return score + bonus
     
     def _calculate_affinity_multiplier(self, expedition: Expedition, team: Team) -> float:
         """
@@ -484,22 +490,38 @@ class ExpeditionResolver:
             if isinstance(modifier.stat, list):
                 for stat in modifier.stat:
                     if str(stat) == "all":
-                        # Apply to all stats
                         for stat_name in ["hp", "atk", "mag", "vit", "spr", "intel", "spd", "lck"]:
                             expedition.add_stat_bonus(stat_name, int(modifier.value))
                     else:
-                        # Convert 'int' to 'intel' for compatibility
                         stat_name = "intel" if str(stat) == "int" else str(stat)
                         expedition.add_stat_bonus(stat_name, int(modifier.value))
             else:
                 if str(modifier.stat) == "all":
-                    # Apply to all stats
                     for stat_name in ["hp", "atk", "mag", "vit", "spr", "intel", "spd", "lck"]:
                         expedition.add_stat_bonus(stat_name, int(modifier.value))
                 else:
-                    # Convert 'int' to 'intel' for compatibility
                     stat_name = "intel" if str(modifier.stat) == "int" else str(modifier.stat)
                     expedition.add_stat_bonus(stat_name, int(modifier.value))
+
+        elif modifier.type == ModifierType.FINAL_STAT_CHECK_BONUS and modifier.stat and modifier.value:
+            # Store final stat check bonuses for use after all multipliers
+            if not hasattr(expedition, 'final_stat_check_bonuses') or expedition.final_stat_check_bonuses is None:
+                expedition.final_stat_check_bonuses = {}
+            if isinstance(modifier.stat, list):
+                for stat in modifier.stat:
+                    if str(stat) == "all":
+                        for stat_name in ["hp", "atk", "mag", "vit", "spr", "intel", "spd", "lck"]:
+                            expedition.final_stat_check_bonuses[stat_name] = expedition.final_stat_check_bonuses.get(stat_name, 0) + int(modifier.value)
+                    else:
+                        stat_name = "intel" if str(stat) == "int" else str(stat)
+                        expedition.final_stat_check_bonuses[stat_name] = expedition.final_stat_check_bonuses.get(stat_name, 0) + int(modifier.value)
+            else:
+                if str(modifier.stat) == "all":
+                    for stat_name in ["hp", "atk", "mag", "vit", "spr", "intel", "spd", "lck"]:
+                        expedition.final_stat_check_bonuses[stat_name] = expedition.final_stat_check_bonuses.get(stat_name, 0) + int(modifier.value)
+                else:
+                    stat_name = "intel" if str(modifier.stat) == "int" else str(modifier.stat)
+                    expedition.final_stat_check_bonuses[stat_name] = expedition.final_stat_check_bonuses.get(stat_name, 0) + int(modifier.value)
         
         elif modifier.type == ModifierType.STAT_CHECK_PENALTY and modifier.stat and modifier.value:
             # Handle both single stat and list of stats

@@ -38,6 +38,7 @@ class ModifierType(Enum):
     """Types of modifiers for boon/hazard encounters"""
     AFFINITY_ADD = "affinity_add"           # Add favored/disfavored affinity
     STAT_CHECK_BONUS = "stat_check_bonus"   # Bonus to specific stat checks
+    FINAL_STAT_CHECK_BONUS = "final_stat_check_bonus"  # Bonus to final stat check value (after all multipliers)
     STAT_CHECK_PENALTY = "stat_check_penalty"  # Penalty to specific stat checks
     DIFFICULTY_INCREASE = "difficulty_increase_percent"  # Difficulty modifier
     PREVENT_MISHAP = "prevent_next_mishap"  # Prevents next mishap
@@ -110,7 +111,9 @@ class EncounterCondition:
 
 @dataclass
 class EncounterModifier:
-    """Modifier for boon/hazard encounters"""
+    """Modifier for boon/hazard encounters.
+    For FINAL_STAT_CHECK_BONUS: can affect one or all stats, just like STAT_CHECK_BONUS.
+    """
     type: ModifierType
     affinity: Optional[str] = None      # For affinity_add: "favored" or "disfavored"
     category: Optional[str] = None      # For affinity_add: "elemental", "archetype", etc.
