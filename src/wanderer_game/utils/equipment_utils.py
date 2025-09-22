@@ -182,9 +182,9 @@ def format_equipment_effect_detail(effect) -> str:
         is_final = (t == 'final_stat_check_bonus')
         label = "Final Stat Check Bonus" if is_final else "Stat Check Bonus"
         if stat == 'all':
-            return f"{label}: +{value} to ALL" + (" (final)" if is_final else "")
+            return f"{label}: +{value} to all" + (" (final)" if is_final else "")
         else:
-            return f"{label}: +{value} to {stat.upper()}" + (" (final)" if is_final else "")
+            return f"{label}: +{value} to {stat}" + (" (final)" if is_final else "")
     else:
         return str(effect)
 import random

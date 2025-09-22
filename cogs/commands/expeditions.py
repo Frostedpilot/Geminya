@@ -54,10 +54,9 @@ class EquipmentInventoryView(discord.ui.View):
 
     async def show_add_subslot(self, interaction):
         self.state = "add_subslot"
-        from src.wanderer_game.utils.equipment_utils import format_equipment_compact
         options = [
             discord.SelectOption(
-                label=(l if len(l := format_equipment_compact(eq)) <= 100 else l[:97] + '...'),
+                label=format_equipment_compact(eq),
                 value=str(eq['id'])
             )
             for eq in self.equipment_list if eq['id'] != self.selected_equipment_id
@@ -72,10 +71,9 @@ class EquipmentInventoryView(discord.ui.View):
     class EquipmentSelect(discord.ui.Select):
         def __init__(self, parent):
             self.parent = parent
-            from src.wanderer_game.utils.equipment_utils import format_equipment_compact
             options = [
                 discord.SelectOption(
-                    label=(l if len(l := format_equipment_compact(eq)) <= 100 else l[:97] + '...'),
+                    label=format_equipment_compact(eq),
                     value=str(eq['id'])
                 )
                 for eq in parent.equipment_list
@@ -719,6 +717,85 @@ class ExpeditionSelectView(discord.ui.View):
 
 
 class CharacterSelectView(discord.ui.View):
+    import json
+    def _get_equipment_effects(self, eq):
+        """Return a list of all effect dicts for the given equipment (main + subslots)."""
+        effects = []
+        # Main effect
+        main = eq.get('main_effect')
+        if main:
+            if isinstance(main, str):
+                try:
+                    main = self.json.loads(main)
+                except Exception:
+                    main = None
+            if isinstance(main, dict):
+                effects.append(main)
+        # Subslots
+        for sub in eq.get('sub_slots', []):
+            eff = sub.get('effect')
+            if eff:
+                if isinstance(eff, str):
+                    try:
+                        eff = self.json.loads(eff)
+                    except Exception:
+                        eff = None
+                if isinstance(eff, dict):
+                    effects.append(eff)
+        return effects
+
+    def _get_equipment_final_stats_increase(self):
+        """Sum final_stat_check_bonus from selected equipment, following dominant stat rules."""
+        if not self.equipment_list or self.selected_equipment_id is None:
+            return 0.0
+        eq = next((e for e in self.equipment_list if e['id'] == self.selected_equipment_id), None)
+        if not eq:
+            return 0.0
+        dominant_stats = self.expedition.get('dominant_stats', [])
+        num_dom = len(dominant_stats) if dominant_stats else 0
+        total_bonus = 0.0
+        for eff in self._get_equipment_effects(eq):
+            if eff.get('type') == 'final_stat_check_bonus':
+                stat = eff.get('stat')
+                value = eff.get('value', 0)
+                if stat == 'all':
+                    total_bonus += value
+                elif dominant_stats and stat in dominant_stats and num_dom > 0:
+                    total_bonus += value / num_dom
+        return total_bonus
+
+    def _get_equipment_affinity_adds(self):
+        """Extract affinity add effects from selected equipment."""
+        if not self.equipment_list or self.selected_equipment_id is None:
+            return []
+        eq = next((e for e in self.equipment_list if e['id'] == self.selected_equipment_id), None)
+        if not eq:
+            return []
+        affinity_adds = []
+        for eff in self._get_equipment_effects(eq):
+            if eff.get('type') == 'affinity_add':
+                affinity_adds.append(eff)
+        return affinity_adds
+
+    def _get_equipment_stat_bonus(self):
+        """Sum stat_check_bonus from selected equipment, following dominant stat rules."""
+        if not self.equipment_list or self.selected_equipment_id is None:
+            return 0.0
+        eq = next((e for e in self.equipment_list if e['id'] == self.selected_equipment_id), None)
+        if not eq:
+            return 0.0
+        dominant_stats = self.expedition.get('dominant_stats', [])
+        num_dom = len(dominant_stats) if dominant_stats else 0
+        total_bonus = 0.0
+        for eff in self._get_equipment_effects(eq):
+            if eff.get('type') == 'stat_check_bonus':
+                stat = eff.get('stat')
+                value = eff.get('value', 0)
+                if stat == 'all':
+                    total_bonus += value
+                elif dominant_stats and stat in dominant_stats and num_dom > 0:
+                    total_bonus += value / num_dom
+        return total_bonus
     # Global cache for series name to series_id
     _series_name_to_id_cache = None
     """View for selecting characters for expeditions with search and pagination."""
@@ -1436,7 +1513,6 @@ class CharacterSelectView(discord.ui.View):
                 else:
                     eq = next((e for e in self.equipment_list if e['id'] == self.selected_equipment_id), None)
                     if eq:
-                        from src.wanderer_game.utils.equipment_utils import format_equipment_full
                         eq_str = format_equipment_full(eq)
                         embed.add_field(
                             name="🛡️ Equipment",
@@ -1549,12 +1625,16 @@ class CharacterSelectView(discord.ui.View):
                         mean *= star_multiplier
                         team_power_raw += mean
                         num_with_stats += 1
+            # Add equipment stat bonus (only for preview, not per-character)
+            equipment_bonus = self._get_equipment_stat_bonus()
+            if equipment_bonus:
+                team_power_raw += equipment_bonus
+            # Add equipment affinity add effects to the affinity calculation
             embed.add_field(
                 name=f"🎯 Selected Characters ({len(self.selected_characters)}/3)",
                 value="\n".join(character_info) if character_info else "None selected",
                 inline=False
             )
-            # Affinity multiplier logic (match backend)
             affinity_multiplier = 1.0
             series_multiplier = 1.0
             series_bonus_text = ""
@@ -1563,24 +1643,20 @@ class CharacterSelectView(discord.ui.View):
                 favored_affinities = []
                 disfavored_affinities = []
                 affinity_pools = self.expedition.get('affinity_pools', {})
-                # Map pool category names to AffinityType enum
                 category_to_enum = {
                     'elemental': AffinityType.ELEMENTAL,
                     'archetype': AffinityType.ARCHETYPE,
                     'series': AffinityType.SERIES_ID,
                     'genre': AffinityType.GENRE,
                 }
-                # Helper to resolve series name to series_id using global cache
                 def resolve_series_id(series_name):
                     cls = type(self)
                     if cls._series_name_to_id_cache is None:
-                        # Build cache on first use
                         cache = {}
                         for char in self.char_registry.characters.values():
                             cache[char.series] = char.series_id
                         cls._series_name_to_id_cache = cache
                     return cls._series_name_to_id_cache.get(series_name, series_name)
-
                 for category, values in affinity_pools.get('favored', {}).items():
                     enum_type = category_to_enum.get(category.lower())
                     if enum_type:
@@ -1599,19 +1675,32 @@ class CharacterSelectView(discord.ui.View):
                                 disfavored_affinities.append(Affinity(type=enum_type, value=resolved))
                             else:
                                 disfavored_affinities.append(Affinity(type=enum_type, value=value))
-                # Build Team object
+                # Add equipment affinity adds
+                for eff in self._get_equipment_affinity_adds():
+                    cat = eff.get('category')
+                    val = eff.get('value')
+                    favored = eff.get('favored', True)
+                    enum_type = category_to_enum.get(cat.lower())
+                    if enum_type:
+                        if enum_type == AffinityType.SERIES_ID:
+                            resolved = resolve_series_id(val)
+                            aff = Affinity(type=enum_type, value=resolved)
+                        else:
+                            aff = Affinity(type=enum_type, value=val)
+                        if favored:
+                            favored_affinities.append(aff)
+                        else:
+                            disfavored_affinities.append(aff)
                 team_obj = WGTeam(characters=team_characters)
                 favored_matches = team_obj.count_affinity_matches(favored_affinities)
                 disfavored_matches = team_obj.count_affinity_matches(disfavored_affinities)
                 affinity_multiplier = 1.2**(favored_matches) * (0.6**(disfavored_matches))
                 affinity_multiplier = max(0.1, min(3.0, affinity_multiplier))
-                # Series multiplier: 1.2x if all 3 team members are from the same series
                 if len(team_characters) == 3:
                     series_ids = [getattr(c, 'series_id', None) for c in team_characters]
                     if all(sid is not None for sid in series_ids) and len(set(series_ids)) == 1:
                         series_multiplier = 1.2
                         series_bonus_text = "🌟 **Series Bonus Active!** All 3 characters are from the same series. Team Power is multiplied by 1.2x."
-            # Show both raw and adjusted Team Power
             if num_with_stats > 0:
                 embed.add_field(
                     name="💪 Team Power (Raw)",
@@ -1629,9 +1718,17 @@ class CharacterSelectView(discord.ui.View):
                         value=f"x{series_multiplier:.2f} (All 3 from same series)",
                         inline=True
                     )
+                # Show final stats increase as a separate field
+                final_stats_increase = self._get_equipment_final_stats_increase()
+                if final_stats_increase:
+                    embed.add_field(
+                        name="✨ Final Stats Increase (Equipment)",
+                        value=f"+{final_stats_increase:.0f} (applied after all multipliers)",
+                        inline=True
+                    )
                 embed.add_field(
                     name="💥 Team Power (Adjusted)",
-                    value=f"{int(team_power_raw * affinity_multiplier * series_multiplier)}",
+                    value=f"{int(team_power_raw * affinity_multiplier * series_multiplier + final_stats_increase)}",
                     inline=True
                 )
                 if series_bonus_text:
@@ -1860,7 +1957,7 @@ class ExpeditionResultsView(discord.ui.View):
         # Notify if equipment cap was reached and user could not gain more equipment (now only one equipment per expedition)
         awarded_equipment = expedition.get('awarded_equipment', [])
         if isinstance(awarded_equipment, list) and len(awarded_equipment) == 0:
-            from config.constants import MAX_EQUIPMENT_PER_USER
+            # MAX_EQUIPMENT_PER_USER is already imported at the top
             embed.add_field(
                 name="⚠️ Equipment Inventory Full",
                 value=f"You have reached the maximum equipment inventory size (**{MAX_EQUIPMENT_PER_USER}**). No equipment could be awarded. Please remove some equipment to claim new ones in future expeditions.",
@@ -2331,7 +2428,7 @@ class ExpeditionResultsView(discord.ui.View):
 class ExpeditionsCog(BaseCommand):
 
     @app_commands.command(
-        name="equipment",
+        name="nwnl_expeditions_equipment",
         description="🧰 Manage your equipment inventory"
     )
     async def equipment(self, interaction: discord.Interaction):
