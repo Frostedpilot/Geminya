@@ -1,4 +1,5 @@
 from config.constants import MAX_EQUIPMENT_PER_USER
+from src.wanderer_game.utils.equipment_utils import random_sub_stat_modifier
 """
 Expedition Service - Bridge between Discord Bot, Database, and Wanderer Game
 
@@ -42,6 +43,9 @@ def serialize_for_json(obj):
 
 
 class ExpeditionService:
+    async def remove_last_subslot(self, equipment_id: int) -> bool:
+        """Remove the last unlocked subslot from an equipment and decrement unlocked_sub_slots."""
+        return await self.db.remove_last_equipment_sub_slot(equipment_id)
 
     async def remove_all_subslots(self, equipment_id: int) -> int:
         """Remove all subslots from an equipment and reset unlocked_sub_slots to 0."""
@@ -52,20 +56,11 @@ class ExpeditionService:
         return deleted
 
     async def unlock_subslot_by_consuming_equipment(self, target_equipment_id: int, consumed_equipment_id: int) -> bool:
-        """Unlock a new subslot on target equipment by consuming another equipment, and roll the effect for that slot."""
-        # First, unlock in DB (increments unlocked_sub_slots and deletes consumed equipment)
-        success = await self.db.unlock_subslot_by_consuming_equipment(target_equipment_id, consumed_equipment_id)
-        if not success:
-            return False
-        # Get current subslots to determine next slot index
-        subslots = await self.db.get_equipment_sub_slots(target_equipment_id)
-        next_slot_index = len(subslots) + 1  # 1-based index for slot_index (1-5)
-        # Roll a random effect for the new subslot
-        from src.wanderer_game.utils.equipment_utils import random_sub_stat_modifier
+        """Unlock a new subslot on target equipment by consuming another equipment, and roll the effect for that slot (all DB logic atomic)."""
         effect = random_sub_stat_modifier()
         effect_json = json.dumps(serialize_for_json(effect))
-        await self.db.add_equipment_sub_slot(target_equipment_id, next_slot_index, effect=effect_json, is_unlocked=True)
-        return True
+        success, _ = await self.db.unlock_subslot_by_consuming_equipment(target_equipment_id, consumed_equipment_id, effect_json)
+        return success
 
     def __init__(self, database_service: DatabaseService):
         self.db = database_service

@@ -31,6 +31,31 @@ class EquipmentInventoryView(discord.ui.View):
         embed.description = f"You have **{count} / {MAX_EQUIPMENT_PER_USER}** equipment."
         return embed
 
+    class RemoveLastSubslotButton(discord.ui.Button):
+        def __init__(self, parent):
+            super().__init__(label="➖ Remove Last Subslot", style=discord.ButtonStyle.secondary)
+            self.parent = parent
+
+        async def callback(self, interaction):
+            # Show confirmation dialog
+            self.parent.state = "confirm_remove_last_subslot"
+            embed = discord.Embed(title="⚠️ Confirm Remove Last Subslot", description="Are you sure you want to remove only the last unlocked subslot from this equipment? This cannot be undone.", color=0xE67E22)
+            self.parent.clear_items()
+            self.parent.add_item(self.parent.ConfirmRemoveLastSubslotButton(self.parent))
+            self.parent.add_item(self.parent.CancelButton(self.parent, return_to="detail"))
+            await interaction.response.edit_message(embed=embed, view=self.parent)
+
+    class ConfirmRemoveLastSubslotButton(discord.ui.Button):
+        def __init__(self, parent):
+            super().__init__(label="✅ Yes, Remove Last Subslot", style=discord.ButtonStyle.danger)
+            self.parent = parent
+
+        async def callback(self, interaction):
+            await self.parent.expedition_service.remove_last_subslot(self.parent.selected_equipment_id)
+            # Refetch equipment list to get latest data
+            self.parent.equipment_list = await self.parent.expedition_service.db.get_user_equipment(self.parent.discord_id)
+            await self.parent.show_equipment_detail(interaction, self.parent.selected_equipment_id)
+
     async def show_equipment_detail(self, interaction, equipment_id):
         self.selected_equipment_id = equipment_id
         self.state = "detail"
@@ -47,6 +72,8 @@ class EquipmentInventoryView(discord.ui.View):
         self.clear_items()
         self.add_item(self.RemoveButton(self))
         self.add_item(self.RemoveAllSubslotsButton(self))
+        if eq.get('unlocked_sub_slots', 0) > 0:
+            self.add_item(self.RemoveLastSubslotButton(self))
         if eq['unlocked_sub_slots'] < 5 and len(self.equipment_list) > 1:
             self.add_item(self.AddSubslotButton(self))
         self.add_item(self.ReturnButton(self))

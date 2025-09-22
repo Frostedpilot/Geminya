@@ -13,6 +13,32 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+    async def remove_last_equipment_sub_slot(self, equipment_id: int) -> bool:
+        """Remove the last unlocked subslot from an equipment and decrement unlocked_sub_slots atomically."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            async with conn.transaction():
+                # Find the highest unlocked subslot for this equipment
+                row = await conn.fetchrow(
+                    """
+                    SELECT id, slot_index FROM equipment_sub_slots
+                    WHERE equipment_id = $1 AND is_unlocked = TRUE
+                    ORDER BY slot_index DESC LIMIT 1
+                    """,
+                    equipment_id
+                )
+                if not row:
+                    return False  # No unlocked subslot to remove
+                sub_slot_id = row["id"]
+                # Delete the subslot
+                await conn.execute("DELETE FROM equipment_sub_slots WHERE id = $1", sub_slot_id)
+                # Decrement unlocked_sub_slots
+                await conn.execute(
+                    "UPDATE equipment SET unlocked_sub_slots = GREATEST(unlocked_sub_slots - 1, 0), updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+                    equipment_id
+                )
+                return True
     async def delete_all_equipment_sub_slots(self, equipment_id: int) -> int:
         """Delete all sub slots for a given equipment."""
         if not self.connection_pool:
@@ -25,26 +51,33 @@ class DatabaseService:
             except Exception:
                 return 0
 
-    async def unlock_subslot_by_consuming_equipment(self, target_equipment_id: int, consumed_equipment_id: int) -> bool:
-        """Unlock a new subslot on target equipment by consuming another equipment (atomic)."""
+    async def unlock_subslot_by_consuming_equipment(self, target_equipment_id: int, consumed_equipment_id: int, effect_json: str) -> tuple[bool, int]:
+        """Unlock a new subslot on target equipment by consuming another equipment and add the new subslot with the given effect (atomic). Returns (success, next_slot_index)."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         async with self.connection_pool.acquire() as conn:
-            # Start a transaction
             async with conn.transaction():
                 # Get current unlocked_sub_slots
                 row = await conn.fetchrow("SELECT unlocked_sub_slots FROM equipment WHERE id = $1 FOR UPDATE", target_equipment_id)
                 if not row:
-                    return False
+                    return False, 0
                 unlocked = row["unlocked_sub_slots"]
                 if unlocked >= 5:
-                    return False  # Already at max
+                    return False, unlocked
+                next_slot_index = unlocked + 1
                 # Increment unlocked_sub_slots
                 await conn.execute("UPDATE equipment SET unlocked_sub_slots = unlocked_sub_slots + 1, updated_at = CURRENT_TIMESTAMP WHERE id = $1", target_equipment_id)
                 # Delete the consumed equipment
                 await conn.execute("DELETE FROM equipment WHERE id = $1", consumed_equipment_id)
-                # Optionally: transfer effect/subslot here if needed
-                return True
+                # Add the new subslot with the provided effect
+                await conn.execute(
+                    """
+                    INSERT INTO equipment_sub_slots (equipment_id, slot_index, effect, is_unlocked)
+                    VALUES ($1, $2, $3, $4)
+                    """,
+                    target_equipment_id, next_slot_index, effect_json, True
+                )
+                return True, next_slot_index
     # === EQUIPMENT SYSTEM METHODS ===
     async def add_equipment(self, discord_id: str, main_effect: str, unlocked_sub_slots: int = 0) -> int:
         """Add a new equipment for a user, enforcing the global cap."""

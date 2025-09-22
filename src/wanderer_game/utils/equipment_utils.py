@@ -97,6 +97,9 @@ def format_equipment_compact(equipment) -> str:
 
     eq_id = equipment.get('id', None)
     id_str = f"#{eq_id} " if eq_id is not None else ""
+    #truncate to 100 letters
+    if len(main_str) > 100:
+        main_str = main_str[:97] + "..."
     return f"{id_str}[{main_str}] | Subs: {substat_summary}"
 
 def format_equipment_full(equipment) -> str:
@@ -242,9 +245,13 @@ def random_sub_stat_modifier():
     if mod_type == ModifierType.STAT_CHECK_BONUS:
         stat = random.choice(["atk", "spr", "spd", "int", "lck", "vit", "mag", "all"])
         value = random.randint(5, 20)
+        if stat == "all":
+            value = value//2
     elif mod_type == ModifierType.FINAL_STAT_CHECK_BONUS:
         stat = random.choice(["atk", "spr", "spd", "int", "lck", "vit", "mag", "all"])
         value = random.randint(12, 48)
+        if stat == "all":
+            value = value//2
     return EncounterModifier(
         type=mod_type,
         affinity=affinity,
