@@ -113,11 +113,37 @@ class DatabaseService:
             return equipment_dict
 
     async def get_user_equipment(self, discord_id: str) -> List[Dict[str, Any]]:
-        """Get all equipment for a user, including sub slots for each equipment."""
+        """Get all equipment for a user, excluding those used in in_progress expeditions, including sub slots for each equipment."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         async with self.connection_pool.acquire() as conn:
-            rows = await conn.fetch("SELECT * FROM equipment WHERE discord_id = $1 ORDER BY created_at DESC", discord_id)
+            # Look up user_id from users table
+            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user_row:
+                return []
+            user_id = user_row["id"]
+
+            # Find equipment IDs currently used in in_progress expeditions for this user_id
+            in_use_ids = set()
+            rows_in_use = await conn.fetch(
+                """
+                SELECT equipped_equipment_id FROM user_expeditions
+                WHERE user_id = $1 AND status = 'in_progress' AND equipped_equipment_id IS NOT NULL
+                """,
+                user_id
+            )
+            for row in rows_in_use:
+                in_use_ids.add(row["equipped_equipment_id"])
+
+            # Fetch all equipment for user, excluding those in use
+            if in_use_ids:
+                rows = await conn.fetch(
+                    f"SELECT * FROM equipment WHERE discord_id = $1 AND id NOT IN ({', '.join(['$'+str(i+2) for i in range(len(in_use_ids))])}) ORDER BY created_at DESC",
+                    discord_id, *in_use_ids
+                )
+            else:
+                rows = await conn.fetch("SELECT * FROM equipment WHERE discord_id = $1 ORDER BY created_at DESC", discord_id)
+
             equipment_list = []
             for row in rows:
                 equipment_dict = dict(row)

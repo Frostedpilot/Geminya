@@ -114,9 +114,9 @@ class LootGenerator:
         """Generate sakura crystals amount using normal distribution"""
         # Base amount scales with difficulty
         if difficulty < 1000:
-            base_amount = max(5, difficulty // 10)  # 5 at diff 50, 10 at diff 100, etc.
+            base_amount = max(5, difficulty // 15)  # 5 at diff 50, 10 at diff 100, etc.
         else:
-            base_amount = 100 + (difficulty - 1000) // 20  # Slower scaling above 1000
+            base_amount = 1000//15 + (difficulty - 1000) // 30  # Slower scaling above 1000
         # Add some randomness using normal distribution
         # Standard deviation is 20% of base amount
         std_dev = max(1, base_amount * 0.2)
@@ -129,9 +129,9 @@ class LootGenerator:
         """Generate quartzs amount using normal distribution"""
         # Base amount scales with difficulty (quartzs are more valuable, so fewer)
         if difficulty < 1000:
-            base_amount = max(1, difficulty // 50) 
+            base_amount = max(1, difficulty // 75) 
         else:
-            base_amount = 20 + (difficulty - 1000) // 100
+            base_amount = 1000//75 + (difficulty - 1000) // 150
         
         # Add some randomness using normal distribution
         # Standard deviation is 30% of base amount (more variance for rare currency)
