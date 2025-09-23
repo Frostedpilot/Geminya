@@ -845,71 +845,7 @@ class CharacterSelectView(discord.ui.View):
         self._setup_ui()
     
     def _get_filtered_waifus(self) -> List[Dict]:
-        """Get waifus filtered by search term, annotated with raw stats and affinity count, sorted by selected mode."""
-        # Helper to calculate raw stats value
-        def calc_raw_stats(waifu, character, dominant_stats):
-            stats = waifu.get('stats')
-            star_level = waifu.get('current_star_level', waifu.get('rarity', 1))
-            multiplier = 1 + (star_level - 1) * 0.10
-            stat_values = []
-            if not stats and character and hasattr(character, 'base_stats'):
-                base_stats = getattr(character, 'base_stats', None)
-                if base_stats:
-                    stat_dict = vars(base_stats)
-                    if dominant_stats:
-                        stat_values = [v for k, v in stat_dict.items() if k in dominant_stats and isinstance(v, (int, float))]
-                    else:
-                        stat_values = [v for v in stat_dict.values() if isinstance(v, (int, float))]
-            elif stats and isinstance(stats, dict):
-                if dominant_stats:
-                    stat_values = [v for k, v in stats.items() if k in dominant_stats and isinstance(v, (int, float))]
-                else:
-                    stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
-            if stat_values:
-                mean = sum(stat_values) / len(stat_values)
-                return mean * multiplier
-            return 0.0
-
-        # Helper to count affinity matches
-        def calc_affinity_count(character, favored_affinities, disfavored_affinities):
-            if not character:
-                return 0
-            # Cap max buffs/debuffs per character to 3 each
-            buff_matches = 0
-            debuff_matches = 0
-            for affinity in favored_affinities:
-                if buff_matches >= 3:
-                    break
-                if affinity.type.name == 'SERIES_ID' and hasattr(character, 'series_id'):
-                    if str(character.series_id) == str(affinity.value):
-                        buff_matches += 1
-                elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
-                    if affinity.value in getattr(character, 'elemental_types', []):
-                        buff_matches += 1
-                elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
-                    if affinity.value == getattr(character, 'archetype', None):
-                        buff_matches += 1
-                elif affinity.type.name == 'GENRE' and hasattr(character, 'genres'):
-                    if affinity.value in getattr(character, 'genres', []):
-                        buff_matches += 1
-            for affinity in disfavored_affinities:
-                if debuff_matches >= 3:
-                    break
-                if affinity.type.name == 'SERIES_ID' and hasattr(character, 'series_id'):
-                    if str(character.series_id) == str(affinity.value):
-                        debuff_matches += 1
-                elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
-                    if affinity.value in getattr(character, 'elemental_types', []):
-                        debuff_matches += 1
-                elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
-                    if affinity.value == getattr(character, 'archetype', None):
-                        debuff_matches += 1
-                elif affinity.type.name == 'GENRE' and hasattr(character, 'genres'):
-                    if affinity.value in getattr(character, 'genres', []):
-                        debuff_matches += 1
-            return buff_matches - debuff_matches
-
-        # Prepare affinity objects for this expedition
+        """Get waifus filtered by search term, annotated with raw stats and affinity count (including equipment), sorted by selected mode."""
         from src.wanderer_game.models.character import Affinity, AffinityType
         affinity_pools = self.expedition.get('affinity_pools', {})
         dominant_stats = self.expedition.get('dominant_stats', [])
@@ -948,6 +884,99 @@ class CharacterSelectView(discord.ui.View):
                     else:
                         disfavored_affinities.append(Affinity(type=enum_type, value=value))
 
+        # Helper to calculate raw stats value
+        def calc_raw_stats(waifu, character, dominant_stats):
+            stats = waifu.get('stats')
+            star_level = waifu.get('current_star_level', waifu.get('rarity', 1))
+            multiplier = 1 + (star_level - 1) * 0.10
+            stat_values = []
+            if not stats and character and hasattr(character, 'base_stats'):
+                base_stats = getattr(character, 'base_stats', None)
+                if base_stats:
+                    stat_dict = vars(base_stats)
+                    if dominant_stats:
+                        stat_values = [v for k, v in stat_dict.items() if k in dominant_stats and isinstance(v, (int, float))]
+                    else:
+                        stat_values = [v for v in stat_dict.values() if isinstance(v, (int, float))]
+            elif stats and isinstance(stats, dict):
+                if dominant_stats:
+                    stat_values = [v for k, v in stats.items() if k in dominant_stats and isinstance(v, (int, float))]
+                else:
+                    stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
+            if stat_values:
+                mean = sum(stat_values) / len(stat_values)
+                return mean * multiplier
+            return 0.0
+
+        # Helper to count affinity matches, now includes equipment affinity adds
+        def calc_affinity_count(character, favored_affinities, disfavored_affinities, extra_favored=None, extra_disfavored=None):
+            if not character:
+                return 0
+            # Merge in extra affinities from equipment if provided
+            all_favored = list(favored_affinities)
+            all_disfavored = list(disfavored_affinities)
+            if extra_favored:
+                all_favored.extend(extra_favored)
+            if extra_disfavored:
+                all_disfavored.extend(extra_disfavored)
+            # Cap max buffs/debuffs per character to 3 each
+            buff_matches = 0
+            debuff_matches = 0
+            for affinity in all_favored:
+                if buff_matches >= 3:
+                    break
+                if affinity.type.name == 'SERIES_ID' and hasattr(character, 'series_id'):
+                    if str(character.series_id) == str(affinity.value):
+                        buff_matches += 1
+                elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
+                    if affinity.value in getattr(character, 'elemental_types', []):
+                        buff_matches += 1
+                elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
+                    if affinity.value == getattr(character, 'archetype', None):
+                        buff_matches += 1
+                elif affinity.type.name == 'GENRE':
+                    if affinity.value in getattr(character, 'anime_genres', []):
+                        buff_matches += 1
+            for affinity in all_disfavored:
+                if debuff_matches >= 3:
+                    break
+                if affinity.type.name == 'SERIES_ID' and hasattr(character, 'series_id'):
+                    if str(character.series_id) == str(affinity.value):
+                        debuff_matches += 1
+                elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
+                    if affinity.value in getattr(character, 'elemental_types', []):
+                        debuff_matches += 1
+                elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
+                    if affinity.value == getattr(character, 'archetype', None):
+                        debuff_matches += 1
+                elif affinity.type.name == 'GENRE':
+                    if affinity.value in getattr(character, 'anime_genres', []):
+                        debuff_matches += 1
+            return buff_matches - debuff_matches
+
+        # Prepare extra affinities from equipment (if any selected)
+        extra_favored = []
+        extra_disfavored = []
+        if self.equipment_list and self.selected_equipment_id is not None:
+            eq = next((e for e in self.equipment_list if e['id'] == self.selected_equipment_id), None)
+            if eq:
+                for eff in self._get_equipment_effects(eq):
+                    if eff.get('type') == 'affinity_add':
+                        cat = eff.get('category')
+                        val = eff.get('value')
+                        favored = eff.get('favored', True)
+                        enum_type = category_to_enum.get(cat.lower())
+                        if enum_type:
+                            if enum_type == AffinityType.SERIES_ID:
+                                resolved = resolve_series_id(val)
+                                aff = Affinity(type=enum_type, value=resolved)
+                            else:
+                                aff = Affinity(type=enum_type, value=val)
+                            if favored:
+                                extra_favored.append(aff)
+                            else:
+                                extra_disfavored.append(aff)
+
         # Filter and annotate waifus
         filtered_waifus = []
         search_lower = self.search_filter.lower() if self.search_filter else None
@@ -956,7 +985,7 @@ class CharacterSelectView(discord.ui.View):
             if character:
                 if not search_lower or (search_lower in character.name.lower() or search_lower in character.series.lower()):
                     raw_stats = calc_raw_stats(waifu, character, dominant_stats)
-                    affinity_count = calc_affinity_count(character, favored_affinities, disfavored_affinities)
+                    affinity_count = calc_affinity_count(character, favored_affinities, disfavored_affinities, extra_favored, extra_disfavored)
                     waifu = dict(waifu)  # Copy to annotate
                     waifu['__raw_stats'] = raw_stats
                     waifu['__affinity_count'] = affinity_count

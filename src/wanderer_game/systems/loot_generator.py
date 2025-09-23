@@ -83,11 +83,11 @@ class LootGenerator:
         if diff <= 500:
             item_prob = 0.01  # 1%
         else:
-            # Scale from 1% to 10% between diff 500-2000
-            item_prob = 0.01 + (0.09 * (diff - 500) / 1500)
+            # Scale from 1% to 5% between diff 500-2000
+            item_prob = 0.01 + (0.04 * (diff - 500) / 1500)
         
-        # Quartzs probability: Scale from ~2% to 25% across diff 1-2000
-        quartzs_prob = 0.02 + (0.23 * (diff - 1) / 1999)
+        # Quartzs probability: Scale from ~2% to 15% across diff 1-2000
+        quartzs_prob = 0.02 + (0.13 * (diff - 1) / 1999)
         
         # Gems probability: Takes the remainder (always the most common)
         gems_prob = 1.0 - item_prob - quartzs_prob
@@ -116,7 +116,7 @@ class LootGenerator:
         if difficulty < 1000:
             base_amount = max(5, difficulty // 10)  # 5 at diff 50, 10 at diff 100, etc.
         else:
-            base_amount = 200 + (difficulty - 1000) // 20  # Slower scaling above 1000
+            base_amount = 100 + (difficulty - 1000) // 20  # Slower scaling above 1000
         # Add some randomness using normal distribution
         # Standard deviation is 20% of base amount
         std_dev = max(1, base_amount * 0.2)
@@ -142,30 +142,32 @@ class LootGenerator:
         return max(1, amount)
     
     def _select_item(self, difficulty: int) -> Tuple[str, int, LootRarity]:
-        """Select a specific item using the existing value-based system"""
-        # Use the old probability weight system for items
+        """Select a specific item using a left-skewed (chi-square) distribution favoring lower-value items"""
         valid_items = []
         for item_id, amount, rarity, target_value in self.item_configs:
             weight = self._calculate_item_probability_weight(target_value, difficulty)
             if weight > 0:
-                valid_items.append((item_id, amount, rarity, weight))
-        
+                valid_items.append((item_id, amount, rarity, target_value))
+
         if not valid_items:
             # Fallback to basic item
             return ("item_basic_1", 1, LootRarity.COMMON)
-        
-        # Select using weighted random
-        total_weight = sum(weight for _, _, _, weight in valid_items)
-        roll = random.uniform(0, total_weight)
-        current_weight = 0
-        
-        for item_id, amount, rarity, weight in valid_items:
-            current_weight += weight
-            if roll <= current_weight:
-                return (item_id, amount, rarity)
-        
-        # Fallback
-        return valid_items[0][:3]
+
+        # Sort items by target_value (ascending, so lower-value items are first)
+        valid_items.sort(key=lambda x: x[3])
+        n = len(valid_items)
+
+        # Use chi-square distribution to skew left (favoring lower-value items)
+        # Chi-square with low k (e.g., 2) is strongly left-skewed
+        k = 2  # degrees of freedom
+        chi_value = random.gammavariate(k / 2, 2)  # chi-square(k) = gamma(k/2, 2)
+        # Map chi_value to an index in [0, n-1], capping at n-1
+        # Typical chi-square(2) values are < 10, so scale accordingly
+        max_chi = 10  # 99% of values are below this
+        idx = int((chi_value / max_chi) * n)
+        idx = min(idx, n - 1)
+        item_id, amount, rarity, _ = valid_items[idx]
+        return (item_id, amount, rarity)
     
     def _calculate_item_probability_weight(self, target_value: int, difficulty: int) -> float:
         """Calculate probability weight for item selection (more forgiving range)"""

@@ -74,7 +74,7 @@ class Affinity:
         elif self.type == AffinityType.SERIES_ID:
             return str(self.value) == str(character.series_id)
         elif self.type == AffinityType.GENRE:
-            return self.value in character.genres
+            return self.value in character.anime_genres
         return False
 
 
@@ -87,7 +87,8 @@ class Character:
     name: str
     series: str
     series_id: int
-    genres: List[str]
+    genres: List[str]  # legacy, not used for genre affinity anymore
+    anime_genres: List[str]
     image_url: str
     base_stats: CharacterStats
     elemental_types: List[str]
@@ -97,23 +98,25 @@ class Character:
     star_level: int = 1  # Default star level
     
     @classmethod
-    def from_csv_row(cls, row: Dict[str, str]) -> 'Character':
-        """Create Character from CSV row data"""
+    def from_csv_row(cls, row: Dict[str, str], anime_genres_map: dict | None = None) -> 'Character':
+        """Create Character from CSV row data. anime_genres_map: {series_id: [genres]}"""
         # Parse JSON fields
         stats = json.loads(row['stats'])
         elemental_types = json.loads(row['elemental_type'])
         potency = json.loads(row['potency'])
         resistances = json.loads(row['elemental_resistances'])
-        
-        # Parse genres (comma-separated)
         genres = row['genre'].split(',') if row['genre'] else []
-        
+        series_id = int(row['series_id'])
+        anime_genres = []
+        if anime_genres_map and series_id in anime_genres_map:
+            anime_genres = anime_genres_map[series_id]
         return cls(
             waifu_id=int(row['waifu_id']),
             name=row['name'],
             series=row['series'],
-            series_id=int(row['series_id']),
+            series_id=series_id,
             genres=genres,
+            anime_genres=anime_genres,
             image_url=row['image_url'],
             base_stats=CharacterStats.from_dict(stats),
             elemental_types=elemental_types,
@@ -155,8 +158,8 @@ class Character:
         return elemental_type.lower() in [e.lower() for e in self.elemental_types]
     
     def has_genre(self, genre: str) -> bool:
-        """Check if character's series has a specific genre"""
-        return genre.lower() in [g.lower() for g in self.genres]
+        """Check if character's anime genres include a specific genre"""
+        return genre.lower() in [g.lower() for g in self.anime_genres]
 
 
 @dataclass 

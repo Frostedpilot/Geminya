@@ -25,37 +25,44 @@ class CharacterRegistry:
     
     def load_characters(self, filename: str = "character_final.csv") -> bool:
         """
-        Load characters from CSV file
-        
-        Args:
-            filename: Name of the CSV file containing character data
-            
-        Returns:
-            True if loaded successfully, False otherwise
+        Load characters from CSV file, using anime_final.csv for anime_genres.
         """
         file_path = self.data_directory / filename
-        
+        anime_file_path = self.data_directory / "anime_final.csv"
+        anime_genres_map = {}
+        # Build anime_genres_map: {series_id: [genres]}
+        try:
+            with open(anime_file_path, 'r', encoding='utf-8') as af:
+                anime_reader = csv.DictReader(af)
+                for row in anime_reader:
+                    try:
+                        sid = int(row['series_id'])
+                        genres_str = row.get('genres', '')
+                        genres = [g.strip() for g in genres_str.split('|') if g.strip()]
+                        anime_genres_map[sid] = genres
+                    except Exception as e:
+                        print(f"Error parsing anime row {row.get('series_id', 'unknown')}: {e}")
+                        continue
+        except Exception as e:
+            print(f"Warning: Could not load anime genres from {anime_file_path}: {e}")
+            anime_genres_map = {}
+
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
-                
                 for row in reader:
                     try:
-                        character = Character.from_csv_row(row)
+                        character = Character.from_csv_row(row, anime_genres_map)
                         self.characters[character.waifu_id] = character
-                        
                         # Index by series
                         if character.series_id not in self.characters_by_series:
                             self.characters_by_series[character.series_id] = []
                         self.characters_by_series[character.series_id].append(character)
-                        
                     except Exception as e:
                         print(f"Error parsing character row {row.get('waifu_id', 'unknown')}: {e}")
                         continue
-            
             print(f"Loaded {len(self.characters)} characters from {filename}")
             return True
-            
         except FileNotFoundError:
             print(f"Warning: Could not find character file: {file_path}")
             return False

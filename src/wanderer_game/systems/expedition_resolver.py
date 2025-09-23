@@ -22,12 +22,16 @@ from .chance_table import ChanceTable, FinalMultiplierTable
 
 
 class ExpeditionResolver:
-    def _select_encounters_by_type_distribution(self, available_tags, _expedition_difficulty, total_count=10, expedition=None):
+    def _select_encounters_by_type_distribution(self, available_tags, expedition_difficulty, total_count=10, expedition=None):
         """
-        Select encounters by fixed type distribution: 6 standard, 2 gated, 1 buff, 1 hazard (favoring in that order).
-        If not enough of a type, fill with next in priority order.
-        If expedition is provided and has dominant_stats, filter STANDARD encounters to only those whose check_stat is in dominant_stats.
+        Select encounters by fixed type distribution (6 standard, 2 gated, 1 boon, 1 hazard),
+        biasing each pick toward encounters whose difficulty matches the expedition's using a normal distribution.
         """
+        import math
+        def normal_weight(enc_difficulty, exp_difficulty, sigma=100):
+            # Gaussian weight centered at exp_difficulty
+            return math.exp(-((enc_difficulty - exp_difficulty) ** 2) / (2 * sigma ** 2))
+
         # Gather all valid encounters for the expedition's tags
         valid_encounters = []
         for tag in available_tags:
@@ -52,9 +56,24 @@ class ExpeditionResolver:
                         type_map[encounter.type].append(encounter)
                 else:
                     type_map[encounter.type].append(encounter)
-        # Shuffle each group
-        for group in type_map.values():
-            random.shuffle(group)
+
+        # For each type, select encounters using normal distribution weighting
+        def weighted_sample(encounters, n, exp_difficulty):
+            # Select n unique encounters, weighted by normal distribution
+            selected = []
+            pool = list(encounters)
+            for _ in range(min(n, len(pool))):
+                weights = [normal_weight(getattr(e, 'difficulty', exp_difficulty) or exp_difficulty, exp_difficulty) for e in pool]
+                total = sum(weights)
+                if total == 0:
+                    idx = random.randrange(len(pool))
+                else:
+                    # Normalize weights
+                    norm_weights = [w / total for w in weights]
+                    idx = random.choices(range(len(pool)), weights=norm_weights, k=1)[0]
+                selected.append(pool.pop(idx))
+            return selected
+
         # Distribution: 6 standard, 2 gated, 1 boon, 1 hazard
         distribution = [
             (EncounterType.STANDARD, 6),
@@ -66,20 +85,27 @@ class ExpeditionResolver:
         remaining = total_count
         for enc_type, count in distribution:
             take = min(count, len(type_map[enc_type]), remaining)
-            result.extend(type_map[enc_type][:take])
-            type_map[enc_type] = type_map[enc_type][take:]
-            remaining -= take
-        # If not enough, fill with remaining encounters in priority order
+            if take > 0:
+                picks = weighted_sample(type_map[enc_type], take, expedition_difficulty)
+                result.extend(picks)
+                # Remove picked from pool
+                type_map[enc_type] = [e for e in type_map[enc_type] if e not in picks]
+                remaining -= take
+        # If not enough, fill with remaining encounters in priority order (still weighted)
         if remaining > 0:
             for enc_type, _ in distribution:
                 take = min(len(type_map[enc_type]), remaining)
-                result.extend(type_map[enc_type][:take])
-                remaining -= take
+                if take > 0:
+                    picks = weighted_sample(type_map[enc_type], take, expedition_difficulty)
+                    result.extend(picks)
+                    type_map[enc_type] = [e for e in type_map[enc_type] if e not in picks]
+                    remaining -= take
                 if remaining <= 0:
                     break
-        # If still not enough, fill with any left
+        # If still not enough, fill with any left (random)
         if remaining > 0:
             leftovers = [e for group in type_map.values() for e in group]
+            random.shuffle(leftovers)
             result.extend(leftovers[:remaining])
         return result[:total_count]
     # Stateless service for resolving completed expeditions
