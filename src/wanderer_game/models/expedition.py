@@ -99,7 +99,7 @@ class ExpeditionTemplate:
         # Calculate encounter count based on duration
         # Formula: floor(DurationInHours * (0.5 + random_float_0_to_1 * 1.0))
         random_factor = random.random()  # 0.0 to 1.0
-        encounter_count = max(1, int(self.duration_hours * (0.5 + random_factor * 1.0)))  # 0.5x to 1.5x
+        encounter_count = max(1, int(self.duration_hours * (0.5 + random_factor * 1.0) * 0.75))  # 0.5x to 1.5x
 
         # Build dynamic encounter pool tags
         dynamic_tags = self.encounter_pool_tags.copy()

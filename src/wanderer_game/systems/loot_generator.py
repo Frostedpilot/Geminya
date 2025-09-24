@@ -113,12 +113,12 @@ class LootGenerator:
     def _generate_gems_amount(self, difficulty: int) -> int:
         """Generate sakura crystals amount using normal distribution"""
         # Base amount scales with difficulty
-        if difficulty < 1000:
-            base_amount = max(5, difficulty // 15)  # 5 at diff 50, 10 at diff 100, etc.
+        if difficulty < 500:
+            base_amount = difficulty//25
+        elif difficulty < 1500:
+            base_amount = 20 + (difficulty-500)//20
         else:
-            base_amount = 1000//15 + (difficulty - 1000) // 30  # Slower scaling above 1000
-        # Add some randomness using normal distribution
-        # Standard deviation is 20% of base amount
+            base_amount = 70 + (difficulty-1500)//15
         std_dev = max(1, base_amount * 0.2)
         amount = int(random.gauss(base_amount, std_dev))
         
@@ -128,10 +128,12 @@ class LootGenerator:
     def _generate_quartzs_amount(self, difficulty: int) -> int:
         """Generate quartzs amount using normal distribution"""
         # Base amount scales with difficulty (quartzs are more valuable, so fewer)
-        if difficulty < 1000:
-            base_amount = max(1, difficulty // 75) 
+        if difficulty < 500:
+            base_amount = difficulty//100
+        elif difficulty < 1500:
+            base_amount = 20 + (difficulty-500)//75
         else:
-            base_amount = 1000//75 + (difficulty - 1000) // 150
+            base_amount = 70 + (difficulty-1500)//50
         
         # Add some randomness using normal distribution
         # Standard deviation is 30% of base amount (more variance for rare currency)
@@ -197,28 +199,53 @@ class LootGenerator:
         """
         results = []
         
-        for _ in range(num_rolls):
-            # Stage 1: Select loot type
-            loot_type = self._select_loot_type(loot_value)
-            
-            # Stage 2: Generate amount/item based on type
-            if loot_type == 'gems':
-                amount = self._generate_gems_amount(loot_value)
-                rarity = self._determine_rarity_by_difficulty(loot_value)
-                item = LootItem(LootType.GEMS, "sakura_crystals", amount, rarity, amount)
-                results.append(item)
+        for id_roll in range(num_rolls):
+            if id_roll==1:
+                # Stage 1: Select loot type
+                loot_type = self._select_loot_type(loot_value)
                 
-            elif loot_type == 'quartzs':
-                amount = self._generate_quartzs_amount(loot_value)
-                rarity = self._determine_rarity_by_difficulty(loot_value)
-                item = LootItem(LootType.QUARTZS, "quartzs", amount, rarity, amount * 10)
-                results.append(item)
+                # Stage 2: Generate amount/item based on type
+                if loot_type == 'gems':
+                    amount = self._generate_gems_amount(loot_value)
+                    rarity = self._determine_rarity_by_difficulty(loot_value)
+                    item = LootItem(LootType.GEMS, "sakura_crystals", amount, rarity, amount)
+                    results.append(item)
+                    
+                elif loot_type == 'quartzs':
+                    amount = self._generate_quartzs_amount(loot_value)
+                    rarity = self._determine_rarity_by_difficulty(loot_value)
+                    item = LootItem(LootType.QUARTZS, "quartzs", amount, rarity, amount * 10)
+                    results.append(item)
+                    
+                else:  # items
+                    item_id, amount, rarity = self._select_item(loot_value)
+                    item_value = loot_value // 10  # Derived value
+                    item = LootItem(LootType.ITEM, item_id, amount, rarity, item_value)
+                    results.append(item)
+            else:
+                # Stage 1: Select loot type
+                loot_type = self._select_loot_type(int(loot_value*1.5))
                 
-            else:  # items
-                item_id, amount, rarity = self._select_item(loot_value)
-                item_value = loot_value // 10  # Derived value
-                item = LootItem(LootType.ITEM, item_id, amount, rarity, item_value)
-                results.append(item)
+                # Stage 2: Generate amount/item based on type
+                if loot_type == 'gems':
+                    amount = self._generate_gems_amount(loot_value)
+                    amount = amount//4
+                    rarity = self._determine_rarity_by_difficulty(loot_value)
+                    item = LootItem(LootType.GEMS, "sakura_crystals", amount, rarity, amount)
+                    results.append(item)
+                    
+                elif loot_type == 'quartzs':
+                    amount = self._generate_quartzs_amount(loot_value)
+                    amount = amount//4
+                    rarity = self._determine_rarity_by_difficulty(loot_value)
+                    item = LootItem(LootType.QUARTZS, "quartzs", amount, rarity, amount * 10)
+                    results.append(item)
+                    
+                else:  # items
+                    item_id, amount, rarity = self._select_item(loot_value)
+                    item_value = loot_value // 10  # Derived value
+                    item = LootItem(LootType.ITEM, item_id, amount, rarity, item_value)
+                    results.append(item)
         
         return results
     

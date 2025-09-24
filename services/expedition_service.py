@@ -103,7 +103,7 @@ class ExpeditionService:
             # Calculate encounter count based on duration (0.5-1.5 x hours)
             # Use a more dynamic range: minimum 0.5x hours, maximum 1.5x hours
             import random
-            expected_encounters = max(1, int(template.duration_hours * 1.0))
+            expected_encounters = max(1, int(template.duration_hours * 1.0 * 0.75))
             
             # Convert AffinityPool objects to dictionary format for Discord display
             affinity_pools = {}
@@ -328,7 +328,7 @@ class ExpeditionService:
             
             # Calculate estimated encounter count for display (actual count will be rolled at completion)
             # Use the midpoint of the 0.5-1.5x range for estimate: 1.0x
-            estimated_encounter_count = max(1, int(template.duration_hours * 1.0))  # Midpoint estimate, minimum 1
+            estimated_encounter_count = max(1, int(template.duration_hours * 0.75))  # Midpoint estimate, minimum 1
             self.logger.debug(f"[EXPEDITION_START] Estimated encounter count: {estimated_encounter_count}")
             
             # Prepare simplified expedition data for database
@@ -435,7 +435,7 @@ class ExpeditionService:
         # RUNTIME ENCOUNTER COUNT: Roll for encounter count NOW
         duration_hours = template_data.get("duration_hours", 1)
         random_factor = random.random()  # 0.0 to 1.0
-        encounter_count = max(1, int(duration_hours * (0.5 + random_factor * 1.0)))  # 0.5x to 1.5x
+        encounter_count = max(1, int(duration_hours * (0.5 + random_factor * 1.0) * 0.75))  # 0.5x to 1.5x
 
         # Build dynamic encounter pool tags
         base_tags = template_data.get("encounter_pool_tags", [])

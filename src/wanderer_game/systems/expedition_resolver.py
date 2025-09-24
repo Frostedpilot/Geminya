@@ -311,7 +311,7 @@ class ExpeditionResolver:
         
         # Apply success rate bonuses
         success_threshold += expedition.success_rate_bonus
-        success_threshold = max(0.0, min(1.0, success_threshold))  # Clamp between 0 and 1
+        success_threshold = max(0.0, success_threshold)
         
         # Roll for outcome
         outcome = ChanceTable.roll_outcome(success_threshold)
