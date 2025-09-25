@@ -53,16 +53,5 @@
     "is_active": false,
     "waifu_ids": [],
     "series_ids": [49,53,112,132,8,17,50,109,125,143]
-  },
-  {
-    "id": 6,
-    "name": "Hashire Hashire",
-    "type": "limited",
-    "start_time": "2025-08-26 00:00:00",
-    "end_time": "2025-09-01 23:59:59",
-    "description": "Nam Cuong",
-    "is_active": true,
-    "waifu_ids": [],
-    "series_ids": [138]
   }
 ]

@@ -74,32 +74,39 @@ class ExpeditionResolver:
                 selected.append(pool.pop(idx))
             return selected
 
-        # Weighted random type selection for each slot
-        type_weights = [7, 1, 1, 1]
-        type_list = [EncounterType.STANDARD, EncounterType.GATED, EncounterType.BOON, EncounterType.HAZARD]
+        # Distribution: 6 standard, 2 gated, 1 boon, 1 hazard
+        distribution = [
+            (EncounterType.STANDARD, 6),
+            (EncounterType.GATED, 2),
+            (EncounterType.BOON, 1),
+            (EncounterType.HAZARD, 1),
+        ]
         result = []
-        type_map_local = {k: list(v) for k, v in type_map.items()}  # Copy so we can pop
-        for _ in range(total_count):
-            # Only consider types with remaining encounters
-            available_types = [t for t in type_list if type_map_local[t]]
-            if not available_types:
-                break
-            weights = [type_weights[type_list.index(t)] for t in available_types]
-            chosen_type = random.choices(available_types, weights=weights, k=1)[0]
-            # Pick an encounter of this type, weighted by normal distribution
-            encounter = None
-            if type_map_local[chosen_type]:
-                picks = weighted_sample(type_map_local[chosen_type], 1, expedition_difficulty)
-                if picks:
-                    encounter = picks[0]
-                    type_map_local[chosen_type].remove(encounter)
-            if encounter:
-                result.append(encounter)
-        # If not enough, fill with any left (random)
-        if len(result) < total_count:
-            leftovers = [e for group in type_map_local.values() for e in group]
+        remaining = total_count
+        for enc_type, count in distribution:
+            take = min(count, len(type_map[enc_type]), remaining)
+            if take > 0:
+                picks = weighted_sample(type_map[enc_type], take, expedition_difficulty)
+                result.extend(picks)
+                # Remove picked from pool
+                type_map[enc_type] = [e for e in type_map[enc_type] if e not in picks]
+                remaining -= take
+        # If not enough, fill with remaining encounters in priority order (still weighted)
+        if remaining > 0:
+            for enc_type, _ in distribution:
+                take = min(len(type_map[enc_type]), remaining)
+                if take > 0:
+                    picks = weighted_sample(type_map[enc_type], take, expedition_difficulty)
+                    result.extend(picks)
+                    type_map[enc_type] = [e for e in type_map[enc_type] if e not in picks]
+                    remaining -= take
+                if remaining <= 0:
+                    break
+        # If still not enough, fill with any left (random)
+        if remaining > 0:
+            leftovers = [e for group in type_map.values() for e in group]
             random.shuffle(leftovers)
-            result.extend(leftovers[:total_count - len(result)])
+            result.extend(leftovers[:remaining])
         return result[:total_count]
     # Stateless service for resolving completed expeditions
     # Takes an ActiveExpedition and Team, simulates the journey through
@@ -361,9 +368,6 @@ class ExpeditionResolver:
         else:
             outcome = EncounterOutcome.FAILURE
             loot_value_change = 0
-        
-        #buff loot value
-        loot_value_change=loot_value_change*4
         
         return EncounterResult(
             encounter=encounter,

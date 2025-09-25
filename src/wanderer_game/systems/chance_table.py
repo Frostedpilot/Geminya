@@ -231,8 +231,8 @@ class FinalMultiplierTable:
             Final luck score
         """
         # Difficulty penalty: for every 10 difficulty, reduce luck score by 5 (tunable)
-        difficulty_penalty = expedition_difficulty // 20
-        return max(0,team_luck + (great_successes * 20) - (mishaps * 40) - difficulty_penalty)
+        difficulty_penalty = (expedition_difficulty // 10) * 5
+        return team_luck + (great_successes * 20) - (mishaps * 40) - difficulty_penalty
     
     @classmethod
     def roll_final_multiplier(cls, luck_score: int) -> Tuple[str, float]:
@@ -261,10 +261,10 @@ class FinalMultiplierTable:
         
         # Determine multiplier
         multiplier_values = {
-            "catastrophe": 0.75,  # -75%
-            "setback": 0.9,      # -25%
+            "catastrophe": 0.25,  # -75%
+            "setback": 0.75,      # -25%
             "standard": 1.0,      # No change
-            "jackpot": 1.1        # +50%
+            "jackpot": 1.5        # +50%
         }
         
         for multiplier_name, (min_roll, max_roll) in luck_range.items():

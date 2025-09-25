@@ -792,7 +792,7 @@ class CharacterSelectView(discord.ui.View):
         return total_bonus
 
     def _get_equipment_affinity_adds(self):
-        """Extract affinity add effects from selected equipment, with affinity type."""
+        """Extract affinity add effects from selected equipment."""
         if not self.equipment_list or self.selected_equipment_id is None:
             return []
         eq = next((e for e in self.equipment_list if e['id'] == self.selected_equipment_id), None)
@@ -801,9 +801,7 @@ class CharacterSelectView(discord.ui.View):
         affinity_adds = []
         for eff in self._get_equipment_effects(eq):
             if eff.get('type') == 'affinity_add':
-                # Only include if 'affinity' field is present and valid
-                if eff.get('affinity') in ('favored', 'disfavored'):
-                    affinity_adds.append(eff)
+                affinity_adds.append(eff)
         return affinity_adds
 
     def _get_equipment_stat_bonus(self):
@@ -966,17 +964,17 @@ class CharacterSelectView(discord.ui.View):
                     if eff.get('type') == 'affinity_add':
                         cat = eff.get('category')
                         val = eff.get('value')
-                        affinity_type_str = eff.get('affinity')
-                        enum_type = category_to_enum.get(cat.lower()) if cat else None
+                        favored = eff.get('favored', True)
+                        enum_type = category_to_enum.get(cat.lower())
                         if enum_type:
                             if enum_type == AffinityType.SERIES_ID:
                                 resolved = resolve_series_id(val)
                                 aff = Affinity(type=enum_type, value=resolved)
                             else:
                                 aff = Affinity(type=enum_type, value=val)
-                            if affinity_type_str == 'favored':
+                            if favored:
                                 extra_favored.append(aff)
-                            elif affinity_type_str == 'disfavored':
+                            else:
                                 extra_disfavored.append(aff)
 
         # Filter and annotate waifus
@@ -1737,17 +1735,17 @@ class CharacterSelectView(discord.ui.View):
                 for eff in self._get_equipment_affinity_adds():
                     cat = eff.get('category')
                     val = eff.get('value')
-                    affinity_type_str = eff.get('affinity')
-                    enum_type = category_to_enum.get(cat.lower()) if cat else None
+                    favored = eff.get('favored', True)
+                    enum_type = category_to_enum.get(cat.lower())
                     if enum_type:
                         if enum_type == AffinityType.SERIES_ID:
                             resolved = resolve_series_id(val)
                             aff = Affinity(type=enum_type, value=resolved)
                         else:
                             aff = Affinity(type=enum_type, value=val)
-                        if affinity_type_str == 'favored':
+                        if favored:
                             favored_affinities.append(aff)
-                        elif affinity_type_str == 'disfavored':
+                        else:
                             disfavored_affinities.append(aff)
                 team_obj = WGTeam(characters=team_characters)
                 favored_matches = team_obj.count_affinity_matches(favored_affinities)
@@ -2494,7 +2492,7 @@ class ExpeditionsCog(BaseCommand):
         discord_id = str(interaction.user.id)
         await interaction.response.defer()
         # Fetch user's equipment
-        equipment_list = await self.expedition_service.db.get_user_all_equipment(discord_id)
+        equipment_list = await self.expedition_service.db.get_user_equipment(discord_id)
         if not equipment_list:
             await interaction.followup.send("You have no equipment in your inventory.", ephemeral=True)
             return

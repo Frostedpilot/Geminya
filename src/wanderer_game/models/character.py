@@ -95,7 +95,7 @@ class Character:
     archetype: str
     potency: Dict[str, str]  # Role potency ratings
     elemental_resistances: Dict[str, str]
-    star_level: int = 1  # Default star level (now supports up to 6)
+    star_level: int = 1  # Default star level
     
     @classmethod
     def from_csv_row(cls, row: Dict[str, str], anime_genres_map: dict | None = None) -> 'Character':
@@ -126,13 +126,10 @@ class Character:
         )
     
     def get_expedition_stats(self) -> CharacterStats:
-        """Get stats with star bonus applied for expeditions (supports up to 6★)."""
+        """Get stats with star bonus applied for expeditions"""
         # Apply star bonus: Stat * (1 + (Star Level - 1) * 0.10)
-        # 6-star is a special case, only possible via manual/admin upgrade logic.
         multiplier = 1 + (self.star_level - 1) * 0.10
-        # If star_level > 6, clamp to 6 for bonus calculation
-        if self.star_level > 6:
-            multiplier = 1 + (6 - 1) * 0.10
+        
         return CharacterStats(
             hp=int(self.base_stats.hp * multiplier),
             atk=int(self.base_stats.atk * multiplier),
@@ -187,7 +184,7 @@ class Team:
     
     def get_total_luck(self) -> int:
         """Get total team luck (used for final multiplier calculations)"""
-        return 150
+        return self.get_total_stat('lck')
     
     def count_affinity_matches(self, affinities: List[Affinity]) -> int:
         """Count how many affinity matches, max 3 per character"""
