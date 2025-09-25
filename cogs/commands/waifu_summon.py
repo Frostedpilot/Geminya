@@ -52,6 +52,96 @@ async def display_mode_autocomplete(interaction: discord.Interaction, current: s
 class WaifuSummonCog(BaseCommand):
 
     @commands.hybrid_command(
+        name="nwnl_series_id",
+        description="📺 View detailed info about an anime series by series ID"
+    )
+    @discord.app_commands.describe(series_id="ID of the anime series to search for")
+    async def nwnl_series_id(self, ctx: commands.Context, series_id: int):
+        """Display detailed info about an anime series by its series_id, including all characters in the series (no pagination)."""
+        await ctx.defer()
+        try:
+            series = await self.get_series_by_id(series_id)
+            if not series:
+                embed = discord.Embed(
+                    title="❌ Series Not Found",
+                    description=f"No series found with ID '{series_id}'. Try a different ID!",
+                    color=0xFF6B6B,
+                )
+                await ctx.send(embed=embed)
+                return
+
+            waifu_list = getattr(self.services.waifu_service, '_waifu_list', [])
+            series_id_actual = series.get('series_id')
+            series_name_actual = series.get('name')
+            waifus = [w for w in waifu_list if (w.get('series_id') == series_id_actual) or (w.get('series') == series_name_actual)]
+            waifus = sorted(waifus, key=lambda w: (-w.get('rarity', 1), w.get('name', '')))
+
+            embed = discord.Embed(
+                title=f"📺 {series.get('name', 'Unknown Series')} (ID: {series.get('series_id', '?')})",
+                description=series.get('english_name', ''),
+                color=0x4A90E2,
+            )
+            if series.get('image_link'):
+                embed.set_image(url=series['image_link'])
+            display_fields = [
+                ('Studios', 'studios'),
+                ('Genres', 'genres'),
+                ('Synopsis', 'synopsis'),
+                ('Favorites', 'favorites'),
+                ('Members', 'members'),
+                ('Score', 'score'),
+                ('Genre', 'genre'),
+                ('Description', 'description'),
+            ]
+            for label, key in display_fields:
+                val = series.get(key)
+                if val and str(val).strip() and str(val).lower() != 'nan':
+                    sval = str(val)
+                    if len(sval) > 1024:
+                        sval = sval[:1021] + '...'
+                    embed.add_field(name=label, value=sval, inline=False)
+
+            if waifus:
+                # Discord embed field value limit is 1024 chars, so chunk if needed
+                lines = [f"{'⭐'*w.get('rarity', 1)} {w.get('name', 'Unknown')} (ID: {w.get('waifu_id', '?')})" for w in waifus]
+                waifu_text = "\n".join(lines)
+                if len(waifu_text) > 1024:
+                    # Truncate and indicate
+                    allowed = []
+                    total = 0
+                    for line in lines:
+                        if total + len(line) + 1 > 1024:
+                            break
+                        allowed.append(line)
+                        total += len(line) + 1
+                    waifu_text = "\n".join(allowed) + f"\n...and {len(lines) - len(allowed)} more."
+                embed.add_field(
+                    name=f"Characters ({len(waifus)})",
+                    value=waifu_text,
+                    inline=False
+                )
+            else:
+                embed.add_field(name="No Characters", value="This series has no characters.", inline=False)
+            embed.set_footer(text=f"Series ID: {series.get('series_id', 'N/A')}")
+            await ctx.send(embed=embed)
+        except Exception as e:
+            self.logger.error(f"Error displaying series info by ID: {e}")
+            embed = discord.Embed(
+                title="❌ Series Error",
+                description="Unable to display series info. Please try again later!",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
+    async def get_series_by_id(self, series_id: int):
+        """Fetch a series from the database by its series_id. Returns a dict or None if not found."""
+        if hasattr(self.services.database, 'connection_pool'):
+            async with self.services.database.connection_pool.acquire() as conn:
+                row = await conn.fetchrow("SELECT * FROM series WHERE series_id = $1", series_id)
+                if row:
+                    return dict(row)
+        return None
+
+    @commands.hybrid_command(
         name="nwnl_collection_list",
         description="📖 View your waifu collection as a paginated list"
     )

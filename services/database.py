@@ -112,6 +112,21 @@ class DatabaseService:
             equipment_dict["sub_slots"] = [dict(sub) for sub in sub_slots]
             return equipment_dict
 
+    async def get_all_user_equipment(self, discord_id: str) -> List[Dict[str, Any]]:
+        """Get all equipment for a user, including sub slots for each equipment."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM equipment WHERE discord_id = $1 ORDER BY created_at DESC", discord_id)
+
+            equipment_list = []
+            for row in rows:
+                equipment_dict = dict(row)
+                sub_slots = await conn.fetch("SELECT * FROM equipment_sub_slots WHERE equipment_id = $1 ORDER BY slot_index ASC", row["id"])
+                equipment_dict["sub_slots"] = [dict(sub) for sub in sub_slots]
+                equipment_list.append(equipment_dict)
+            return equipment_list
+
     async def get_user_equipment(self, discord_id: str) -> List[Dict[str, Any]]:
         """Get all equipment for a user, excluding those used in in_progress expeditions, including sub slots for each equipment."""
         if not self.connection_pool:

@@ -131,9 +131,9 @@ class LootGenerator:
         if difficulty < 500:
             base_amount = difficulty//100
         elif difficulty < 1500:
-            base_amount = 20 + (difficulty-500)//75
+            base_amount = 5 + (difficulty-500)//75
         else:
-            base_amount = 70 + (difficulty-1500)//50
+            base_amount = 17 + (difficulty-1500)//50
         
         # Add some randomness using normal distribution
         # Standard deviation is 30% of base amount (more variance for rare currency)
@@ -200,7 +200,7 @@ class LootGenerator:
         results = []
         
         for id_roll in range(num_rolls):
-            if id_roll==1:
+            if id_roll==0:
                 # Stage 1: Select loot type
                 loot_type = self._select_loot_type(loot_value)
                 
@@ -224,7 +224,7 @@ class LootGenerator:
                     results.append(item)
             else:
                 # Stage 1: Select loot type
-                loot_type = self._select_loot_type(int(loot_value*1.5))
+                loot_type = self._select_loot_type(int(loot_value*1.3))
                 
                 # Stage 2: Generate amount/item based on type
                 if loot_type == 'gems':

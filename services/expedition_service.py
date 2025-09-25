@@ -86,10 +86,10 @@ class ExpeditionService:
     def _get_multiplier_value(self, multiplier_name: str) -> float:
         """Convert final multiplier name to numeric value."""
         multiplier_values = {
-            "catastrophe": 0.25,  # -75%
-            "setback": 0.75,      # -25%
+            "catastrophe": 0.75,  # -75%
+            "setback": 0.9,      # -25%
             "standard": 1.0,      # No change
-            "jackpot": 1.5        # +50%
+            "jackpot": 1.1        # +50%
         }
         return multiplier_values.get(multiplier_name, 1.0)
 
@@ -679,7 +679,7 @@ class ExpeditionService:
             expedition_result = self.expedition_resolver.resolve(active_expedition, team, equipment_obj)
 
             # Award only one equipment per expedition, enforcing the global cap
-            user_equipment = await self.db.get_user_equipment(discord_id)
+            user_equipment = await self.db.get_all_user_equipment(discord_id)
             if len(user_equipment) < MAX_EQUIPMENT_PER_USER:
                 new_equipment = random_equipment_no_subslots(discord_id)
                 if new_equipment.main_effect is None:
