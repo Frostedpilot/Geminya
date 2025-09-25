@@ -24,7 +24,7 @@ from .chance_table import ChanceTable, FinalMultiplierTable
 class ExpeditionResolver:
     def _select_encounters_by_type_distribution(self, available_tags, expedition_difficulty, total_count=10, expedition=None):
         """
-        Select encounters by fixed type distribution (6 standard, 2 gated, 1 boon, 1 hazard),
+        Select encounters by fixed type distribution (7 standard, 1 gated, 1 boon, 1 hazard),
         biasing each pick toward encounters whose difficulty matches the expedition's using a normal distribution.
         """
         import math
