@@ -1753,7 +1753,7 @@ class CharacterSelectView(discord.ui.View):
                 favored_matches = team_obj.count_affinity_matches(favored_affinities)
                 disfavored_matches = team_obj.count_affinity_matches(disfavored_affinities)
                 affinity_multiplier = 1.2**(favored_matches) * (0.6**(disfavored_matches))
-                affinity_multiplier = max(0.1, min(3.0, affinity_multiplier))
+                affinity_multiplier = max(0.1, min(4.0, affinity_multiplier))
                 if len(team_characters) == 3:
                     series_ids = [getattr(c, 'series_id', None) for c in team_characters]
                     if all(sid is not None for sid in series_ids) and len(set(series_ids)) == 1:

@@ -438,7 +438,7 @@ class ExpeditionResolver:
         #+ Make buff and nerf multiplicative. Make nerf very stronger, to 40%. Make buff weaker, to 20%
         
         multiplier = 1.2**(favored_matches) * (0.6**(disfavored_matches))
-        return max(0.1, min(3.0, multiplier))
+        return max(0.1, min(4.0, multiplier))
     
     def _check_team_condition(self, condition, team: Team) -> bool:
         """Check if the team meets a gated encounter condition"""
