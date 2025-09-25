@@ -11,52 +11,6 @@ from typing import Optional
 class WaifuAcademyCog(BaseCommand):
 
     @commands.hybrid_command(
-        name="nwnl_upgrade_6star",
-        description="[ADMIN] Upgrade a waifu to 6★ (requires rare item + 300 shards)."
-    )
-    @commands.has_permissions(administrator=True)
-    async def nwnl_upgrade_6star(self, ctx: commands.Context, user_waifu_id: int, rare_item_id: int):
-        """Admin-only: Upgrade a waifu to 6★ if requirements are met."""
-        await ctx.defer()
-        db = self.services.waifu_service.db
-        discord_id = str(ctx.author.id)
-        # 1. Fetch waifu record
-        waifus = await db.get_user_collection(discord_id)
-        waifu = next((w for w in waifus if w.get('user_waifu_id') == user_waifu_id), None)
-        if not waifu:
-            await ctx.send("❌ Waifu not found in your collection.")
-            return
-        if waifu.get('current_star_level', 1) != 5:
-            await ctx.send("❌ Only 5★ waifus can be upgraded to 6★.")
-            return
-        # 2. Check shards
-        shards = waifu.get('character_shards', 0)
-        if shards < 300:
-            await ctx.send(f"❌ Not enough shards. You need 300, you have {shards}.")
-            return
-        # 3. Check rare item in inventory
-        inventory = await db.get_user_inventory(discord_id)
-        rare_item = next((item for item in inventory if item.get('id') == rare_item_id and item.get('quantity', 0) > 0), None)
-        if not rare_item:
-            await ctx.send("❌ You do not have the required rare item for 6★ upgrade.")
-            return
-        # 4. Consume rare item
-        used = await db.use_inventory_item(discord_id, rare_item_id, 1)
-        if not used:
-            await ctx.send("❌ Failed to consume the rare item. Please try again.")
-            return
-        # 5. Deduct 300 shards
-        # (Direct SQL update, as no method exists. Add a method to db if needed.)
-        async with db.connection_pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE user_waifus SET character_shards = character_shards - 300 WHERE id = $1 AND character_shards >= 300",
-                user_waifu_id
-            )
-        # 6. Set star level to 6
-        await db.update_user_waifu_star_level(user_waifu_id, 6)
-        await ctx.send(f"✅ {waifu['name']} has been upgraded to 6★!")
-
-    @commands.hybrid_command(
         name="nwnl_collection_search",
         description="🔍 Search your waifu collection by anime, genre, archetype, or element. Shows elements and archetype."
     )
@@ -372,8 +326,8 @@ class WaifuAcademyCog(BaseCommand):
                 # Sort by star level (highest first)
                 for star_level in sorted(rarity_dist.keys(), reverse=True):
                     count = rarity_dist[star_level]
-                    if star_level > 10:
-                        # 10+ stars get special formatting
+                    if star_level > 5:
+                        # 6+ stars get special formatting
                         rarity_text += f"🌟 {star_level}⭐: {count}\n"
                     else:
                         stars = "⭐" * star_level
