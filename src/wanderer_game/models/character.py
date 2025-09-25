@@ -184,7 +184,7 @@ class Team:
     
     def get_total_luck(self) -> int:
         """Get total team luck (used for final multiplier calculations)"""
-        return 150
+        return self.get_total_stat('lck')
     
     def count_affinity_matches(self, affinities: List[Affinity]) -> int:
         """Count how many affinity matches, max 3 per character"""
