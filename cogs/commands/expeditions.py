@@ -890,7 +890,7 @@ class CharacterSelectView(discord.ui.View):
         def calc_raw_stats(waifu, character, dominant_stats):
             stats = waifu.get('stats')
             star_level = waifu.get('current_star_level', waifu.get('rarity', 1))
-            multiplier = 1 + (star_level - 1) * 0.10
+            multiplier = (1 + (star_level - 1) * 0.10) * 0.85
             stat_values = []
             if not stats and character and hasattr(character, 'base_stats'):
                 base_stats = getattr(character, 'base_stats', None)
@@ -1662,7 +1662,7 @@ class CharacterSelectView(discord.ui.View):
                     stats = waifu.get('stats')
                     char_obj = character if character else None
                     star_level = waifu.get('current_star_level', 1)
-                    star_multiplier = 1 + (star_level - 1) * 0.10
+                    star_multiplier = (1 + (star_level - 1) * 0.10) * 0.85
                     stat_values = []
                     if not stats and char_obj and hasattr(char_obj, 'base_stats'):
                         base_stats = getattr(char_obj, 'base_stats', None)
@@ -1753,7 +1753,7 @@ class CharacterSelectView(discord.ui.View):
                 favored_matches = team_obj.count_affinity_matches(favored_affinities)
                 disfavored_matches = team_obj.count_affinity_matches(disfavored_affinities)
                 affinity_multiplier = 1.2**(favored_matches) * (0.6**(disfavored_matches))
-                affinity_multiplier = max(0.1, min(4.0, affinity_multiplier))
+                affinity_multiplier = max(0.1, min(3.6, affinity_multiplier))
                 if len(team_characters) == 3:
                     series_ids = [getattr(c, 'series_id', None) for c in team_characters]
                     if all(sid is not None for sid in series_ids) and len(set(series_ids)) == 1:

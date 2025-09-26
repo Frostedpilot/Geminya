@@ -69,7 +69,7 @@ class WaifuAcademyCog(BaseCommand):
             def calc_raw_stats(waifu):
                 stats = waifu.get('stats')
                 star_level = waifu.get('current_star_level', waifu.get('rarity', 1))
-                multiplier = 1 + (star_level - 1) * 0.10
+                multiplier = (1 + (star_level - 1) * 0.10) * 0.85
                 if stats and isinstance(stats, dict):
                     stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
                     if stat_values:
