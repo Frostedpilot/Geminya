@@ -895,7 +895,7 @@ class CharacterSelectView(discord.ui.View):
             if not stats and character and hasattr(character, 'base_stats'):
                 base_stats = getattr(character, 'base_stats', None)
                 if base_stats:
-                    stat_dict = vars(base_stats)
+                    stat_dict = base_stats.to_dict()
                     if dominant_stats:
                         stat_values = [v for k, v in stat_dict.items() if k in dominant_stats and isinstance(v, (int, float))]
                     else:
@@ -1667,7 +1667,7 @@ class CharacterSelectView(discord.ui.View):
                     if not stats and char_obj and hasattr(char_obj, 'base_stats'):
                         base_stats = getattr(char_obj, 'base_stats', None)
                         if base_stats:
-                            stat_dict = vars(base_stats)
+                            stat_dict = base_stats.to_dict()
                             # Only use dominant_stats if present, else all
                             if dominant_stats:
                                 stat_values = [v for k, v in stat_dict.items() if k in dominant_stats and isinstance(v, (int, float))]

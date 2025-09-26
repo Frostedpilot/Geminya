@@ -20,6 +20,19 @@ class AffinityType(Enum):
 
 @dataclass
 class CharacterStats:
+    def to_dict(self) -> dict:
+        """Return a dict of all stats, including both 'int' and 'intel' keys for compatibility."""
+        return {
+            'hp': self.hp,
+            'atk': self.atk,
+            'mag': self.mag,
+            'vit': self.vit,
+            'spr': self.spr,
+            'int': self.intel,   # For compatibility with dominant_stats and stat calculations
+            'intel': self.intel, # For internal use if needed
+            'spd': self.spd,
+            'lck': self.lck
+        }
     """Character base statistics"""
     hp: int
     atk: int
