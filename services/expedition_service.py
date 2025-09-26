@@ -98,7 +98,7 @@ class ExpeditionService:
         templates = []
         for template in self.data_manager.get_expedition_templates():
             # Keep original difficulty value, but calculate tier for rewards logic
-            difficulty_tier = max(1, min(5, (template.difficulty + 50) // 100))
+            difficulty_tier = max(1, min(5, (template.difficulty) // 400 + 1))
             
             # Calculate encounter count based on duration (0.5-1.5 x hours)
             # Use a more dynamic range: minimum 0.5x hours, maximum 1.5x hours

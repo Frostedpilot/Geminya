@@ -48,6 +48,7 @@ class ExpeditionResolver:
             unique_encounters = list(self.encounters.values())
         # Group by type
         type_map = {EncounterType.STANDARD: [], EncounterType.GATED: [], EncounterType.BOON: [], EncounterType.HAZARD: []}
+        print(type_map)
         for encounter in unique_encounters:
             if encounter.type in type_map:
                 # Filter STANDARD encounters by dominant_stats if present
@@ -75,7 +76,7 @@ class ExpeditionResolver:
             return selected
 
         # Weighted random type selection for each slot
-        type_weights = [7, 1, 1, 1]
+        type_weights = [15, 1, 1, 1]
         type_list = [EncounterType.STANDARD, EncounterType.GATED, EncounterType.BOON, EncounterType.HAZARD]
         result = []
         type_map_local = {k: list(v) for k, v in type_map.items()}  # Copy so we can pop
