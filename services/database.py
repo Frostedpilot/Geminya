@@ -1,5 +1,5 @@
+
 from config.constants import MAX_EQUIPMENT_PER_USER
-"""Database service for Waifu Academy system with PostgreSQL support only."""
 
 import asyncpg
 import json
@@ -13,6 +13,20 @@ if TYPE_CHECKING:
 
 
 class DatabaseService:
+    async def is_equipment_in_use(self, equipment_id: int) -> bool:
+        """Check if the equipment is currently used in any in-progress expedition."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT 1 FROM user_expeditions
+                WHERE equipped_equipment_id = $1 AND status = 'in_progress'
+                LIMIT 1
+                """,
+                equipment_id
+            )
+            return row is not None
     async def remove_last_equipment_sub_slot(self, equipment_id: int) -> bool:
         """Remove the last unlocked subslot from an equipment and decrement unlocked_sub_slots atomically."""
         if not self.connection_pool:

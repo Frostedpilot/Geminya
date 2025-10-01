@@ -10,6 +10,10 @@ class Banner(commands.Cog):
 
     @commands.hybrid_command(name="nwnl_help", description="Show info about all NWNL commands.")
     async def nwnl_help(self, ctx):
+        from utils.ban_utils import is_user_banned
+        if is_user_banned(ctx.author.id):
+            await ctx.send(f"Sorry {ctx.author.mention}, you are banned from using this bot.")
+            return
         """Show info about all NWNL commands from all NWNL cogs (static/manual)."""
         embed = discord.Embed(
             title="NWNL Command Help",
@@ -110,6 +114,10 @@ class Banner(commands.Cog):
     @commands.hybrid_command(name="nwnl_banner_waifupool", description="Show the waifu pool for a banner, with scrolling buttons.")
     @discord.app_commands.describe(banner_id="Banner ID to show waifu pool for")
     async def nwnl_banner_waifupool(self, ctx, banner_id: int):
+        from utils.ban_utils import is_user_banned
+        if is_user_banned(ctx.author.id):
+            await ctx.send(f"Sorry {ctx.author.mention}, you are banned from using this bot.")
+            return
         """Show the waifu pool for a banner, paginated with buttons."""
         banner = await self.db.get_banner(banner_id)
         if not banner:
@@ -205,6 +213,10 @@ class Banner(commands.Cog):
 
     @commands.hybrid_command(name="nwnl_banner_list", description="List all active banners.")
     async def nwnl_banner_list(self, ctx):
+        from utils.ban_utils import is_user_banned
+        if is_user_banned(ctx.author.id):
+            await ctx.send(f"Sorry {ctx.author.mention}, you are banned from using this bot.")
+            return
         """List all active banners."""
         banners = await self.db.list_banners(active_only=True)
         if not banners:
@@ -222,6 +234,10 @@ class Banner(commands.Cog):
     @commands.hybrid_command(name="nwnl_banner_info", description="Show details for a banner.")
     @discord.app_commands.describe(banner_id="Banner ID to show details for")
     async def nwnl_banner_info(self, ctx, banner_id: int):
+        from utils.ban_utils import is_user_banned
+        if is_user_banned(ctx.author.id):
+            await ctx.send(f"Sorry {ctx.author.mention}, you are banned from using this bot.")
+            return
         """Show details for a specific banner, including waifu pool and series info."""
         banner = await self.db.get_banner(banner_id)
         if not banner:

@@ -144,36 +144,34 @@ class LootGenerator:
         return max(1, amount)
     
     def _select_item(self, difficulty: int) -> Tuple[str, int, LootRarity]:
-        """Select a specific item using a left-skewed (chi-square) distribution favoring lower-value items"""
+        """Select a specific item using a normal distribution"""
         valid_items = []
         for item_id, amount, rarity, target_value in self.item_configs:
             weight = self._calculate_item_probability_weight(target_value, difficulty)
             if weight > 0:
-                valid_items.append((item_id, amount, rarity, target_value))
+                valid_items.append((item_id, amount, rarity, weight))
+        
+        
+        # Clip weights cumulative to range [0, 1]
+        total_weight = sum(w for _, _, _, w in valid_items)
+        
+        # Normalize weights to sum to 1
+        valid_items = [(item_id, amount, rarity, weight / total_weight) for item_id, amount, rarity, weight in valid_items]
+        
+        # print(valid_items)
+        
+        # Select item using weighted random choice
+        item = random.choices(
+            population=[(item_id, amount, rarity) for item_id, amount, rarity, _ in valid_items],
+            weights=[weight for _, _, _, weight in valid_items],
+            k=1
+        )[0]
+        
+        return item
 
-        if not valid_items:
-            # Fallback to basic item
-            return ("item_basic_1", 1, LootRarity.COMMON)
-
-        # Sort items by target_value (ascending, so lower-value items are first)
-        valid_items.sort(key=lambda x: x[3])
-        n = len(valid_items)
-
-        # Use chi-square distribution to skew left (favoring lower-value items)
-        # Chi-square with low k (e.g., 2) is strongly left-skewed
-        k = 2  # degrees of freedom
-        chi_value = random.gammavariate(k / 2, 2)  # chi-square(k) = gamma(k/2, 2)
-        # Map chi_value to an index in [0, n-1], capping at n-1
-        # Typical chi-square(2) values are < 10, so scale accordingly
-        max_chi = 10  # 99% of values are below this
-        idx = int((chi_value / max_chi) * n)
-        idx = min(idx, n - 1)
-        item_id, amount, rarity, _ = valid_items[idx]
-        return (item_id, amount, rarity)
-    
     def _calculate_item_probability_weight(self, target_value: int, difficulty: int) -> float:
         """Calculate probability weight for item selection (more forgiving range)"""
-        distance = abs(target_value - difficulty)
+        distance = target_value - difficulty
         
         if distance == 0:
             return 1.0
@@ -181,8 +179,15 @@ class LootGenerator:
         # Much more forgiving k value: 1500 distance = 0.01% (0.0001)
         # Using formula: weight = exp(-k * distance)
         # At distance 1500: should be 0.0001 (0.01%)
-        k = -math.log(0.0001) / 1500
-        weight = math.exp(-k * distance)
+        # This is if distance is negative
+        if distance > 0:
+            k = -math.log(0.0005) / 1500
+            weight = math.exp(-k * abs(distance))
+        
+        # For positive one, give even more forgiving k value: 1500 distance = 1%
+        else:
+            k = -math.log(0.01) / 1500
+            weight = math.exp(-k * abs(distance))
         
         return max(weight, 0.000001)  # Very small minimum threshold
     

@@ -21,16 +21,17 @@ class BaseCommand(commands.Cog):
 
     async def queue_command(self, ctx: commands.Context, command_impl, *args, **kwargs):
         """
-        Queue a command for sequential execution per user.
-        
-        Args:
-            ctx: Discord context
-            command_impl: The actual command implementation function
-            *args, **kwargs: Arguments to pass to the command implementation
+        Queue a command for sequential execution per user, blocking banned users.
         """
+        from utils.ban_utils import is_user_banned
+        user_id = ctx.author.id
+        if is_user_banned(user_id):
+            await ctx.send(f"Sorry {ctx.author.mention}, you are banned from using this bot.")
+            self.logger.warning(f"Blocked banned user {user_id} from using command: {ctx.command}")
+            return
         command_queue = self.services.get_command_queue()
         return await command_queue.enqueue_command(
-            str(ctx.author.id), 
+            str(user_id), 
             command_impl, 
             ctx,
             *args, 

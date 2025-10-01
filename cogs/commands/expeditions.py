@@ -25,6 +25,10 @@ class EquipmentInventoryView(discord.ui.View):
         self.state = "select"  # or "detail" or "add_subslot"
         self.add_item(self.EquipmentSelect(self))
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Ensure only the command user can interact with the view."""
+        return str(interaction.user.id) == str(self.discord_id)
+
     async def create_initial_embed(self):
         count = len(self.equipment_list)
         embed = discord.Embed(title="🧰 Equipment Inventory", color=0x3498DB)
@@ -1438,6 +1442,14 @@ class CharacterSelectView(discord.ui.View):
             await interaction.response.send_message("❌ Please select at least one character.", ephemeral=True)
             return
 
+        # Equipment usage check
+        if self.selected_equipment_id is not None:
+            # Query the DB for expeditions using this equipment
+            in_use = await self.expedition_service.db.is_equipment_in_use(self.selected_equipment_id)
+            if in_use:
+                await interaction.response.send_message("❌ The selected equipment is already in use in another expedition. Please choose different equipment or wait for the expedition to finish.", ephemeral=True)
+                return
+
         await interaction.response.defer()
 
         try:
@@ -2490,6 +2502,10 @@ class ExpeditionsCog(BaseCommand):
         description="🧰 Manage your equipment inventory"
     )
     async def equipment(self, interaction: discord.Interaction):
+        from utils.ban_utils import is_user_banned
+        if is_user_banned(interaction.user.id):
+            await interaction.response.send_message(f"Sorry {interaction.user.mention}, you are banned from using this bot.", ephemeral=True)
+            return
         """Open the equipment inventory UI for the user."""
         discord_id = str(interaction.user.id)
         await interaction.response.defer()
@@ -2513,6 +2529,10 @@ class ExpeditionsCog(BaseCommand):
         description="� View and start available expeditions"
     )
     async def nwnl_expeditions_start(self, interaction: discord.Interaction):
+        from utils.ban_utils import is_user_banned
+        if is_user_banned(interaction.user.id):
+            await interaction.response.send_message(f"Sorry {interaction.user.mention}, you are banned from using this bot.", ephemeral=True)
+            return
         """Start an expedition with selection UI."""
         discord_id = str(interaction.user.id)
         self.logger.info(f"[DISCORD_EXPEDITION_START] User {discord_id} ({interaction.user.display_name}) requested expedition start")
@@ -2595,6 +2615,10 @@ class ExpeditionsCog(BaseCommand):
         description="📊 Check your current expedition status and progress"
     )
     async def nwnl_expeditions_status(self, interaction: discord.Interaction):
+        from utils.ban_utils import is_user_banned
+        if is_user_banned(interaction.user.id):
+            await interaction.response.send_message(f"Sorry {interaction.user.mention}, you are banned from using this bot.", ephemeral=True)
+            return
         """Show user's current expedition status."""
         await interaction.response.defer()
         
@@ -2690,6 +2714,10 @@ class ExpeditionsCog(BaseCommand):
         description="🏆 Complete finished expeditions and claim rewards"
     )
     async def nwnl_expeditions_complete(self, interaction: discord.Interaction):
+        from utils.ban_utils import is_user_banned
+        if is_user_banned(interaction.user.id):
+            await interaction.response.send_message(f"Sorry {interaction.user.mention}, you are banned from using this bot.", ephemeral=True)
+            return
         """Complete finished expeditions and show detailed results."""
         await interaction.response.defer()
         
@@ -2729,6 +2757,10 @@ class ExpeditionsCog(BaseCommand):
     )
     @app_commands.describe(available_only="Show only expeditions currently available to start")
     async def nwnl_expeditions_list(self, interaction: discord.Interaction, available_only: bool = False):
+        from utils.ban_utils import is_user_banned
+        if is_user_banned(interaction.user.id):
+            await interaction.response.send_message(f"Sorry {interaction.user.mention}, you are banned from using this bot.", ephemeral=True)
+            return
         """List all expeditions, or only those available to start, in a browsable catalog format."""
         discord_id = str(interaction.user.id)
         self.logger.info(f"[DISCORD_EXPEDITION_CATALOG] User {discord_id} ({interaction.user.display_name}) requested expedition catalog")
@@ -2786,6 +2818,10 @@ class ExpeditionsCog(BaseCommand):
     )
     @app_commands.describe(expedition_id="The ID of the expedition to view details for")
     async def nwnl_expeditions_detail(self, interaction: discord.Interaction, expedition_id: str):
+        from utils.ban_utils import is_user_banned
+        if is_user_banned(interaction.user.id):
+            await interaction.response.send_message(f"Sorry {interaction.user.mention}, you are banned from using this bot.", ephemeral=True)
+            return
         """Show detailed information about a specific expedition by ID."""
         discord_id = str(interaction.user.id)
         self.logger.info(f"[DISCORD_EXPEDITION_DETAIL] User {discord_id} ({interaction.user.display_name}) requested details for expedition {expedition_id}")
@@ -2947,6 +2983,10 @@ class ExpeditionsCog(BaseCommand):
         difficulty="The difficulty level to calculate probabilities for (default: 1000)"
     )
     async def nwnl_loot_probability(self, interaction: discord.Interaction, difficulty: int = 1000):
+        from utils.ban_utils import is_user_banned
+        if is_user_banned(interaction.user.id):
+            await interaction.response.send_message(f"Sorry {interaction.user.mention}, you are banned from using this bot.", ephemeral=True)
+            return
         """Display beautiful item probability breakdown for a given difficulty."""
         await interaction.response.defer()
         

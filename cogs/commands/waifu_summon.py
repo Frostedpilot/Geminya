@@ -1461,7 +1461,12 @@ class WaifuSummonCog(BaseCommand):
                             else:
                                 dialogue_str = str(dialogue)[:200] + ("..." if len(str(dialogue)) > 200 else "")
                             embed.add_field(name="💬 Special Dialogue", value=dialogue_str, inline=False)
-                        
+                            
+                        archetype = waifu.get("archetype")
+                        if archetype:
+                            embed.add_field(name="🧩 Archetype", value=archetype, inline=True)
+
+
                         embed.set_footer(text=f"ID: {waifu['waifu_id']} • Page 2/2 • Match {self.idx+1}/{len(self.waifus)}")
                         return embed
                 @discord.ui.button(label="Switch Page", style=discord.ButtonStyle.secondary, row=0)

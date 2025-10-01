@@ -124,6 +124,48 @@ DEFAULT_GIFT_CODES = [
         "is_active": True,
         "usage_limit": 99,
     },
+    {
+        "code": "GXNGUVL",
+        "reward_type": "gems",
+        "reward_value": 500,
+        "is_active": True,
+        "usage_limit": 99,
+    },
+    {
+        "code": "OK",
+        "reward_type": "item",
+        "reward_value": 6,
+        "is_active": True,
+        "usage_limit": 99,
+    },
+    {
+        "code": "OK1",
+        "reward_type": "item",
+        "reward_value": 6,
+        "is_active": True,
+        "usage_limit": 99,
+    },
+    {
+        "code": "OK2",
+        "reward_type": "item",
+        "reward_value": 6,
+        "is_active": True,
+        "usage_limit": 99,
+    },
+    {
+        "code": "SORRYNAMCUONG",
+        "reward_type": "gems",
+        "reward_value": 1,
+        "is_active": True,
+        "usage_limit": 1,
+    },
+    {
+        "code": "2SORRYNAMCUONG",
+        "reward_type": "item",
+        "reward_value": 7,
+        "is_active": True,
+        "usage_limit": 1,
+    }
 ]
 
 async def initialize_giftcodes():

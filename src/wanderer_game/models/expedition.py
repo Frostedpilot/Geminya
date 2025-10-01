@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Any, Optional
 from enum import Enum
 import random
+import math
 from .character import Affinity, AffinityType
 
 
@@ -176,15 +177,19 @@ class Expedition:
         current_bonus = self.stat_bonuses.get(stat, 0)
         self.stat_bonuses[stat] = current_bonus + bonus
     
-    def add_difficulty_modifier(self, modifier: float):
-        """Add a difficulty modifier (multiplicative)"""
+    def add_difficulty_modifier(self, modifier: float, source: str = "unknown"):
+        """Add a difficulty modifier (multiplicative) with debug logging."""
         self.difficulty_modifiers.append(modifier)
     
     def get_effective_difficulty(self, base_difficulty: int) -> int:
-        """Calculate effective difficulty with all modifiers applied"""
-        modified_difficulty = float(base_difficulty)
+        """Calculate effective difficulty with all modifiers applied, handling inf/NaN."""
+        modified_difficulty = base_difficulty
         for modifier in self.difficulty_modifiers:
             modified_difficulty *= modifier
+        # Handle inf/NaN
+        if not math.isfinite(modified_difficulty):
+            # Return a safe default (e.g., base_difficulty or 0)
+            return max(0, base_difficulty)
         return int(modified_difficulty)
     
     def get_effective_stat(self, base_stat: int, stat_name: str) -> int:

@@ -48,7 +48,7 @@ class ExpeditionResolver:
             unique_encounters = list(self.encounters.values())
         # Group by type
         type_map = {EncounterType.STANDARD: [], EncounterType.GATED: [], EncounterType.BOON: [], EncounterType.HAZARD: []}
-        print(type_map)
+    # Removed debug print
         for encounter in unique_encounters:
             if encounter.type in type_map:
                 # Filter STANDARD encounters by dominant_stats if present
@@ -490,7 +490,7 @@ class ExpeditionResolver:
             encounter_difficulty = encounter_result.encounter.difficulty or expedition.difficulty
             team_score = self._calculate_team_score(encounter_result.encounter.check_stat, expedition, team) if encounter_result.encounter.check_stat else 0
             
-            total_loot_value = (encounter_difficulty + effective_loot_value + team_score)/2
+            total_loot_value = (min(int(encounter_difficulty * 1.5), int(team_score)) + encounter_difficulty)/2 + max(0, int(team_score - encounter_difficulty * 1.5)) * 0.35 + effective_loot_value
             # Determine number of rolls based on outcome
             num_rolls = 2 if encounter_result.outcome == EncounterOutcome.GREAT_SUCCESS else 1
             # Generate loot items using the new value-based system
@@ -586,7 +586,7 @@ class ExpeditionResolver:
         elif modifier.type == ModifierType.DIFFICULTY_INCREASE and modifier.value:
             # Convert percentage to multiplier (e.g., 20 -> 1.20)
             multiplier = 1.0 + (float(modifier.value) / 100.0)
-            expedition.add_difficulty_modifier(multiplier)
+            expedition.add_difficulty_modifier(multiplier, source=f"DIFFICULTY_INCREASE (modifier.value={modifier.value})")
         
         # ===== MISHAP AND OUTCOME MODIFIERS =====
         elif modifier.type == ModifierType.PREVENT_MISHAP:
@@ -624,7 +624,7 @@ class ExpeditionResolver:
         elif modifier.type == ModifierType.REMOVE_ENCOUNTER_TAG and modifier.value:
             # Remove specific tag from encounters (complex - would need tag modification)
             # For now, treat as minor difficulty reduction
-            expedition.add_difficulty_modifier(0.95)
+            expedition.add_difficulty_modifier(0.95, source=f"REMOVE_ENCOUNTER_TAG (modifier.value={modifier.value})")
         
         elif modifier.type == ModifierType.ENCOUNTER_TAG_ADD and modifier.value:
             # Add tag to encounters (complex - would need tag modification)
@@ -697,7 +697,7 @@ class ExpeditionResolver:
         elif modifier.type == ModifierType.DIFFICULTY_INCREASE_ABSOLUTE and modifier.value:
             # Add flat difficulty (treat as multiplier based on absolute value)
             multiplier = 1.0 + (float(modifier.value) / 50.0)  # Scale absolute to reasonable multiplier
-            expedition.add_difficulty_modifier(multiplier)
+            expedition.add_difficulty_modifier(multiplier, source=f"DIFFICULTY_INCREASE_ABSOLUTE (modifier.value={modifier.value})")
         
         # ===== GUARANTEED OUTCOME MODIFIERS =====
         elif modifier.type == ModifierType.GUARANTEED_SUCCESS_NEXT_ENCOUNTER and modifier.value:
