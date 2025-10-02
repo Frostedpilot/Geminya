@@ -199,9 +199,12 @@ class WaifuSummonCog(BaseCommand):
                         for w in waifu_page:
                             stars = "⭐" * w.get("current_star_level", w["rarity"])
                             shards = w.get("character_shards", 0)
+                            # Add awakened badge if is_awakened is True
+                            awakened_badge = " 🦋" if w.get("is_awakened") else ""
+                            display_name = f"{w['name']}{awakened_badge}"
                             value = f"{stars} | {w['series']} | {shards} shards"
                             embed.add_field(
-                                name=w["name"],
+                                name=display_name,
                                 value=value,
                                 inline=False
                             )
@@ -1155,15 +1158,17 @@ class WaifuSummonCog(BaseCommand):
                 color=0x3498DB,
             )
 
-            # Add rarity distribution (showing current star levels)
+            # Add rarity distribution (showing current star levels) and awakened count
             rarity_dist = {}
             upgradeable_count = 0
             total_shards = 0
-            
+            awakened_count = 0
+
             for waifu in collection:
                 current_star = waifu.get("current_star_level", waifu["rarity"])
                 rarity_dist[current_star] = rarity_dist.get(current_star, 0) + 1
-                
+                if waifu.get("is_awakened"):
+                    awakened_count += 1
                 # Check if upgradeable
                 shards = waifu.get("character_shards", 0)
                 if current_star < 5:
@@ -1182,6 +1187,12 @@ class WaifuSummonCog(BaseCommand):
                 embed.add_field(
                     name="🌟 Star Level Distribution", value=rarity_text, inline=True
                 )
+            # Add awakened count field
+            embed.add_field(
+                name="🦋 Awakened Characters",
+                value=f"{awakened_count} awakened waifu(s)",
+                inline=True,
+            )
 
             # Add resources
             embed.add_field(
@@ -1302,12 +1313,16 @@ class WaifuSummonCog(BaseCommand):
                     self.page = 1  # 1 = main, 2 = stats
 
                 def build_embed(self, waifu, user_waifu, current_star, star_progress=None, combat_stats=None):
+                    # Awakened badge and color
+                    is_awakened = user_waifu.get('is_awakened', False) if user_waifu else False
+                    awakened_badge = " 🦋" if is_awakened else ""
+                    awakened_field = None
                     if self.page == 1:
                         description = waifu.get("about") or waifu.get("personality_profile") or "A mysterious character..."
                         embed = discord.Embed(
-                            title=f"👤 {waifu['name']}",
+                            title=f"👤 {waifu['name']}{awakened_badge}",
                             description=description,
-                            color=rarity_colors.get(current_star, 0x95A5A6),
+                            color=0x00C3FF if is_awakened else rarity_colors.get(current_star, 0x95A5A6),
                         )
                         embed.add_field(name="🎭 Series", value=waifu["series"], inline=True)
                         embed.add_field(name="🏷️ Genre", value=waifu.get("genre", "Unknown"), inline=True)
@@ -1315,12 +1330,14 @@ class WaifuSummonCog(BaseCommand):
                         if isinstance(elem_type, list):
                             elem_type = ", ".join(elem_type) if elem_type else "Unknown"
                         embed.add_field(name="🔮 Element", value=elem_type, inline=True)
-                        embed.add_field(name="⭐ Base Rarity", value="⭐" * waifu["rarity"], inline=True)
+                        embed.add_field(name="⭐ Base Rarity", value="🌟" * waifu["rarity"], inline=True)
                         if waifu.get("mal_id"):
                             embed.add_field(name="🔗 MAL ID", value=str(waifu["mal_id"]), inline=True)
                         if waifu.get("birthday"):
                             embed.add_field(name="🎂 Birthday", value=str(waifu["birthday"]), inline=True)
                         if user_waifu:
+                            if is_awakened:
+                                embed.add_field(name="🦋 Awakened Status", value="**AWAKENED**\nThis waifu has reached their awakened form!", inline=False)
                             embed.add_field(name="🌟 Star Progress", value=star_progress or "Loading...", inline=True)
                             embed.add_field(
                                 name="⚡ Combat Stats",
@@ -1373,11 +1390,11 @@ class WaifuSummonCog(BaseCommand):
                             embed.set_thumbnail(url=waifu["image_url"])  # Use thumbnail for more compact layout
                         
                         # Top row - rarity, status, and element
-                        embed.add_field(name="⭐ Base Rarity", value="⭐" * waifu["rarity"], inline=True)
+                        embed.add_field(name="⭐ Base Rarity", value="🌟" * waifu["rarity"], inline=True)
                         
                         # Status field with star progress
                         if user_waifu:
-                            status_value = f"**Owned** ({'⭐' * current_star} {current_star}★)"
+                            status_value = f"**Owned** ({'🌟' * current_star} {current_star}★)"
                             if star_progress:
                                 # Extract key star progress info for compact display
                                 if "READY TO UPGRADE!" in star_progress:
@@ -1484,7 +1501,7 @@ class WaifuSummonCog(BaseCommand):
                     if user_waifu:
                         shards = await self.waifu_service.get_character_shards(str(self.ctx.author.id), waifu["waifu_id"])
                         is_max_star = current_star >= 5
-                        star_info = f"**Current Star Level:** {'⭐' * current_star} ({current_star}★)\n"
+                        star_info = f"**Current Star Level:** {'🌟' * current_star} ({current_star}★)\n"
                         star_info += f"**Star Shards:** {shards:,}"
                         if is_max_star:
                             star_info += " (MAX STAR - converts to quartz)"

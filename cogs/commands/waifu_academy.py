@@ -295,16 +295,18 @@ class WaifuAcademyCog(BaseCommand):
             sakura_crystals = user.get('sakura_crystals', 0)
             quartzs = user.get('quartzs', 0)
             pity_counter = user.get('pity_counter', 0)
-            
+            daphine = user.get('daphine', 0)
+
             # Calculate pity information based on actual gacha system
             # Only 3⭐ has pity (guaranteed at 50 pulls)
             # 2⭐ is only guaranteed on 10th roll of multi-summon, not regular pity
             guaranteed_3star = max(0, 50 - pity_counter)
-            
+
             embed.add_field(
                 name="💎 Resources",
                 value=f"**Sakura Crystals:** {sakura_crystals:,}\n"
                 f"**Quartzs:** 💠 {quartzs:,}\n"
+                f"**Daphine:** 🦋 {daphine}\n"
                 f"**Pity Counter:** {pity_counter}/50\n"
                 f"**Next 3⭐ in:** {guaranteed_3star} pulls",
                 inline=True,

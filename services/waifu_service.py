@@ -14,6 +14,66 @@ from services.database import DatabaseService
 
 class WaifuService:
 
+    async def get_daphine_count(self, discord_id: str) -> int:
+        """Get the current Daphine count for a user."""
+        user = await self.db.get_or_create_user(discord_id)
+        return user.get("daphine", 0)
+
+    async def add_daphine(self, discord_id: str, amount: int) -> bool:
+        """Add Daphine to a user."""
+        user = await self.db.get_or_create_user(discord_id)
+        if not self.db.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
+        async with self.db.connection_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET daphine = daphine + $1 WHERE discord_id = $2",
+                amount, discord_id
+            )
+        return True
+
+    async def remove_daphine(self, discord_id: str, amount: int) -> bool:
+        """Remove Daphine from a user (if enough)."""
+        user = await self.db.get_or_create_user(discord_id)
+        if user.get("daphine", 0) < amount:
+            return False
+        if not self.db.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
+        async with self.db.connection_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET daphine = daphine - $1 WHERE discord_id = $2",
+                amount, discord_id
+            )
+        return True
+
+    async def awaken_waifu(self, discord_id: str, waifu_id: int) -> Dict[str, Any]:
+        """Awaken a waifu for a user by consuming 1 Daphine."""
+        user = await self.db.get_or_create_user(discord_id)
+        if not self.db.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
+        async with self.db.connection_pool.acquire() as conn:
+            # Get user_waifu row
+            user_waifu = await conn.fetchrow(
+                "SELECT * FROM user_waifus WHERE user_id = $1 AND waifu_id = $2",
+                user["id"], waifu_id
+            )
+            if not user_waifu:
+                return {"success": False, "message": "You do not own this waifu."}
+            if user_waifu.get("is_awakened"):
+                return {"success": False, "message": "This waifu is already awakened."}
+            if user.get("daphine", 0) < 1:
+                return {"success": False, "message": "You do not have any Daphine."}
+            # Deduct Daphine
+            await conn.execute(
+                "UPDATE users SET daphine = daphine - 1 WHERE id = $1 AND daphine >= 1",
+                user["id"]
+            )
+            # Set is_awakened
+            await conn.execute(
+                "UPDATE user_waifus SET is_awakened = TRUE WHERE id = $1",
+                user_waifu["id"]
+            )
+            return {"success": True, "message": "Waifu awakened successfully!"}
+
     async def get_series_genres(self, series_id: int) -> list:
         """Get genres for a given series_id from the database."""
         return await self.db.get_series_genres(series_id)

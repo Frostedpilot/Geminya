@@ -833,6 +833,7 @@ class DatabaseService:
                 quartzs INTEGER DEFAULT 0,
                 pity_counter INTEGER DEFAULT 0,
                 last_daily_reset BIGINT DEFAULT 0,
+                daphine INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             CREATE INDEX IF NOT EXISTS idx_discord_id ON users(discord_id);
@@ -899,6 +900,7 @@ class DatabaseService:
                 current_star_level INTEGER DEFAULT NULL,
                 star_shards INTEGER DEFAULT 0,
                 character_shards INTEGER DEFAULT 0,
+                is_awakened BOOLEAN DEFAULT FALSE,
                 current_mood VARCHAR(50) DEFAULT 'neutral',
                 last_interaction TIMESTAMP NULL,
                 total_conversations INTEGER DEFAULT 0,
