@@ -2706,27 +2706,50 @@ class MockExpeditionSelectView(discord.ui.View):
         discord_id = str(interaction.user.id)
         try:
             if self.use_maxed_characters:
-                # For maxed characters, we'll generate a mock list of characters
-                # Get all available characters from the character registry
+                # For maxed characters, generate a mock list of ALL characters from the registry
                 character_registry = self.expedition_service.data_manager.get_character_registry()
-                all_characters = character_registry.get_all_characters()[:50]  # Limit to first 50 for performance
-                
-                # Convert to mock user_waifus format
+                all_characters = character_registry.get_all_characters()  # No limit
+
                 mock_waifus = []
                 for i, char in enumerate(all_characters):
+                    # Use original values for stats, potency, elemental_resistances if available
+                    stats = getattr(char, 'base_stats', None)
+                    if stats and hasattr(stats, 'to_dict'):
+                        stats = stats.to_dict()
+                    elif isinstance(stats, dict):
+                        stats = stats
+                    else:
+                        stats = {}
+
+                    potency = getattr(char, 'potency', None)
+                    if potency and hasattr(potency, 'to_dict'):
+                        potency = potency.to_dict()
+                    elif isinstance(potency, dict):
+                        potency = potency
+                    else:
+                        potency = {}
+
+                    elem_res = getattr(char, 'elemental_resistances', None)
+                    if elem_res and hasattr(elem_res, 'to_dict'):
+                        elem_res = elem_res.to_dict()
+                    elif isinstance(elem_res, dict):
+                        elem_res = elem_res
+                    else:
+                        elem_res = {}
+
                     mock_waifus.append({
                         "user_waifu_id": f"mock_{i}",  # Mock ID
                         "waifu_id": char.waifu_id,
                         "name": char.name,
                         "series": char.series,
-                        "rarity": 6,  # Max rarity
-                        "current_star_level": 6,  # Max star level
+                        "rarity": 5,  # Max rarity is 5
+                        "current_star_level": 5,  # Max star level is 5
                         "bond_level": 100,  # Max bond
-                        "stats": {},
-                        "elemental_types": char.elemental_types,  # Correct attribute name
-                        "archetype": char.archetype,
-                        "potency": {},
-                        "elemental_resistances": {}
+                        "stats": stats,
+                        "elemental_types": getattr(char, 'elemental_types', []),
+                        "archetype": getattr(char, 'archetype', None),
+                        "potency": potency,
+                        "elemental_resistances": elem_res
                     })
             else:
                 # Use user's actual characters
@@ -3469,7 +3492,7 @@ class MockCharacterSelectView(discord.ui.View):
                     inline=True
                 )
                 embed.add_field(
-                    name="� Affinity Multiplier",
+                    name="🔮 Affinity Multiplier",
                     value=f"x{affinity_multiplier:.2f}",
                     inline=True
                 )
