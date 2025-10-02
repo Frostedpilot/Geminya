@@ -1,4 +1,4 @@
-# --- Equipment Inventory UI ---
+import discord
 import discord
 from config.constants import MAX_EQUIPMENT_PER_USER
 from src.wanderer_game.utils.equipment_utils import format_equipment_full
@@ -2108,16 +2108,6 @@ class ExpeditionResultsView(discord.ui.View):
         # Final multiplier outcome and value (always show)
         final_multiplier_numeric = result_summary.get('final_multiplier_numeric', 1.0)
         final_multiplier_name = result_summary.get('final_multiplier', 'standard')
-        # Series multiplier: check if present in result_summary or infer from team
-        series_multiplier = 1.0
-        series_bonus_text = ""
-        if 'team' in expedition:
-            team = expedition['team']
-            if isinstance(team, list) and len(team) == 3:
-                series_ids = [getattr(c, 'series_id', None) if hasattr(c, 'series_id') else c.get('series_id') for c in team]
-                if all(sid is not None for sid in series_ids) and len(set(series_ids)) == 1:
-                    series_multiplier = 1.2
-                    series_bonus_text = "🌟 **Series Bonus Active!** All 3 characters were from the same series. Team Power was multiplied by 1.2x."
         # Emoji for outcome
         multiplier_emoji = {
             'catastrophe': '💥',
@@ -2140,18 +2130,6 @@ class ExpeditionResultsView(discord.ui.View):
             value=multiplier_text,
             inline=False
         )
-        if series_multiplier > 1.0:
-            embed.add_field(
-                name="🌟 Series Multiplier",
-                value=f"x{series_multiplier:.2f} (All 3 from same series)",
-                inline=True
-            )
-        if series_bonus_text:
-            embed.add_field(
-                name="Bonus",
-                value=series_bonus_text,
-                inline=False
-            )
 
         embed.set_footer(text="Use the buttons below to view detailed encounters and rewards!")
         return embed
@@ -2511,6 +2489,28 @@ class MockExpeditionResultsView(ExpeditionResultsView):
 
 
 
+
+# --- Expedition Search Modal ---
+class ExpeditionSearchModal(discord.ui.Modal):
+    def __init__(self, parent_view):
+        super().__init__(title="🔍 Search Expeditions")
+        self.parent_view = parent_view
+        self.search_input = discord.ui.TextInput(
+            label="Expedition Name or Description",
+            placeholder="Enter search term...",
+            default=parent_view.search_filter,
+            max_length=100,
+            required=False
+        )
+        self.add_item(self.search_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        self.parent_view.search_filter = self.search_input.value.strip().lower()
+        self.parent_view.current_page = 0
+        self.parent_view._setup_ui()
+        embed = await self.parent_view._create_expedition_list_embed()
+        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+
 class MockExpeditionSelectView(discord.ui.View):
     """View for selecting expeditions for mock testing - includes ALL expeditions."""
     
@@ -2526,32 +2526,71 @@ class MockExpeditionSelectView(discord.ui.View):
         # For mock testing, allow ALL expeditions (no filtering)
         self.expeditions = expeditions
 
+        # Search filter for expeditions (default: empty string)
+        self.search_filter = ""
+
         self._setup_ui()
+
+    def get_filtered_expeditions(self):
+        """Return expeditions filtered by search_filter (case-insensitive on name/description)."""
+        if not self.search_filter:
+            return self.expeditions
+        term = self.search_filter.lower()
+        return [
+            exp for exp in self.expeditions
+            if term in exp.get('name', '').lower() or term in exp.get('description', '').lower()
+        ]
     
     def _setup_ui(self):
-        """Setup the UI components based on current page."""
+        """Setup the UI components based on current page and search filter."""
         self.clear_items()
-        
-        # Calculate page boundaries
+
+        # Add search button
+        search_button = discord.ui.Button(
+            label="🔍 Search Expeditions",
+            style=discord.ButtonStyle.secondary,
+            custom_id="search_expeditions"
+        )
+        search_button.callback = self.open_search_modal
+        self.add_item(search_button)
+
+        # Add clear button if search is active
+        if self.search_filter:
+            clear_button = discord.ui.Button(
+                label="🗑️ Clear Search",
+                style=discord.ButtonStyle.secondary,
+                custom_id="clear_search"
+            )
+            clear_button.callback = self.clear_search
+            self.add_item(clear_button)
+
+        # Use filtered expeditions for UI
+        expeditions = self.get_filtered_expeditions()
+        total_filtered = len(expeditions)
+        total_pages = max(1, (total_filtered + self.items_per_page - 1) // self.items_per_page)
+        # If current page is out of range, reset to 0
+        if self.current_page >= total_pages:
+            self.current_page = 0
+
         start_idx = self.current_page * self.items_per_page
-        end_idx = min(start_idx + self.items_per_page, len(self.expeditions))
-        current_expeditions = self.expeditions[start_idx:end_idx]
-        
+        end_idx = min(start_idx + self.items_per_page, total_filtered)
+        current_expeditions = expeditions[start_idx:end_idx]
+
         # Create select menu for expeditions
         options = []
-        for i, expedition in enumerate(current_expeditions):
-            global_idx = start_idx + i  # Calculate global index
-            label = expedition['name'][:95]  # Discord limit
+        for expedition in current_expeditions:
+            # Use a unique identifier for the value (prefer 'id', fallback to name)
+            exp_id = str(expedition.get('id', expedition['name']))
+            label = expedition['name'][:95]
             description = f"Diff: {expedition['difficulty']} | Duration: {expedition['duration_hours']}h"
             if len(description) > 100:
                 description = description[:97] + "..."
-            
             options.append(discord.SelectOption(
                 label=label,
                 description=description,
-                value=str(global_idx)
+                value=exp_id
             ))
-        
+
         if options:
             self.expedition_select = discord.ui.Select(
                 placeholder="Choose an expedition to mock test...",
@@ -2560,9 +2599,32 @@ class MockExpeditionSelectView(discord.ui.View):
             )
             self.expedition_select.callback = self.expedition_selected
             self.add_item(self.expedition_select)
-        
-        # Add pagination buttons
-        self._add_pagination_buttons()
+        else:
+            # No expeditions match filter
+            self.expedition_select = discord.ui.Select(
+                placeholder="No expeditions match your search.",
+                options=[discord.SelectOption(label="No expeditions found", value="none")],
+                custom_id="mock_expedition_select",
+                disabled=True
+            )
+            self.add_item(self.expedition_select)
+
+        # Add pagination buttons (only if there are expeditions)
+        if total_filtered > 0:
+            self._add_pagination_buttons()
+
+    async def open_search_modal(self, interaction: discord.Interaction):
+        """Open the expedition search modal."""
+        modal = ExpeditionSearchModal(self)
+        await interaction.response.send_modal(modal)
+
+    async def clear_search(self, interaction: discord.Interaction):
+        """Clear the search filter and reset UI."""
+        self.search_filter = ""
+        self.current_page = 0
+        self._setup_ui()
+        embed = await self._create_expedition_list_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
     
     def _add_pagination_buttons(self):
         """Add pagination buttons if needed."""
@@ -2643,23 +2705,42 @@ class MockExpeditionSelectView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=None)
 
     async def _create_expedition_list_embed(self) -> discord.Embed:
-        """Create expedition list embed for current page."""
+        """Create expedition list embed for current page, using filtered expeditions."""
         character_mode = "Maxed Characters" if self.use_maxed_characters else "Your Characters"
-        
+        expeditions = self.get_filtered_expeditions()
+        total_filtered = len(expeditions)
+        total_pages = max(1, (total_filtered + self.items_per_page - 1) // self.items_per_page)
+        page = self.current_page + 1
+
+        if total_filtered == 0:
+            embed = discord.Embed(
+                title="🧪 Mock Test - Select Expedition",
+                description=(
+                    f"**Mode:** {character_mode}\n"
+                    f"**No expeditions match your search.**\n\n"
+                    f"Use the search or clear search buttons to try again."
+                ),
+                color=0xF39C12
+            )
+            embed.set_footer(text="No expeditions available for selection.")
+            return embed
+
         embed = discord.Embed(
             title="🧪 Mock Test - Select Expedition",
-            description=f"**Mode:** {character_mode}\n"
-                       f"**Page {self.current_page + 1}/{self.total_pages}** | **Total:** {len(self.expeditions)} expeditions\n\n"
-                       f"⚠️ **This is a mock test - no data will be saved!**\n"
-                       f"Choose an expedition to test with simulated results:",
+            description=(
+                f"**Mode:** {character_mode}\n"
+                f"**Page {page}/{total_pages}** | **Total:** {total_filtered} expeditions\n\n"
+                f"⚠️ **This is a mock test - no data will be saved!**\n"
+                f"Choose an expedition to test with simulated results:"
+            ),
             color=0xF39C12
         )
-        
+
         # Calculate page boundaries
         start_idx = self.current_page * self.items_per_page
-        end_idx = min(start_idx + self.items_per_page, len(self.expeditions))
-        current_expeditions = self.expeditions[start_idx:end_idx]
-        
+        end_idx = min(start_idx + self.items_per_page, total_filtered)
+        current_expeditions = expeditions[start_idx:end_idx]
+
         # Add expedition preview (first 5 of current page)
         for i, expedition in enumerate(current_expeditions[:5]):
             difficulty = expedition.get('difficulty', 100)
@@ -2667,18 +2748,18 @@ class MockExpeditionSelectView(discord.ui.View):
             encounters = expedition.get('expected_encounters', 5)
             favored = expedition.get('num_favored_affinities', 0)
             disfavored = expedition.get('num_disfavored_affinities', 0)
-            
+
             value = (
                 f"**Difficulty:** {difficulty} | **Duration:** {duration_hours}h\n"
                 f"**Encounters:** ~{encounters} | **Buffs/Debuffs:** {favored}/{disfavored}"
             )
-            
+
             embed.add_field(
                 name=f"{i+1}. {expedition['name']}",
                 value=value,
                 inline=False
             )
-        
+
         if len(current_expeditions) > 5:
             remaining = len(current_expeditions) - 5
             embed.add_field(
@@ -2686,8 +2767,11 @@ class MockExpeditionSelectView(discord.ui.View):
                 value=f"... and {remaining} more expeditions on this page.\nUse the dropdown below to select any expedition.",
                 inline=False
             )
-        
-        embed.set_footer(text="Select an expedition below to start your mock test!")
+
+        if self.search_filter:
+            embed.set_footer(text=f"Filter: '{self.search_filter}' | Select an expedition below to start your mock test!")
+        else:
+            embed.set_footer(text="Select an expedition below to start your mock test!")
         return embed
     
     async def expedition_selected(self, interaction: discord.Interaction):
@@ -2695,24 +2779,37 @@ class MockExpeditionSelectView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ Only the command user can select expeditions.", ephemeral=True)
             return
-        
+
         # Defer the interaction first to prevent timeout
         await interaction.response.defer()
-        
-        expedition_index = int(self.expedition_select.values[0])  # This is the global index
-        self.selected_expedition = self.expeditions[expedition_index]
-        
+
+        # Get the selected expedition id
+        selected_id = self.expedition_select.values[0]
+        # Find the expedition in the filtered list
+        expeditions = self.get_filtered_expeditions()
+        selected_expedition = None
+        for exp in expeditions:
+            exp_id = str(exp.get('id', exp['name']))
+            if exp_id == selected_id:
+                selected_expedition = exp
+                break
+        if not selected_expedition:
+            await interaction.edit_original_response(embed=discord.Embed(
+                title="❌ Error",
+                description="Could not find the selected expedition. Please try again.",
+                color=0xFF6B6B
+            ), view=None)
+            return
+        self.selected_expedition = selected_expedition
+
         # Create character selection view for mock testing
         discord_id = str(interaction.user.id)
         try:
             if self.use_maxed_characters:
-                # For maxed characters, generate a mock list of ALL characters from the registry
                 character_registry = self.expedition_service.data_manager.get_character_registry()
-                all_characters = character_registry.get_all_characters()  # No limit
-
+                all_characters = character_registry.get_all_characters()
                 mock_waifus = []
                 for i, char in enumerate(all_characters):
-                    # Use original values for stats, potency, elemental_resistances if available
                     stats = getattr(char, 'base_stats', None)
                     if stats and hasattr(stats, 'to_dict'):
                         stats = stats.to_dict()
@@ -2720,7 +2817,6 @@ class MockExpeditionSelectView(discord.ui.View):
                         stats = stats
                     else:
                         stats = {}
-
                     potency = getattr(char, 'potency', None)
                     if potency and hasattr(potency, 'to_dict'):
                         potency = potency.to_dict()
@@ -2728,7 +2824,6 @@ class MockExpeditionSelectView(discord.ui.View):
                         potency = potency
                     else:
                         potency = {}
-
                     elem_res = getattr(char, 'elemental_resistances', None)
                     if elem_res and hasattr(elem_res, 'to_dict'):
                         elem_res = elem_res.to_dict()
@@ -2736,15 +2831,14 @@ class MockExpeditionSelectView(discord.ui.View):
                         elem_res = elem_res
                     else:
                         elem_res = {}
-
                     mock_waifus.append({
-                        "user_waifu_id": f"mock_{i}",  # Mock ID
+                        "user_waifu_id": f"mock_{i}",
                         "waifu_id": char.waifu_id,
                         "name": char.name,
                         "series": char.series,
-                        "rarity": 5,  # Max rarity is 5
-                        "current_star_level": 5,  # Max star level is 5
-                        "bond_level": 100,  # Max bond
+                        "rarity": 5,
+                        "current_star_level": 5,
+                        "bond_level": 100,
                         "stats": stats,
                         "elemental_types": getattr(char, 'elemental_types', []),
                         "archetype": getattr(char, 'archetype', None),
@@ -2752,9 +2846,7 @@ class MockExpeditionSelectView(discord.ui.View):
                         "elemental_resistances": elem_res
                     })
             else:
-                # Use user's actual characters
                 mock_waifus = await self.expedition_service.get_user_characters_for_expedition(discord_id)
-            
             if not mock_waifus:
                 embed = discord.Embed(
                     title="❌ No Characters Available",
@@ -2763,19 +2855,15 @@ class MockExpeditionSelectView(discord.ui.View):
                 )
                 await interaction.edit_original_response(embed=embed, view=None)
                 return
-            
-            # Create mock character selection view (no equipment needed)
             character_view = MockCharacterSelectView(
-                mock_waifus, 
-                interaction.user.id, 
+                mock_waifus,
+                interaction.user.id,
                 self.expedition_service,
                 self.selected_expedition,
                 self.use_maxed_characters
             )
-            
             embed = await character_view._create_character_selection_embed()
             await interaction.edit_original_response(embed=embed, view=character_view)
-            
         except Exception as e:
             embed = discord.Embed(
                 title="❌ Error",
@@ -2835,13 +2923,25 @@ class MockCharacterSelectView(discord.ui.View):
                 return mean * multiplier
             return 0.0
 
-        # Helper to count affinity matches
-        def calc_affinity_count(character, favored_affinities, disfavored_affinities):
+        # Helper to count affinity matches (identical to CharacterSelectView, includes equipment and 3-per-character cap)
+        def calc_affinity_count(character, favored_affinities, disfavored_affinities, extra_favored=None, extra_disfavored=None):
+            if not character:
+                return 0
+            all_favored = list(favored_affinities)
+            all_disfavored = list(disfavored_affinities)
+            if extra_favored:
+                all_favored.extend(extra_favored)
+            if extra_disfavored:
+                all_disfavored.extend(extra_disfavored)
             buff_matches = 0
             debuff_matches = 0
-            
-            for affinity in favored_affinities:
-                if affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
+            for affinity in all_favored:
+                if buff_matches >= 3:
+                    break
+                if affinity.type.name == 'SERIES_ID' and hasattr(character, 'series_id'):
+                    if str(character.series_id) == str(affinity.value):
+                        buff_matches += 1
+                elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
                     if affinity.value in getattr(character, 'elemental_types', []):
                         buff_matches += 1
                 elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
@@ -2850,9 +2950,13 @@ class MockCharacterSelectView(discord.ui.View):
                 elif affinity.type.name == 'GENRE':
                     if affinity.value in getattr(character, 'anime_genres', []):
                         buff_matches += 1
-            
-            for affinity in disfavored_affinities:
-                if affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
+            for affinity in all_disfavored:
+                if debuff_matches >= 3:
+                    break
+                if affinity.type.name == 'SERIES_ID' and hasattr(character, 'series_id'):
+                    if str(character.series_id) == str(affinity.value):
+                        debuff_matches += 1
+                elif affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
                     if affinity.value in getattr(character, 'elemental_types', []):
                         debuff_matches += 1
                 elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
