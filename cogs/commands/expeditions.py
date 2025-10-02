@@ -2495,6 +2495,1056 @@ class ExpeditionResultsView(discord.ui.View):
         await interaction.response.edit_message(embed=embed, view=self)
 
 
+# --- MOCK TEST ONLY: Consistent summary rendering for mock test results ---
+class MockExpeditionResultsView(ExpeditionResultsView):
+    """Child class to ensure mock test summary tab is always rendered identically to the first display."""
+    def _create_summary_embed(self) -> discord.Embed:
+        embed = super()._create_summary_embed()
+        # Always add mock test styling and notice
+        if embed.title:
+            if not embed.title.startswith("🧪"):
+                embed.title = "🧪 " + embed.title + " (MOCK TEST)"
+        else:
+            embed.title = "🧪 Expedition Results (MOCK TEST)"
+        embed.color = 0xF39C12  # Orange for mock
+        return embed
+
+
+
+class MockExpeditionSelectView(discord.ui.View):
+    """View for selecting expeditions for mock testing - includes ALL expeditions."""
+    
+    def __init__(self, expeditions: List[Dict], user_id: int, expedition_service, use_maxed_characters: bool):
+        super().__init__(timeout=300.0)
+        self.user_id = user_id
+        self.expedition_service = expedition_service
+        self.use_maxed_characters = use_maxed_characters
+        self.selected_expedition = None
+        self.current_page = 0
+        self.items_per_page = 25  # Discord select menu limit
+
+        # For mock testing, allow ALL expeditions (no filtering)
+        self.expeditions = expeditions
+
+        self._setup_ui()
+    
+    def _setup_ui(self):
+        """Setup the UI components based on current page."""
+        self.clear_items()
+        
+        # Calculate page boundaries
+        start_idx = self.current_page * self.items_per_page
+        end_idx = min(start_idx + self.items_per_page, len(self.expeditions))
+        current_expeditions = self.expeditions[start_idx:end_idx]
+        
+        # Create select menu for expeditions
+        options = []
+        for i, expedition in enumerate(current_expeditions):
+            global_idx = start_idx + i  # Calculate global index
+            label = expedition['name'][:95]  # Discord limit
+            description = f"Diff: {expedition['difficulty']} | Duration: {expedition['duration_hours']}h"
+            if len(description) > 100:
+                description = description[:97] + "..."
+            
+            options.append(discord.SelectOption(
+                label=label,
+                description=description,
+                value=str(global_idx)
+            ))
+        
+        if options:
+            self.expedition_select = discord.ui.Select(
+                placeholder="Choose an expedition to mock test...",
+                options=options,
+                custom_id="mock_expedition_select"
+            )
+            self.expedition_select.callback = self.expedition_selected
+            self.add_item(self.expedition_select)
+        
+        # Add pagination buttons
+        self._add_pagination_buttons()
+    
+    def _add_pagination_buttons(self):
+        """Add pagination buttons if needed."""
+        total_pages = self.total_pages
+        
+        if total_pages > 1:
+            prev_button = discord.ui.Button(
+                label="⬅️ Previous",
+                style=discord.ButtonStyle.secondary,
+                disabled=self.current_page <= 0,
+                custom_id="mock_prev_page"
+            )
+            prev_button.callback = self.previous_page
+            self.add_item(prev_button)
+            
+            next_button = discord.ui.Button(
+                label="➡️ Next", 
+                style=discord.ButtonStyle.secondary,
+                disabled=self.current_page >= total_pages - 1,
+                custom_id="mock_next_page"
+            )
+            next_button.callback = self.next_page
+            self.add_item(next_button)
+        
+        # Add cancel button (always visible)
+        cancel_button = discord.ui.Button(
+            label="❌ Cancel",
+            style=discord.ButtonStyle.danger,
+            custom_id="cancel_mock_test"
+        )
+        cancel_button.callback = self.cancel_mock_test
+        self.add_item(cancel_button)
+
+    @property
+    def total_pages(self) -> int:
+        return (len(self.expeditions) + self.items_per_page - 1) // self.items_per_page
+    
+    async def previous_page(self, interaction: discord.Interaction):
+        """Go to previous page."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can navigate.", ephemeral=True)
+            return
+        
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._setup_ui()
+            embed = await self._create_expedition_list_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    async def next_page(self, interaction: discord.Interaction):
+        """Go to next page."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can navigate.", ephemeral=True)
+            return
+        
+        if self.current_page < self.total_pages - 1:
+            self.current_page += 1
+            self._setup_ui()
+            embed = await self._create_expedition_list_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    async def cancel_mock_test(self, interaction: discord.Interaction):
+        """Cancel the mock test process."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can cancel.", ephemeral=True)
+            return
+        
+        # Create cancellation embed
+        embed = discord.Embed(
+            title="❌ Mock Test Cancelled",
+            description="You have cancelled the expedition mock test.\n\n"
+                       "Use `/nwnl_expeditions_mocktest` again when you're ready to test expeditions!",
+            color=0x95A5A6
+        )
+        
+        # Clear the view to disable all buttons
+        self.clear_items()
+        await interaction.response.edit_message(embed=embed, view=None)
+
+    async def _create_expedition_list_embed(self) -> discord.Embed:
+        """Create expedition list embed for current page."""
+        character_mode = "Maxed Characters" if self.use_maxed_characters else "Your Characters"
+        
+        embed = discord.Embed(
+            title="🧪 Mock Test - Select Expedition",
+            description=f"**Mode:** {character_mode}\n"
+                       f"**Page {self.current_page + 1}/{self.total_pages}** | **Total:** {len(self.expeditions)} expeditions\n\n"
+                       f"⚠️ **This is a mock test - no data will be saved!**\n"
+                       f"Choose an expedition to test with simulated results:",
+            color=0xF39C12
+        )
+        
+        # Calculate page boundaries
+        start_idx = self.current_page * self.items_per_page
+        end_idx = min(start_idx + self.items_per_page, len(self.expeditions))
+        current_expeditions = self.expeditions[start_idx:end_idx]
+        
+        # Add expedition preview (first 5 of current page)
+        for i, expedition in enumerate(current_expeditions[:5]):
+            difficulty = expedition.get('difficulty', 100)
+            duration_hours = expedition.get('duration_hours', 4)
+            encounters = expedition.get('expected_encounters', 5)
+            favored = expedition.get('num_favored_affinities', 0)
+            disfavored = expedition.get('num_disfavored_affinities', 0)
+            
+            value = (
+                f"**Difficulty:** {difficulty} | **Duration:** {duration_hours}h\n"
+                f"**Encounters:** ~{encounters} | **Buffs/Debuffs:** {favored}/{disfavored}"
+            )
+            
+            embed.add_field(
+                name=f"{i+1}. {expedition['name']}",
+                value=value,
+                inline=False
+            )
+        
+        if len(current_expeditions) > 5:
+            remaining = len(current_expeditions) - 5
+            embed.add_field(
+                name="➕ Additional Expeditions",
+                value=f"... and {remaining} more expeditions on this page.\nUse the dropdown below to select any expedition.",
+                inline=False
+            )
+        
+        embed.set_footer(text="Select an expedition below to start your mock test!")
+        return embed
+    
+    async def expedition_selected(self, interaction: discord.Interaction):
+        """Handle expedition selection."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the command user can select expeditions.", ephemeral=True)
+            return
+        
+        # Defer the interaction first to prevent timeout
+        await interaction.response.defer()
+        
+        expedition_index = int(self.expedition_select.values[0])  # This is the global index
+        self.selected_expedition = self.expeditions[expedition_index]
+        
+        # Create character selection view for mock testing
+        discord_id = str(interaction.user.id)
+        try:
+            if self.use_maxed_characters:
+                # For maxed characters, we'll generate a mock list of characters
+                # Get all available characters from the character registry
+                character_registry = self.expedition_service.data_manager.get_character_registry()
+                all_characters = character_registry.get_all_characters()[:50]  # Limit to first 50 for performance
+                
+                # Convert to mock user_waifus format
+                mock_waifus = []
+                for i, char in enumerate(all_characters):
+                    mock_waifus.append({
+                        "user_waifu_id": f"mock_{i}",  # Mock ID
+                        "waifu_id": char.waifu_id,
+                        "name": char.name,
+                        "series": char.series,
+                        "rarity": 6,  # Max rarity
+                        "current_star_level": 6,  # Max star level
+                        "bond_level": 100,  # Max bond
+                        "stats": {},
+                        "elemental_types": char.elemental_types,  # Correct attribute name
+                        "archetype": char.archetype,
+                        "potency": {},
+                        "elemental_resistances": {}
+                    })
+            else:
+                # Use user's actual characters
+                mock_waifus = await self.expedition_service.get_user_characters_for_expedition(discord_id)
+            
+            if not mock_waifus:
+                embed = discord.Embed(
+                    title="❌ No Characters Available",
+                    description="No characters found for mock testing. Try using maxed characters instead.",
+                    color=0xFF6B6B
+                )
+                await interaction.edit_original_response(embed=embed, view=None)
+                return
+            
+            # Create mock character selection view (no equipment needed)
+            character_view = MockCharacterSelectView(
+                mock_waifus, 
+                interaction.user.id, 
+                self.expedition_service,
+                self.selected_expedition,
+                self.use_maxed_characters
+            )
+            
+            embed = await character_view._create_character_selection_embed()
+            await interaction.edit_original_response(embed=embed, view=character_view)
+            
+        except Exception as e:
+            embed = discord.Embed(
+                title="❌ Error",
+                description=f"An error occurred while loading characters: {str(e)}",
+                color=0xFF6B6B
+            )
+            await interaction.edit_original_response(embed=embed, view=None)
+
+
+class MockCharacterSelectView(discord.ui.View):
+    """View for selecting characters for mock testing - simplified version without equipment."""
+    
+    # Global cache for series name to series_id
+    _series_name_to_id_cache = None
+    
+    def __init__(self, user_waifus: List[Dict], user_id: int, expedition_service, expedition: Dict, use_maxed_characters: bool):
+        super().__init__(timeout=300.0)
+        self.user_waifus = user_waifus
+        self.user_id = user_id
+        self.expedition_service = expedition_service
+        self.expedition = expedition
+        self.use_maxed_characters = use_maxed_characters
+        self.selected_characters = []
+        self.search_filter = ""
+        self.current_page = 0
+        self.items_per_page = 25  # Discord select menu limit
+        self.sorting_mode = 'raw_power'  # or 'affinity_count'
+        self.char_registry = expedition_service.data_manager.get_character_registry()
+        
+        self._setup_ui()
+    
+    def _get_filtered_waifus(self) -> List[Dict]:
+        """Get waifus filtered by search term, annotated with raw stats and affinity count, sorted by selected mode."""
+        from src.wanderer_game.models.character import Affinity, AffinityType
+        
+        # Helper to calculate raw stats value (using real expedition system)
+        def calc_raw_stats(waifu, character, dominant_stats):
+            stats = waifu.get('stats')
+            star_level = waifu.get('current_star_level', waifu.get('rarity', 1))
+            multiplier = (1 + (star_level - 1) * 0.10) * 0.85
+            stat_values = []
+            if not stats and character and hasattr(character, 'base_stats'):
+                base_stats = getattr(character, 'base_stats', None)
+                if base_stats:
+                    stat_dict = base_stats.to_dict()
+                    if dominant_stats:
+                        stat_values = [v for k, v in stat_dict.items() if k in dominant_stats and isinstance(v, (int, float))]
+                    else:
+                        stat_values = [v for v in stat_dict.values() if isinstance(v, (int, float))]
+            elif stats and isinstance(stats, dict):
+                if dominant_stats:
+                    stat_values = [v for k, v in stats.items() if k in dominant_stats and isinstance(v, (int, float))]
+                else:
+                    stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
+            if stat_values:
+                mean = sum(stat_values) / len(stat_values)
+                return mean * multiplier
+            return 0.0
+
+        # Helper to count affinity matches
+        def calc_affinity_count(character, favored_affinities, disfavored_affinities):
+            buff_matches = 0
+            debuff_matches = 0
+            
+            for affinity in favored_affinities:
+                if affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
+                    if affinity.value in getattr(character, 'elemental_types', []):
+                        buff_matches += 1
+                elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
+                    if affinity.value == getattr(character, 'archetype', None):
+                        buff_matches += 1
+                elif affinity.type.name == 'GENRE':
+                    if affinity.value in getattr(character, 'anime_genres', []):
+                        buff_matches += 1
+            
+            for affinity in disfavored_affinities:
+                if affinity.type.name == 'ELEMENTAL' and hasattr(character, 'elemental_types'):
+                    if affinity.value in getattr(character, 'elemental_types', []):
+                        debuff_matches += 1
+                elif affinity.type.name == 'ARCHETYPE' and hasattr(character, 'archetype'):
+                    if affinity.value == getattr(character, 'archetype', None):
+                        debuff_matches += 1
+                elif affinity.type.name == 'GENRE':
+                    if affinity.value in getattr(character, 'anime_genres', []):
+                        debuff_matches += 1
+            return buff_matches - debuff_matches
+
+        # Get expedition affinity data
+        affinity_pools = self.expedition.get('affinity_pools', {})
+        dominant_stats = self.expedition.get('dominant_stats', [])
+        
+        # Parse affinities (same logic as the real system)
+        favored_affinities = []
+        disfavored_affinities = []
+        category_to_enum = {
+            'elemental': AffinityType.ELEMENTAL,
+            'archetype': AffinityType.ARCHETYPE,
+            'series_id': AffinityType.SERIES_ID,
+            'genre': AffinityType.GENRE
+        }
+        
+        for category, values in affinity_pools.get('favored', {}).items():
+            affinity_type = category_to_enum.get(category)
+            if affinity_type:
+                for value in values:
+                    favored_affinities.append(Affinity(affinity_type, value))
+
+        for category, values in affinity_pools.get('disfavored', {}).items():
+            affinity_type = category_to_enum.get(category)
+            if affinity_type:
+                for value in values:
+                    disfavored_affinities.append(Affinity(affinity_type, value))
+
+        # Process and filter waifus
+        filtered_waifus = []
+        search_lower = self.search_filter.lower() if self.search_filter else None
+        
+        for waifu in self.user_waifus:
+            # Apply search filter
+            if search_lower:
+                if not (search_lower in waifu['name'].lower() or search_lower in waifu['series'].lower()):
+                    continue
+            
+            # Get character object for proper calculations
+            character = self.char_registry.get_character(waifu['waifu_id'])
+            if not character:
+                continue
+                
+            # Calculate real power values
+            raw_power = calc_raw_stats(waifu, character, dominant_stats)
+            affinity_count = calc_affinity_count(character, favored_affinities, disfavored_affinities)
+            
+            # Store calculated values (same as real system)
+            waifu['__raw_stats'] = raw_power
+            waifu['__affinity_count'] = affinity_count
+            
+            filtered_waifus.append(waifu)
+        
+        # Sort by selected mode (same as real system)
+        if self.sorting_mode == 'raw_power':
+            filtered_waifus.sort(key=lambda x: (x['__raw_stats'], x['__affinity_count']), reverse=True)
+        else:
+            filtered_waifus.sort(key=lambda x: (x['__affinity_count'], x['__raw_stats']), reverse=True)
+        
+        return filtered_waifus
+    
+    def _setup_ui(self):
+        """Setup the UI components based on current page and filter."""
+        self.clear_items()
+
+        # Add sorting toggle button
+        sorting_label = (
+            "Sort: Raw Power > Affinity" if self.sorting_mode == 'raw_power' else "Sort: Affinity > Raw Power"
+        )
+        sorting_button = discord.ui.Button(
+            label=sorting_label,
+            style=discord.ButtonStyle.primary,
+            custom_id="toggle_sorting_mode"
+        )
+        sorting_button.callback = self.toggle_sorting_mode
+        self.add_item(sorting_button)
+
+        # Add search modal button
+        search_button = discord.ui.Button(
+            label="🔍 Search Characters",
+            style=discord.ButtonStyle.secondary,
+            custom_id="search_characters"
+        )
+        search_button.callback = self.open_search_modal
+        self.add_item(search_button)
+
+        # Get filtered waifus
+        filtered_waifus = self._get_filtered_waifus()
+
+        # Safety check: if current page is beyond available pages, reset to page 0
+        if filtered_waifus:
+            total_pages = (len(filtered_waifus) + self.items_per_page - 1) // self.items_per_page
+            if self.current_page >= total_pages:
+                self.current_page = 0
+
+        if not filtered_waifus:
+            # No characters available
+            placeholder_text = "No characters match your search criteria"
+            options = [discord.SelectOption(label="No characters available", value="none")]
+        else:
+            # Calculate page boundaries
+            start_idx = self.current_page * self.items_per_page
+            end_idx = min(start_idx + self.items_per_page, len(filtered_waifus))
+            current_waifus = filtered_waifus[start_idx:end_idx]
+
+            options = []
+            selected_on_page = []
+            for waifu in current_waifus:
+                character = self.char_registry.get_character(waifu['waifu_id'])
+                user_waifu_id = waifu['user_waifu_id']
+                is_selected = str(user_waifu_id) in [str(s) for s in self.selected_characters]
+                if is_selected:
+                    selected_on_page.append(str(user_waifu_id))
+                name_prefix = "✅ " if is_selected else ""
+                raw_stats = waifu.get('__raw_stats', 0)
+                affinity_count = waifu.get('__affinity_count', 0)
+                star_level = waifu.get('current_star_level', 1)
+                
+                if character:
+                    label = f"{name_prefix}{character.name}"[:100]
+                    desc = f"⭐{star_level} | {character.series[:40]} | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
+                    emoji = "👤"
+                else:
+                    fallback_name = waifu.get('name', f'Character {waifu["waifu_id"]}')
+                    label = f"{name_prefix}{fallback_name}"[:100]
+                    desc = f"⭐{star_level} | Unknown series | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
+                    emoji = "❓"
+                
+                if len(desc) > 100:
+                    desc = desc[:97] + "..."
+                
+                options.append(discord.SelectOption(
+                    label=label,
+                    description=desc,
+                    value=str(user_waifu_id),
+                    emoji=emoji,
+                    default=is_selected
+                ))
+
+            placeholder_text = f"Choose characters (up to 3)... | Selected: {len(self.selected_characters)}/3"
+            if self.search_filter:
+                placeholder_text += f" | Filter: '{self.search_filter}'"
+            if len(filtered_waifus) > self.items_per_page:
+                placeholder_text += f" | Page {self.current_page + 1}"
+
+        if not options:
+            if self.search_filter:
+                options = [discord.SelectOption(
+                    label="🔍 No matches found",
+                    description=f"No characters match '{self.search_filter}'. Try a different search term.",
+                    value="none",
+                    emoji="❌"
+                )]
+            else:
+                options = [discord.SelectOption(
+                    label="❌ No characters available",
+                    description="You have no characters available for expeditions.",
+                    value="error",
+                    emoji="⚠️"
+                )]
+
+        if len(options) == 0:
+            options = [discord.SelectOption(
+                label="❌ Critical Error",
+                description="System failure - please restart expedition",
+                value="critical_error",
+                emoji="💥"
+            )]
+
+        character_options = [opt for opt in options if opt.value not in ["none", "error", "critical_error"]]
+        if options[0].value == "none":
+            max_selectable = 1
+        elif options[0].value == "error":
+            max_selectable = 1
+        elif options[0].value == "critical_error":
+            max_selectable = 1
+        else:
+            max_selectable = min(len(character_options), 3 - len([s for s in self.selected_characters if str(s) not in [opt.value for opt in character_options]]))
+            if max_selectable <= 0:
+                max_selectable = 1
+
+        self.character_select = discord.ui.Select(
+            placeholder=placeholder_text,
+            options=options,
+            custom_id="mock_character_select",
+            max_values=max_selectable
+        )
+        self.character_select.callback = self.character_selected
+        self.add_item(self.character_select)
+
+        self._add_pagination_buttons(filtered_waifus)
+
+        if self.search_filter:
+            # Add clear search button
+            clear_button = discord.ui.Button(
+                label="🗑️ Clear Search",
+                style=discord.ButtonStyle.secondary,
+                custom_id="clear_search"
+            )
+            clear_button.callback = self.clear_search
+            self.add_item(clear_button)
+
+        if self.selected_characters:
+            # Add clear selections button
+            clear_selections_button = discord.ui.Button(
+                label="🗑️ Clear Selections",
+                style=discord.ButtonStyle.secondary,
+                custom_id="clear_selections"
+            )
+            clear_selections_button.callback = self.clear_selections
+            self.add_item(clear_selections_button)
+
+        # Add cancel button
+        cancel_button = discord.ui.Button(
+            label="❌ Cancel",
+            style=discord.ButtonStyle.danger,
+            custom_id="cancel_mock_expedition"
+        )
+        cancel_button.callback = self.cancel_expedition
+        self.add_item(cancel_button)
+
+        # Add start test button if characters selected
+        if self.selected_characters:
+            start_button = discord.ui.Button(
+                label="🧪 Start Mock Test",
+                style=discord.ButtonStyle.success,
+                custom_id="start_mock_test"
+            )
+            start_button.callback = self.start_mock_test
+            self.add_item(start_button)
+    
+    def _add_pagination_buttons(self, filtered_waifus: List[Dict]):
+        """Add pagination buttons if needed."""
+        total_pages = (len(filtered_waifus) + self.items_per_page - 1) // self.items_per_page if filtered_waifus else 1
+        
+        if total_pages > 1:
+            # Add pagination buttons in row 3
+            prev_button = discord.ui.Button(
+                label="⬅️ Previous",
+                style=discord.ButtonStyle.secondary,
+                disabled=self.current_page <= 0,
+                row=3
+            )
+            prev_button.callback = self.previous_page
+            self.add_item(prev_button)
+            
+            next_button = discord.ui.Button(
+                label="➡️ Next",
+                style=discord.ButtonStyle.secondary,
+                disabled=self.current_page >= total_pages - 1,
+                row=3
+            )
+            next_button.callback = self.next_page
+            self.add_item(next_button)
+    
+    async def toggle_sorting_mode(self, interaction: discord.Interaction):
+        """Toggle between sorting modes and refresh UI."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can change sorting.", ephemeral=True)
+            return
+        
+        self.sorting_mode = 'affinity_count' if self.sorting_mode == 'raw_power' else 'raw_power'
+        self.current_page = 0
+        self._setup_ui()
+        embed = await self._create_character_selection_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    async def open_search_modal(self, interaction: discord.Interaction):
+        """Open search modal for character filtering."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can search.", ephemeral=True)
+            return
+        
+        modal = CharacterSearchModal(self)
+        await interaction.response.send_modal(modal)
+    
+    async def clear_search(self, interaction: discord.Interaction):
+        """Clear search filter while maintaining character selections."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can clear search.", ephemeral=True)
+            return
+        
+        self.search_filter = ""
+        self.current_page = 0
+        self._setup_ui()
+        embed = await self._create_character_selection_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    async def previous_page(self, interaction: discord.Interaction):
+        """Go to previous page while maintaining character selections."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can navigate.", ephemeral=True)
+            return
+        
+        if self.current_page > 0:
+            self.current_page -= 1
+            self._setup_ui()
+            embed = await self._create_character_selection_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    async def next_page(self, interaction: discord.Interaction):
+        """Go to next page while maintaining character selections."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can navigate.", ephemeral=True)
+            return
+        
+        filtered_waifus = self._get_filtered_waifus()
+        total_pages = (len(filtered_waifus) + self.items_per_page - 1) // self.items_per_page if filtered_waifus else 1
+        
+        if self.current_page < total_pages - 1:
+            self.current_page += 1
+            self._setup_ui()
+            embed = await self._create_character_selection_embed()
+            await interaction.response.edit_message(embed=embed, view=self)
+    
+    async def clear_selections(self, interaction: discord.Interaction):
+        """Clear all selected characters."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can clear selections.", ephemeral=True)
+            return
+        
+        self.selected_characters = []
+        self._setup_ui()
+        embed = await self._create_character_selection_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    async def cancel_expedition(self, interaction: discord.Interaction):
+        """Cancel the expedition selection and disable all controls."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can cancel.", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="❌ Mock Test Cancelled",
+            description="The mock test has been cancelled.",
+            color=0xFF6B6B
+        )
+        # Clear the view to disable all buttons
+        self.clear_items()
+        await interaction.response.edit_message(embed=embed, view=None)
+    
+    async def character_selected(self, interaction: discord.Interaction):
+        """Handle character selection with cross-page support."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can select characters.", ephemeral=True)
+            return
+        
+        # Handle case where no values are selected (deselection) or special options
+        new_selections = []  # Initialize new_selections
+        
+        if not self.character_select.values or (self.character_select.values and self.character_select.values[0] in ["none", "error", "critical_error"]):
+            if not self.character_select.values:
+                # This is a deselection case - process it normally
+                new_selections = []
+            elif self.character_select.values[0] == "none":
+                # This is the "none" case - show helpful error message
+                if self.search_filter:
+                    await interaction.response.send_message("❌ No characters found matching your search. Try a different search term.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ No characters available for mock testing.", ephemeral=True)
+                return
+            elif self.character_select.values[0] == "error":
+                # This is the "error" case - show system error and return
+                await interaction.response.send_message("⚠️ System error: Character data could not be loaded. Please try restarting the mock test.", ephemeral=True)
+                return
+            elif self.character_select.values[0] == "critical_error":
+                # This is the "critical_error" case - show critical system error and return
+                await interaction.response.send_message("💥 Critical system error: Please restart the mock test completely. If this persists, contact support.", ephemeral=True)
+                return
+        else:
+            # Handle normal selection/deselection
+            new_selections = [val for val in self.character_select.values if val not in ["none", "error", "critical_error"]]
+        
+        # Update selected characters list
+        # Remove any current page characters that were deselected
+        current_page_waifus = self._get_current_page_waifus()
+        current_page_ids = {str(waifu['user_waifu_id']) for waifu in current_page_waifus}
+        
+        # Convert all to strings for consistent comparison
+        selected_strings = [str(s) for s in self.selected_characters]
+        
+        # Remove any previously selected characters from current page that aren't in new selections
+        self.selected_characters = [char_id for char_id in selected_strings 
+                                   if char_id not in current_page_ids or char_id in new_selections]
+        
+        # Add any new selections that aren't already selected
+        for char_id in new_selections:
+            if char_id not in self.selected_characters:
+                if len(self.selected_characters) < 3:  # Max 3 characters
+                    self.selected_characters.append(char_id)
+        
+        # Refresh the UI to show updated selections
+        self._setup_ui()
+        embed = await self._create_character_selection_embed()
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    def _get_current_page_waifus(self) -> List[Dict]:
+        """Get waifus on the current page."""
+        filtered_waifus = self._get_filtered_waifus()
+        start_idx = self.current_page * self.items_per_page
+        end_idx = min(start_idx + self.items_per_page, len(filtered_waifus))
+        return filtered_waifus[start_idx:end_idx]
+    
+    async def start_mock_test(self, interaction: discord.Interaction):
+        """Start the mock expedition test."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Only the user who started this mock test can start the simulation.", ephemeral=True)
+            return
+
+        if not self.selected_characters:
+            await interaction.response.send_message("❌ Please select at least one character first.", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+
+        try:
+            # Prepare participant data for mock testing
+            participant_data = []
+            for char_id in self.selected_characters:
+                # Find the character data
+                char_data = None
+                for waifu in self.user_waifus:
+                    if str(waifu['user_waifu_id']) == str(char_id):
+                        char_data = waifu
+                        break
+                
+                if char_data:
+                    participant_data.append({
+                        "user_waifu_id": char_data['user_waifu_id'],
+                        "waifu_id": char_data['waifu_id'],
+                        "star_level": char_data.get('current_star_level', 6 if self.use_maxed_characters else 1)
+                    })
+            
+            # Call the mock simulation service
+            result = await self.expedition_service.simulate_mock_expedition(
+                self.expedition['expedition_id'],
+                participant_data,
+                self.use_maxed_characters
+            )
+            
+            if not result.get('success'):
+                embed = discord.Embed(
+                    title="❌ Mock Test Failed",
+                    description=f"Error: {result.get('error', 'Unknown error')}",
+                    color=0xFF6B6B
+                )
+                await interaction.edit_original_response(embed=embed, view=None)
+                return
+            
+            # Create results view using the completed expedition data structure  
+            # Prepare proper team data with real character information
+            team_data = []
+            for char_id in self.selected_characters:
+                waifu = next((w for w in self.user_waifus if w['user_waifu_id'] == char_id), None)
+                if waifu:
+                    character = self.char_registry.get_character(waifu['waifu_id'])
+                    if character:
+                        # Set star level for accurate display
+                        character.star_level = waifu.get('current_star_level', 6 if self.use_maxed_characters else 1)
+                        team_data.append({
+                            'name': character.name,
+                            'series_id': character.series_id,
+                            'waifu_id': character.waifu_id,
+                            'star_level': character.star_level
+                        })
+            
+            completed_expeditions = [{
+                **result,
+                'loot': {
+                    'sakura_crystals': result.get('loot_currency', {}).get('sakura_crystals', 0),
+                    'quartzs': result.get('loot_currency', {}).get('quartzs', 0),
+                    'items': result.get('loot_items', [])
+                },
+                'team': team_data,  # Real character team data
+                'final_luck_score': result.get('result_summary', {}).get('final_multiplier_numeric', 1.0) * 100
+            }]
+            
+            # Setup item lookup for results view
+            results_view = MockExpeditionResultsView(completed_expeditions, interaction.user.id)
+            await results_view.setup_item_lookup(self.expedition_service)
+            
+            # Just use the summary embed as returned by the results view (mock styling is now handled in the class)
+            summary_embed = results_view._create_summary_embed()
+            await interaction.edit_original_response(embed=summary_embed, view=results_view)
+            
+        except Exception as e:
+            embed = discord.Embed(
+                title="❌ Mock Test Error",
+                description=f"An error occurred during the mock test: {str(e)}",
+                color=0xFF6B6B
+            )
+            await interaction.edit_original_response(embed=embed, view=None)
+    
+    async def _create_character_selection_embed(self) -> discord.Embed:
+        """Create character selection embed."""
+        filtered_waifus = self._get_filtered_waifus()
+        total_pages = (len(filtered_waifus) + self.items_per_page - 1) // self.items_per_page if filtered_waifus else 1
+        
+        character_mode = "Maxed Characters" if self.use_maxed_characters else "Your Characters"
+        title = f"🧪 Mock Test - Select Team: {self.expedition['name']}"
+
+        description = f"**Mode:** {character_mode}\n"
+        description += f"Choose up to 3 characters for this mock test:\n\n"
+        
+        # Add filter info
+        if self.search_filter:
+            description += f"🔍 **Filter:** '{self.search_filter}' | {len(filtered_waifus)} matches\n"
+        else:
+            description += f"📊 **Total Characters:** {len(filtered_waifus)}\n"
+        
+        # Add pagination info
+        if total_pages > 1:
+            description += f"📄 **Page:** {self.current_page + 1}/{total_pages}\n"
+
+        description += f"\n⚠️ **This is a mock test - no data will be saved!**"
+
+        embed = discord.Embed(
+            title=title,
+            description=description,
+            color=0xF39C12
+        )
+
+        if self.selected_characters:
+            character_info = []
+            team_power_raw = 0
+            num_with_stats = 0
+            team_characters = []
+            # Determine which stats to use for preview (same as real system)
+            dominant_stats = self.expedition.get('dominant_stats', [])
+            for char_id in self.selected_characters:
+                # Convert to string for consistent comparison
+                char_id_str = str(char_id)
+                waifu = next((w for w in self.user_waifus if str(w['user_waifu_id']) == char_id_str), None)
+                if waifu:
+                    character = self.char_registry.get_character(waifu['waifu_id'])
+                    if character:
+                        star_level = waifu.get('current_star_level', 1)
+                        character_info.append(f"⭐{star_level} **{character.name}**")
+                        # Set star level for accurate stat preview
+                        character.star_level = star_level
+                        team_characters.append(character)
+                        
+                        # Team Power calculation (same as real system)
+                        stats = waifu.get('stats')
+                        char_obj = character
+                        star_multiplier = (1 + (star_level - 1) * 0.10) * 0.85
+                        stat_values = []
+                        if not stats and char_obj and hasattr(char_obj, 'base_stats'):
+                            base_stats = getattr(char_obj, 'base_stats', None)
+                            if base_stats:
+                                stat_dict = base_stats.to_dict()
+                                if dominant_stats:
+                                    stat_values = [v for k, v in stat_dict.items() if k in dominant_stats and isinstance(v, (int, float))]
+                                else:
+                                    stat_values = [v for v in stat_dict.values() if isinstance(v, (int, float))]
+                        elif stats and isinstance(stats, dict):
+                            if dominant_stats:
+                                stat_values = [v for k, v in stats.items() if k in dominant_stats and isinstance(v, (int, float))]
+                            else:
+                                stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
+                        if stat_values:
+                            mean = sum(stat_values) / len(stat_values)
+                            mean *= star_multiplier
+                            team_power_raw += mean
+                            num_with_stats += 1
+            
+            embed.add_field(
+                name=f"🎯 Selected Characters ({len(self.selected_characters)}/3)",
+                value="\n".join(character_info) if character_info else "None selected",
+                inline=False
+            )
+            
+            # Calculate affinity and series multipliers (exactly same as real system)
+            affinity_multiplier = 1.0
+            series_multiplier = 1.0
+            series_bonus_text = ""
+            if team_characters and hasattr(self.expedition, 'get'):
+                from src.wanderer_game.models.character import Affinity, AffinityType, Team as WGTeam
+                favored_affinities = []
+                disfavored_affinities = []
+                affinity_pools = self.expedition.get('affinity_pools', {})
+                category_to_enum = {
+                    'elemental': AffinityType.ELEMENTAL,
+                    'archetype': AffinityType.ARCHETYPE,
+                    'series': AffinityType.SERIES_ID,
+                    'genre': AffinityType.GENRE,
+                }
+                def resolve_series_id(series_name):
+                    cls = type(self)
+                    if cls._series_name_to_id_cache is None:
+                        cache = {}
+                        for char in self.char_registry.characters.values():
+                            cache[char.series] = char.series_id
+                        cls._series_name_to_id_cache = cache
+                    return cls._series_name_to_id_cache.get(series_name, series_name)
+                for category, values in affinity_pools.get('favored', {}).items():
+                    enum_type = category_to_enum.get(category.lower())
+                    if enum_type:
+                        for value in values:
+                            if enum_type == AffinityType.SERIES_ID:
+                                resolved = resolve_series_id(value)
+                                favored_affinities.append(Affinity(type=enum_type, value=resolved))
+                            else:
+                                favored_affinities.append(Affinity(type=enum_type, value=value))
+                for category, values in affinity_pools.get('disfavored', {}).items():
+                    enum_type = category_to_enum.get(category.lower())
+                    if enum_type:
+                        for value in values:
+                            if enum_type == AffinityType.SERIES_ID:
+                                resolved = resolve_series_id(value)
+                                disfavored_affinities.append(Affinity(type=enum_type, value=resolved))
+                            else:
+                                disfavored_affinities.append(Affinity(type=enum_type, value=value))
+                team_obj = WGTeam(characters=team_characters)
+                favored_matches = team_obj.count_affinity_matches(favored_affinities)
+                disfavored_matches = team_obj.count_affinity_matches(disfavored_affinities)
+                affinity_multiplier = 1.2**(favored_matches) * (0.6**(disfavored_matches))
+                affinity_multiplier = max(0.1, min(3.6, affinity_multiplier))
+                if len(team_characters) == 3:
+                    series_ids = [getattr(c, 'series_id', None) for c in team_characters]
+                    if all(sid is not None for sid in series_ids) and len(set(series_ids)) == 1:
+                        series_multiplier = 1.2
+                        series_bonus_text = "🌟 **Series Bonus Active!** All 3 characters are from the same series. Team Power is multiplied by 1.2x."
+                        
+            if num_with_stats > 0:
+                embed.add_field(
+                    name="💪 Team Power (Raw)",
+                    value=f"{int(team_power_raw)}",
+                    inline=True
+                )
+                embed.add_field(
+                    name="� Affinity Multiplier",
+                    value=f"x{affinity_multiplier:.2f}",
+                    inline=True
+                )
+                if series_multiplier > 1.0:
+                    embed.add_field(
+                        name="🌟 Series Multiplier",
+                        value=f"x{series_multiplier:.2f} (All 3 from same series)",
+                        inline=True
+                    )
+                embed.add_field(
+                    name="💥 Team Power (Adjusted)",
+                    value=f"{int(team_power_raw * affinity_multiplier * series_multiplier)}",
+                    inline=True
+                )
+                if series_bonus_text:
+                    embed.add_field(
+                        name="Bonus",
+                        value=series_bonus_text,
+                        inline=False
+                    )
+        else:
+            embed.add_field(
+                name="🎯 Selected Characters (0/3)",
+                value="Select characters from any page - your selections are preserved when navigating!",
+                inline=False
+            )
+
+        # Add expedition details (same as real system)
+        dominant_stats = self.expedition.get('dominant_stats', [])
+        details_value = f"**Duration:** {self.expedition.get('duration_hours', 4)} hours\n" \
+                        f"**Difficulty:** {self.expedition.get('difficulty', 100)}\n" \
+                        f"**Expected Encounters:** ~{self.expedition.get('expected_encounters', 5)}"
+        if dominant_stats:
+            details_value += f"\n📊 **Dominant Stats:** {', '.join(dominant_stats)}"
+        embed.add_field(
+            name="📋 Expedition Details",
+            value=details_value,
+            inline=False
+        )
+
+        # Add favored/disfavored affinities if present (same as real system)
+        affinity_pools = self.expedition.get('affinity_pools', {})
+        favored = affinity_pools.get('favored', {})
+        disfavored = affinity_pools.get('disfavored', {})
+        if favored or disfavored:
+            def format_affinities(pool):
+                if not pool:
+                    return 'None'
+                lines = []
+                for category, values in pool.items():
+                    lines.append(f"**{category.title()}:** {', '.join(map(str, values))}")
+                return '\n'.join(lines) if lines else 'None'
+                
+            affinity_text = ''
+            if favored:
+                affinity_text += f"✨ **Favored:** {format_affinities(favored)}\n"
+            if disfavored:
+                affinity_text += f"⚡ **Disfavored:** {format_affinities(disfavored)}"
+            embed.add_field(
+                name="✨ Expedition Affinities",
+                value=affinity_text.strip(),
+                inline=False
+            )
+        
+        # Add search tip
+        if not self.search_filter and len(self.user_waifus) > 25:
+            embed.add_field(
+                name="💡 Tip",
+                value="Use the 🔍 **Search Characters** button to find specific characters quickly!",
+                inline=False
+            )
+        
+        return embed
+
+
 class ExpeditionsCog(BaseCommand):
 
     @app_commands.command(
@@ -2982,6 +4032,56 @@ class ExpeditionsCog(BaseCommand):
     @app_commands.describe(
         difficulty="The difficulty level to calculate probabilities for (default: 1000)"
     )
+    async def loot_probability(self, interaction: discord.Interaction, difficulty: int = 1000):
+        """View item probability chances for different difficulty levels."""
+        # Implementation would go here - for now just acknowledge
+        embed = discord.Embed(
+            title="🎯 Loot Probability Calculator",
+            description=f"Calculating probabilities for difficulty level: {difficulty}",
+            color=0x3498DB
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(
+        name="nwnl_expeditions_mocktest",
+        description="🧪 Test expedition outcomes with mock simulations (no data saved)"
+    )
+    @app_commands.describe(
+        use_maxed_characters="Use maxed characters instead of your own characters for testing"
+    )
+    async def nwnl_expeditions_mocktest(self, interaction: discord.Interaction, use_maxed_characters: bool = False):
+        """Mock test expeditions with simulated results - no data is saved."""
+        await interaction.response.defer()
+        
+        try:
+            discord_id = str(interaction.user.id)
+            
+            # Get ALL expeditions (including closed ones) for mock testing
+            expeditions = await self.expedition_service.get_available_expeditions()
+            
+            if not expeditions:
+                embed = discord.Embed(
+                    title="❌ No Expeditions Available",
+                    description="No expedition templates found for testing.",
+                    color=0xFF6B6B
+                )
+                await interaction.followup.send(embed=embed)
+                return
+            
+            # Create expedition selection view (modified to show ALL expeditions)
+            view = MockExpeditionSelectView(expeditions, interaction.user.id, self.expedition_service, use_maxed_characters)
+            embed = await view._create_expedition_list_embed()
+            
+            await interaction.followup.send(embed=embed, view=view)
+            
+        except Exception as e:
+            self.logger.error(f"Error in mock test command: {e}")
+            embed = discord.Embed(
+                title="❌ Error",
+                description=f"An error occurred while setting up the mock test: {str(e)}",
+                color=0xFF6B6B
+            )
+            await interaction.followup.send(embed=embed)
     async def nwnl_loot_probability(self, interaction: discord.Interaction, difficulty: int = 1000):
         from utils.ban_utils import is_user_banned
         if is_user_banned(interaction.user.id):

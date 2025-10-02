@@ -969,3 +969,196 @@ class ExpeditionService:
         except Exception as e:
             self.logger.error(f"Error getting expedition history: {e}")
             return []
+
+    async def simulate_mock_expedition(self, expedition_id: str, participant_data: List[Dict[str, Any]], use_maxed_characters: bool = False) -> Dict[str, Any]:
+        """
+        Simulate a mock expedition with the given participants without touching the database.
+        
+        This function replicates the complete expedition logic but operates entirely in-memory.
+        All expeditions are available for testing, including closed ones.
+        
+        Args:
+            expedition_id: ID of the expedition template to simulate
+            participant_data: List of participant data (user_waifu_id, star_level)
+            use_maxed_characters: If True, use maxed-out stats for all characters
+            
+        Returns:
+            Dictionary with complete expedition results matching the real service structure
+        """
+        self.logger.info(f"[MOCK_EXPEDITION] Simulating expedition {expedition_id} with {len(participant_data)} participants (maxed: {use_maxed_characters})")
+        
+        try:
+            # Find expedition template (allow any expedition, including closed ones)
+            template = None
+            for exp_template in self.data_manager.get_expedition_templates():
+                if exp_template.expedition_id == expedition_id:
+                    template = exp_template
+                    break
+            
+            if not template:
+                self.logger.error(f"[MOCK_EXPEDITION] Expedition template {expedition_id} not found")
+                return {"success": False, "error": f"Expedition template {expedition_id} not found"}
+            
+            self.logger.info(f"[MOCK_EXPEDITION] Using template: {template.name} (Duration: {template.duration_hours}h, Difficulty: {template.difficulty})")
+            
+            # Prepare template data for expedition generation
+            template_data = {
+                "expedition_id": template.expedition_id,
+                "name": template.name,
+                "duration_hours": template.duration_hours,
+                "difficulty": template.difficulty,
+                "encounter_pool_tags": template.encounter_pool_tags,
+                "num_favored_affinities": template.num_favored_affinities,
+                "num_disfavored_affinities": template.num_disfavored_affinities,
+                "favored_pool": serialize_for_json(template.favored_pool),
+                "disfavored_pool": serialize_for_json(template.disfavored_pool),
+                "team_series_ids": [],  # Will be populated from participants
+                "dominant_stats": getattr(template, "dominant_stats", [])
+            }
+            
+            # Generate expedition instance with runtime randomization
+            expedition_instance = self._generate_expedition_at_completion(template_data)
+            
+            # Convert participants to Character objects
+            team_characters = []
+            character_registry = self.data_manager.get_character_registry()
+            team_series_ids = []
+            
+            for participant in participant_data:
+                # For mock testing, we need to get character data differently
+                # If we have user_waifu_id, we need to resolve it to waifu_id
+                waifu_id = participant.get("waifu_id")
+                if not waifu_id and "user_waifu_id" in participant:
+                    # For mock testing, we'll assume the user_waifu_id maps to a valid waifu_id
+                    # In a real implementation, you might want to validate this
+                    waifu_id = participant["user_waifu_id"]  # Simplified for mock
+                
+                if not waifu_id:
+                    self.logger.error(f"[MOCK_EXPEDITION] No waifu_id found for participant {participant}")
+                    continue
+                    
+                # Ensure waifu_id is an integer
+                try:
+                    waifu_id = int(waifu_id)
+                except (ValueError, TypeError):
+                    self.logger.error(f"[MOCK_EXPEDITION] Invalid waifu_id {waifu_id} for participant {participant}")
+                    continue
+                
+                character = character_registry.get_character(waifu_id)
+                if not character:
+                    self.logger.error(f"[MOCK_EXPEDITION] Character data not found for waifu_id {waifu_id}")
+                    continue
+                
+                # Apply star level or use maxed stats
+                if use_maxed_characters:
+                    character.star_level = 6  # Max star level
+                    # Optionally max out other stats here
+                else:
+                    character.star_level = participant.get("star_level", 1)
+                
+                team_characters.append(character)
+                if character.series_id:
+                    team_series_ids.append(character.series_id)
+            
+            if not team_characters:
+                return {"success": False, "error": "No valid characters found for expedition"}
+            
+            # Update template data with team series IDs
+            template_data["team_series_ids"] = team_series_ids
+            expedition_instance = self._generate_expedition_at_completion(template_data)
+            
+            from src.wanderer_game.models.character import Team
+            team = Team(team_characters)
+            
+            # Create ActiveExpedition object for resolution
+            import time
+            current_time = time.time()
+            from src.wanderer_game.models.expedition import ActiveExpedition
+            active_expedition = ActiveExpedition(
+                expedition=expedition_instance,
+                team_character_ids=[char.waifu_id for char in team_characters],
+                start_timestamp=current_time,
+                end_timestamp=current_time  # Immediately complete for resolution
+            )
+            
+            # Resolve expedition through wanderer game engine (no equipment for mock)
+            self.logger.info(f"[MOCK_EXPEDITION] Resolving expedition with {expedition_instance.encounter_count} encounters")
+            expedition_result = self.expedition_resolver.resolve(active_expedition, team, None)  # No equipment
+            
+            # Simulate equipment award (in-memory only)
+            from src.wanderer_game.models.equipment import random_equipment_no_subslots
+            awarded_equipment = []
+            mock_equipment = random_equipment_no_subslots("mock_user")  # Use placeholder discord_id
+            if mock_equipment.main_effect is not None:
+                mock_equipment.id = 999999  # Mock ID
+                awarded_equipment.append(mock_equipment)
+            
+            # Simulate loot distribution (in-memory only)
+            mock_loot_result = {
+                "success": True,
+                "total_items": len(expedition_result.loot_pool.items) if expedition_result.loot_pool and expedition_result.loot_pool.items else 0,
+                "currency_rewards": {
+                    "sakura_crystals": 50,  # Mock values
+                    "quartzs": 25
+                },
+                "total_value": expedition_result.loot_pool.get_total_value() if expedition_result.loot_pool else 0
+            }
+            
+            # Determine outcome
+            expedition_success = expedition_result.great_successes + expedition_result.successes > expedition_result.failures + expedition_result.mishaps
+            
+            if expedition_result.great_successes >= expedition_result.successes and expedition_result.great_successes > 0 and expedition_result.failures == 0 and expedition_result.mishaps == 0:
+                outcome_string = "perfect"
+            elif expedition_success and expedition_result.great_successes > 0:
+                outcome_string = "great_success"
+            elif expedition_success:
+                outcome_string = "success"
+            else:
+                outcome_string = "failure"
+            
+            # Return complete result structure matching the real service
+            return {
+                "success": True,
+                "expedition_id": 999999,  # Mock expedition ID
+                "expedition_name": expedition_instance.name,
+                "expedition_success": expedition_success,
+                "outcome": outcome_string,
+                "result_summary": {
+                    "encounters": len(expedition_result.encounter_results),
+                    "great_successes": expedition_result.great_successes,
+                    "successes": expedition_result.successes,
+                    "failures": expedition_result.failures,
+                    "mishaps": expedition_result.mishaps,
+                    "final_multiplier": expedition_result.final_multiplier.value,
+                    "final_multiplier_numeric": self._get_multiplier_value(expedition_result.final_multiplier.value)
+                },
+                "encounter_results": expedition_result.encounter_results,
+                "loot_result": mock_loot_result,
+                "loot_items": expedition_result.loot_pool.items if expedition_result.loot_pool else [],
+                "loot_currency": mock_loot_result["currency_rewards"],
+                "expedition_log": expedition_result.generate_log(),
+                "completion_time": datetime.now(timezone.utc).isoformat(),
+                "awarded_equipment": [
+                    {
+                        "id": eq.id,
+                        "discord_id": eq.discord_id,
+                        "main_effect": {
+                            "type": eq.main_effect.type.value,
+                            "affinity": eq.main_effect.affinity,
+                            "category": eq.main_effect.category,
+                            "value": eq.main_effect.value,
+                            "stat": eq.main_effect.stat
+                        },
+                        "created_at": str(datetime.now(timezone.utc)),
+                        "updated_at": str(datetime.now(timezone.utc))
+                    }
+                    for eq in awarded_equipment
+                ],
+                # Mock-specific fields
+                "is_mock": True,
+                "mock_notice": "This is a mock test. No data has been saved to the database."
+            }
+            
+        except Exception as e:
+            self.logger.error(f"[MOCK_EXPEDITION] Error simulating expedition: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
