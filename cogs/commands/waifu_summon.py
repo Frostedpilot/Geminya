@@ -1330,7 +1330,7 @@ class WaifuSummonCog(BaseCommand):
                         if isinstance(elem_type, list):
                             elem_type = ", ".join(elem_type) if elem_type else "Unknown"
                         embed.add_field(name="🔮 Element", value=elem_type, inline=True)
-                        embed.add_field(name="⭐ Base Rarity", value="🌟" * waifu["rarity"], inline=True)
+                        embed.add_field(name="⭐ Base Rarity", value="⭐" * waifu["rarity"], inline=True)
                         if waifu.get("mal_id"):
                             embed.add_field(name="🔗 MAL ID", value=str(waifu["mal_id"]), inline=True)
                         if waifu.get("birthday"):
@@ -1390,11 +1390,15 @@ class WaifuSummonCog(BaseCommand):
                             embed.set_thumbnail(url=waifu["image_url"])  # Use thumbnail for more compact layout
                         
                         # Top row - rarity, status, and element
-                        embed.add_field(name="⭐ Base Rarity", value="🌟" * waifu["rarity"], inline=True)
+                        embed.add_field(name="⭐ Base Rarity", value="⭐" * waifu["rarity"], inline=True)
                         
                         # Status field with star progress
                         if user_waifu:
-                            status_value = f"**Owned** ({'🌟' * current_star} {current_star}★)"
+                            is_awakened = user_waifu.get('is_awakened', False)
+                            if not is_awakened:
+                                status_value = f"**Owned** ({'⭐' * current_star} {current_star}★)"
+                            else:
+                                status_value = f"**Owned** ({'<:3532rainbowstar:1423351319510647048>' * current_star} {current_star}★)"
                             if star_progress:
                                 # Extract key star progress info for compact display
                                 if "READY TO UPGRADE!" in star_progress:
@@ -1496,12 +1500,16 @@ class WaifuSummonCog(BaseCommand):
                     waifu = self.waifus[self.idx]
                     user_waifu = self.collection_dict.get(waifu["waifu_id"])
                     current_star = user_waifu.get("current_star_level", waifu["rarity"]) if user_waifu else waifu["rarity"]
+                    is_awakened = user_waifu.get('is_awakened', False) if user_waifu else False
                     star_progress = None
                     combat_stats = None
                     if user_waifu:
                         shards = await self.waifu_service.get_character_shards(str(self.ctx.author.id), waifu["waifu_id"])
                         is_max_star = current_star >= 5
-                        star_info = f"**Current Star Level:** {'🌟' * current_star} ({current_star}★)\n"
+                        if not is_awakened:
+                            star_info = f"**Current Star Level:** {'⭐' * current_star} ({current_star}★)\n"
+                        else:
+                            star_info = f"**Current Star Level:** {'<:3532rainbowstar:1423351319510647048>' * current_star} ({current_star}★)\n"
                         star_info += f"**Star Shards:** {shards:,}"
                         if is_max_star:
                             star_info += " (MAX STAR - converts to quartz)"
