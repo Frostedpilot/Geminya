@@ -13,6 +13,13 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_GIFT_CODES = [
     {
+        "code": "FREEDAPHINE",
+        "reward_type": "daphine",
+        "reward_value": 1,
+        "is_active": True,
+        "usage_limit": 99,
+    },
+    {
         "code": "SHOUKONOOB",
         "reward_type": "gems",
         "reward_value": 500,
@@ -163,6 +170,13 @@ DEFAULT_GIFT_CODES = [
         "code": "2SORRYNAMCUONG",
         "reward_type": "item",
         "reward_value": 7,
+        "is_active": True,
+        "usage_limit": 1,
+    },
+    {
+        "code": "HACHIMIHACHIMI",
+        "reward_type": "gems",
+        "reward_value": 5000,
         "is_active": True,
         "usage_limit": 1,
     }

@@ -33,6 +33,8 @@ class GiftCodeCog(commands.Cog):
                     reward_msg = f"You received **1x {item['name']}**."
                 else:
                     reward_msg = f"You received an item (ID: {gift['reward_value']}), but it no longer exists."
+            elif gift['reward_type'] == 'daphine':
+                reward_msg = f"You received **{gift['reward_value']} Daphine**."
             else:
                 reward_msg = "Unknown reward type. Please contact an admin."
         if status == "success":

@@ -200,7 +200,7 @@ class WaifuSummonCog(BaseCommand):
                             stars = "⭐" * w.get("current_star_level", w["rarity"])
                             shards = w.get("character_shards", 0)
                             # Add awakened badge if is_awakened is True
-                            awakened_badge = " 🦋" if w.get("is_awakened") else ""
+                            awakened_badge = " 🦋 Awakened" if w.get("is_awakened") else ""
                             display_name = f"{w['name']}{awakened_badge}"
                             value = f"{stars} | {w['series']} | {shards} shards"
                             embed.add_field(
@@ -316,7 +316,10 @@ class WaifuSummonCog(BaseCommand):
                         color=0x8e44ad,
                     )
                     if waifu_page:
-                        lines = [f"{'⭐'*w.get('rarity', 1)} {w.get('name', 'Unknown')} (ID: {w.get('waifu_id', '?')})" for w in waifu_page]
+                        lines = []
+                        for w in waifu_page:
+                            awakened_badge = " 🦋 Awakened" if w.get("is_awakened") else ""
+                            lines.append(f"{'⭐'*w.get('rarity', 1)} {w.get('name', 'Unknown')}{awakened_badge} (ID: {w.get('waifu_id', '?')})")
                         embed.add_field(
                             name=f"Characters (Page {self.page_idx+1}/{self.page_count})",
                             value="\n".join(lines),

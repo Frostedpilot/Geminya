@@ -141,7 +141,7 @@ class Character:
     def get_expedition_stats(self) -> CharacterStats:
         """Get stats with star bonus applied for expeditions"""
         # Apply star bonus: Stat * (1 + (Star Level - 1) * 0.10)
-        multiplier = (1 + (self.star_level - 1) * 0.10) * 0.85
+        multiplier = (1 + (self.star_level - 1) * 0.10) * 0.95
         
         return CharacterStats(
             hp=int(self.base_stats.hp * multiplier),

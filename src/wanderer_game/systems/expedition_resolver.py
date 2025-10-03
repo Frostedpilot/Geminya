@@ -174,7 +174,36 @@ class ExpeditionResolver:
 
         # Calculate final multiplier and apply to loot, always using expedition.difficulty
         self._apply_final_multiplier(result, team, expedition.difficulty)
+
+        # Apply awakened multiplier after final multiplier
+        self._apply_awakened_multiplier(result, expedition)
         return result
+    
+    def _apply_awakened_multiplier(self, result: ExpeditionResult, expedition: Expedition):
+        """Apply the awakened multiplier (1.2^n for n awakened characters) to currency rewards only."""
+        awakened_count = getattr(expedition, 'awakened_count')
+        if awakened_count > 0 and result.loot_pool and result.loot_pool.items:
+            awaken_multiplier = 1.2 ** awakened_count
+            currency_types = {"gems", "quartzs"}
+            new_items = []
+            for item in result.loot_pool.items:
+                if getattr(item.item_type, 'value', item.item_type) in currency_types:
+                    new_qty = max(1, int(item.quantity * awaken_multiplier)) if item.quantity > 0 else 0
+                    new_items.append(type(item)(
+                        item_type=item.item_type,
+                        item_id=item.item_id,
+                        quantity=new_qty,
+                        rarity=item.rarity,
+                        value=item.value
+                    ))
+                else:
+                    new_items.append(item)
+            result.loot_pool.items = new_items
+            result.awakened_count = awakened_count
+            result.awaken_multiplier = awaken_multiplier
+        else:
+            result.awakened_count = awakened_count
+            result.awaken_multiplier = 1.0
     
     def _select_encounter(self, available_tags: List[str], expedition_difficulty: int = 0) -> Optional[Encounter]:
         """

@@ -69,7 +69,7 @@ class WaifuAcademyCog(BaseCommand):
             def calc_raw_stats(waifu):
                 stats = waifu.get('stats')
                 star_level = waifu.get('current_star_level', waifu.get('rarity', 1))
-                multiplier = (1 + (star_level - 1) * 0.10) * 0.85
+                multiplier = (1 + (star_level - 1) * 0.10) * 0.95
                 if stats and isinstance(stats, dict):
                     stat_values = [v for v in stats.values() if isinstance(v, (int, float))]
                     if stat_values:
@@ -80,6 +80,7 @@ class WaifuAcademyCog(BaseCommand):
                 w['__raw_stats'] = calc_raw_stats(w)
             # Sort by raw stats value (desc), then star level, then name
             sorted_collection = sorted(filtered, key=lambda w: (-w.get('__raw_stats', 0), -w.get("current_star_level", w["rarity"]), -w["character_shards"], w["name"]))
+
 
             class SearchPaginator(discord.ui.View):
                 def __init__(self, ctx, waifus):
@@ -112,9 +113,12 @@ class WaifuAcademyCog(BaseCommand):
                             archetype_val = w.get("archetype")
                             archetype = archetype_val if isinstance(archetype_val, str) and archetype_val.strip() else "?"
                             raw_stats = w.get("__raw_stats", 0)
-                            value = f"{stars} | {w['series']} | {shards} shards\n**Element:** {elements}\n**Archetype:** {archetype}\n**Stats:** {raw_stats:.1f}"
+                            # Awakened badge
+                            awakened = w.get("is_awakened", False)
+                            awakened_badge = " 🦋 Awakened" if awakened else ""
+                            value = f"{stars} | {w['series']} | {shards} shards\n**Element:** {elements}\n**Archetype:** {archetype}\n**Stats:** {raw_stats:.1f}{awakened_badge}"
                             embed.add_field(
-                                name=w["name"],
+                                name=w["name"] + (" 🦋" if awakened else ""),
                                 value=value,
                                 inline=False
                             )

@@ -504,6 +504,8 @@ class DatabaseService:
                             item['item_data'] if item['item_data'] else '{}',
                             item['effects'] if item['effects'] else '{}', True
                         )
+                elif gift['reward_type'] == 'daphine':
+                    await conn.execute("UPDATE users SET daphine = daphine + $1 WHERE discord_id = $2", gift['reward_value'], user_id)
                 else:
                     return "unknown_type"
                 # Record redemption
@@ -1968,7 +1970,7 @@ class DatabaseService:
             
             rows = await conn.fetch(
                 """
-                SELECT uw.id as user_waifu_id, uw.waifu_id, uw.current_star_level, uw.bond_level,
+                SELECT uw.id as user_waifu_id, uw.waifu_id, uw.current_star_level, uw.bond_level, uw.is_awakened,
                        w.name, w.series, w.rarity, w.image_url, w.stats, w.elemental_type, 
                        w.archetype, w.potency, w.elemental_resistances
                 FROM user_waifus uw
@@ -1988,7 +1990,7 @@ class DatabaseService:
             return waifus
 
     async def get_user_waifus_minimal(self, discord_id: str) -> List[Dict[str, Any]]:
-        """Get user's waifus with minimal data (no joins) - optimized for expeditions."""
+        """Get user's waifus with minimal data (no joins) - optimized for expeditions. Now includes is_awakened."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         
@@ -2000,7 +2002,7 @@ class DatabaseService:
             
             rows = await conn.fetch(
                 """
-                SELECT id as user_waifu_id, waifu_id, current_star_level, bond_level
+                SELECT id as user_waifu_id, waifu_id, current_star_level, bond_level, is_awakened
                 FROM user_waifus
                 WHERE user_id = $1
                 ORDER BY waifu_id ASC
@@ -2023,7 +2025,7 @@ class DatabaseService:
             
             rows = await conn.fetch(
                 """
-                SELECT uw.id as user_waifu_id, uw.waifu_id, uw.current_star_level, uw.bond_level
+                SELECT uw.id as user_waifu_id, uw.waifu_id, uw.current_star_level, uw.bond_level, uw.is_awakened
                 FROM user_waifus uw
                 WHERE uw.user_id = $1
                 AND uw.id NOT IN (

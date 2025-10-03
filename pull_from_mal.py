@@ -199,6 +199,12 @@ class MALDataPuller:
                         data = await response.json()
                         anime = data.get("data", {})
 
+                        # Combine genres and themes for the genres field
+                        genres_list = anime.get("genres", [])
+                        themes_list = anime.get("themes", [])
+                        all_genres = genres_list + themes_list
+                        genres_and_themes = "|".join([g.get("name", "") for g in all_genres])
+
                         res = {
                             "mal_id": anime.get("mal_id"),
                             "title": anime.get("title", "Unknown"),
@@ -217,7 +223,7 @@ class MALDataPuller:
                             "favorites": anime.get("favorites", 0),
                             "synopsis": anime.get("synopsis", ""),
                             "image_url": anime.get("images", {}).get("jpg", {}).get("large_image_url", ""),
-                            "genres": "|".join([g.get("name", "") for g in anime.get("genres", [])]),
+                            "genres": genres_and_themes,
                             "studios": "|".join([s.get("name", "") for s in anime.get("studios", [])]),
                         }
                         

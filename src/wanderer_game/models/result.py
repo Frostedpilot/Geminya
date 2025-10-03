@@ -27,6 +27,10 @@ class ExpeditionResult:
     failures: int = 0
     mishaps: int = 0
     
+    # Awakened mechanic fields
+    awakened_count: int = 0
+    awaken_multiplier: float = 1.0
+
     def add_encounter_result(self, result: EncounterResult):
         """Add an encounter result and update statistics"""
         self.encounter_results.append(result)

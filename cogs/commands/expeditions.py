@@ -894,7 +894,7 @@ class CharacterSelectView(discord.ui.View):
         def calc_raw_stats(waifu, character, dominant_stats):
             stats = waifu.get('stats')
             star_level = waifu.get('current_star_level', waifu.get('rarity', 1))
-            multiplier = (1 + (star_level - 1) * 0.10) * 0.85
+            multiplier = (1 + (star_level - 1) * 0.10) * 0.95
             stat_values = []
             if not stats and character and hasattr(character, 'base_stats'):
                 base_stats = getattr(character, 'base_stats', None)
@@ -1090,12 +1090,14 @@ class CharacterSelectView(discord.ui.View):
             affinity_count = waifu.get('__affinity_count', 0)
             star_level = waifu.get('current_star_level', 1)
             if character:
-                label = f"{name_prefix}{character.name}"[:100]
+                awaken_icon = "🦋" if waifu.get('is_awakened') else ""
+                label = f"{awaken_icon}{name_prefix}{character.name}"[:100]
                 desc = f"⭐{star_level} | {character.series[:40]} | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
                 emoji = "👤"
             else:
                 fallback_name = waifu.get('name', f'Character {waifu["waifu_id"]}')
-                label = f"{name_prefix}{fallback_name}"[:100]
+                awaken_icon = "🦋" if waifu.get('is_awakened') else ""
+                label = f"{awaken_icon}{name_prefix}{fallback_name}"[:100]
                 desc = f"⭐{star_level} | Unknown series | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
                 emoji = "❓"
             options.append(discord.SelectOption(
@@ -1457,6 +1459,7 @@ class CharacterSelectView(discord.ui.View):
 
             # Convert selected character IDs to the format expected by expedition service
             participant_data = []
+            awakened_count = 0
             for char_id in self.selected_characters:
                 waifu = next((w for w in self.user_waifus if w['user_waifu_id'] == char_id), None)
                 if waifu:
@@ -1466,17 +1469,20 @@ class CharacterSelectView(discord.ui.View):
                         "current_star_level": waifu.get('current_star_level', 1),
                         "bond_level": waifu.get('bond_level', 1)
                     })
+                    if waifu.get('is_awakened', False):
+                        awakened_count += 1
 
             if not participant_data:
                 await interaction.response.send_message("❌ Failed to prepare character data for expedition.", ephemeral=True)
                 return
 
-            # Pass selected_equipment_id to backend (None if not selected)
+            # Pass selected_equipment_id and awakened_count to backend (None if not selected)
             expedition_id = await self.expedition_service.start_expedition(
                 discord_id,
                 self.expedition['expedition_id'],
                 participant_data,
-                self.selected_equipment_id
+                self.selected_equipment_id,
+                awakened_count
             )
 
             # Check if expedition starting failed
@@ -1660,6 +1666,7 @@ class CharacterSelectView(discord.ui.View):
             team_characters = []
             # Determine which stats to use for preview
             dominant_stats = self.expedition.get('dominant_stats', [])
+            awakened_count = 0
             for char_id in self.selected_characters:
                 waifu = next((w for w in self.user_waifus if w['user_waifu_id'] == char_id), None)
                 if waifu:
@@ -1670,11 +1677,14 @@ class CharacterSelectView(discord.ui.View):
                         # Set star level for accurate stat preview
                         character.star_level = star_level
                         team_characters.append(character)
+                        if waifu.get('is_awakened', False):
+                            character_info[-1] += " 🦋"
+                            awakened_count += 1
                     # --- Team Power calculation (raw, with star-level multiplier) ---
                     stats = waifu.get('stats')
                     char_obj = character if character else None
                     star_level = waifu.get('current_star_level', 1)
-                    star_multiplier = (1 + (star_level - 1) * 0.10) * 0.85
+                    star_multiplier = (1 + (star_level - 1) * 0.10) * 0.95
                     stat_values = []
                     if not stats and char_obj and hasattr(char_obj, 'base_stats'):
                         base_stats = getattr(char_obj, 'base_stats', None)
@@ -1705,6 +1715,14 @@ class CharacterSelectView(discord.ui.View):
                 value="\n".join(character_info) if character_info else "None selected",
                 inline=False
             )
+            # Show awakened count and multiplier
+            if awakened_count > 0:
+                awaken_multiplier = 1.2 ** awakened_count
+                embed.add_field(
+                    name="🦋 Awakened Bonus",
+                    value=f"x{awaken_multiplier:.2f} to currency rewards",
+                    inline=True
+                )
             affinity_multiplier = 1.0
             series_multiplier = 1.0
             series_bonus_text = ""
@@ -2001,6 +2019,16 @@ class ExpeditionResultsView(discord.ui.View):
         
         # Get detailed results if available
         result_summary = expedition.get('result_summary', {})
+
+        # Show awakened count and multiplier if present
+        awakened_count = expedition.get('awakened_count')
+        awakened_multiplier = expedition.get('awakened_multiplier')
+        if awakened_count and awakened_multiplier and awakened_multiplier > 1.0:
+            embed.add_field(
+                name="🦋 Awakened Bonus",
+                value=f"x{awakened_multiplier:.2f} to currency rewards",
+                inline=False
+            )
         
         # Encounters summary
         total_encounters = result_summary.get('encounters', 0)
@@ -2287,19 +2315,39 @@ class ExpeditionResultsView(discord.ui.View):
         return embed
     
     def _create_rewards_embed(self) -> discord.Embed:
+
         """Create the rewards embed for the current expedition."""
         expedition = self._get_current_expedition()
         expedition_name = expedition.get('expedition_name', 'Unknown Expedition')
-        
+
         embed = discord.Embed(
             title=f"🎁 {expedition_name} - Rewards",
             color=0xFFD700
         )
-        
+
         if len(self.completed_expeditions) > 1:
             embed.set_author(name=f"Expedition {self.current_expedition_idx + 1} of {len(self.completed_expeditions)}")
+
+        # Daphine drop (special 1% chance)
+        daphine_rewarded = expedition.get('daphine_rewarded',0)
+        if daphine_rewarded > 0:
+            embed.add_field(
+                name="🦋 Daphine Drop!",
+                value=f"You found a rare **Daphine**!",
+                inline=False
+            )
         
         loot = expedition.get('loot', {})
+
+        # Show awakened count and multiplier if present
+        awakened_count = expedition.get('awakened_count')
+        awakened_multiplier = expedition.get('awakened_multiplier')
+        if awakened_count and awakened_multiplier and awakened_multiplier > 1.0:
+            embed.add_field(
+                name="🦋 Awakened Bonus",
+                value=f"x{awakened_multiplier:.2f} to currency rewards",
+                inline=False
+            )
         
         # Currency rewards
         crystals = loot.get('sakura_crystals', 0)
@@ -2579,8 +2627,7 @@ class MockExpeditionSelectView(discord.ui.View):
         # Create select menu for expeditions
         options = []
         for expedition in current_expeditions:
-            # Use a unique identifier for the value (prefer 'id', fallback to name)
-            exp_id = str(expedition.get('id', expedition['name']))
+            exp_id = str(expedition.get('expedition_id'))
             label = expedition['name'][:95]
             description = f"Diff: {expedition['difficulty']} | Duration: {expedition['duration_hours']}h"
             if len(description) > 100:
@@ -2591,6 +2638,7 @@ class MockExpeditionSelectView(discord.ui.View):
                 value=exp_id
             ))
 
+        
         if options:
             self.expedition_select = discord.ui.Select(
                 placeholder="Choose an expedition to mock test...",
@@ -2789,7 +2837,7 @@ class MockExpeditionSelectView(discord.ui.View):
         expeditions = self.get_filtered_expeditions()
         selected_expedition = None
         for exp in expeditions:
-            exp_id = str(exp.get('id', exp['name']))
+            exp_id = str(exp.get('expedition_id', exp['name']))
             if exp_id == selected_id:
                 selected_expedition = exp
                 break
@@ -2880,8 +2928,16 @@ class MockCharacterSelectView(discord.ui.View):
     _series_name_to_id_cache = None
     
     def __init__(self, user_waifus: List[Dict], user_id: int, expedition_service, expedition: Dict, use_maxed_characters: bool):
+        # Deduplicate waifus by user_waifu_id to prevent duplicate select option values
+        seen_ids = set()
+        deduped_waifus = []
+        for w in user_waifus:
+            uid = w.get('user_waifu_id')
+            if uid is not None and uid not in seen_ids:
+                deduped_waifus.append(w)
+                seen_ids.add(uid)
         super().__init__(timeout=300.0)
-        self.user_waifus = user_waifus
+        self.user_waifus = deduped_waifus
         self.user_id = user_id
         self.expedition_service = expedition_service
         self.expedition = expedition
@@ -2892,7 +2948,6 @@ class MockCharacterSelectView(discord.ui.View):
         self.items_per_page = 25  # Discord select menu limit
         self.sorting_mode = 'raw_power'  # or 'affinity_count'
         self.char_registry = expedition_service.data_manager.get_character_registry()
-        
         self._setup_ui()
     
     def _get_filtered_waifus(self) -> List[Dict]:
@@ -2903,7 +2958,7 @@ class MockCharacterSelectView(discord.ui.View):
         def calc_raw_stats(waifu, character, dominant_stats):
             stats = waifu.get('stats')
             star_level = waifu.get('current_star_level', waifu.get('rarity', 1))
-            multiplier = (1 + (star_level - 1) * 0.10) * 0.85
+            multiplier = (1 + (star_level - 1) * 0.10) * 0.95
             stat_values = []
             if not stats and character and hasattr(character, 'base_stats'):
                 base_stats = getattr(character, 'base_stats', None)
@@ -3084,11 +3139,13 @@ class MockCharacterSelectView(discord.ui.View):
                 star_level = waifu.get('current_star_level', 1)
                 
                 if character:
+                    # Do NOT show awaken icon in mock view
                     label = f"{name_prefix}{character.name}"[:100]
                     desc = f"⭐{star_level} | {character.series[:40]} | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
                     emoji = "👤"
                 else:
                     fallback_name = waifu.get('name', f'Character {waifu["waifu_id"]}')
+                    # Do NOT show awaken icon in mock view
                     label = f"{name_prefix}{fallback_name}"[:100]
                     desc = f"⭐{star_level} | Unknown series | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
                     emoji = "❓"
@@ -3510,7 +3567,7 @@ class MockCharacterSelectView(discord.ui.View):
                         # Team Power calculation (same as real system)
                         stats = waifu.get('stats')
                         char_obj = character
-                        star_multiplier = (1 + (star_level - 1) * 0.10) * 0.85
+                        star_multiplier = (1 + (star_level - 1) * 0.10) * 0.95
                         stat_values = []
                         if not stats and char_obj and hasattr(char_obj, 'base_stats'):
                             base_stats = getattr(char_obj, 'base_stats', None)
