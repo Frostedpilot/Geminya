@@ -727,7 +727,7 @@ class ExpeditionService:
             # Step 5.5: 1% chance to drop daphine
             import random
             daphine_rewarded = 0
-            if random.random() < 0.01:
+            if random.random() < 0.05:
                 daphine_rewarded = 1
                 await self.waifu_service.add_daphine(discord_id, daphine_rewarded)
 

@@ -1151,6 +1151,142 @@ class DatabaseService:
             """
         )
 
+        # World-Threat Expeditions system tables
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS world_threat_raids (
+                id SERIAL PRIMARY KEY,
+                raid_name VARCHAR(255) NOT NULL,
+                boss_name VARCHAR(255) NOT NULL,
+                total_hp BIGINT NOT NULL,
+                current_hp BIGINT NOT NULL,
+                
+                -- Boss Configuration
+                dominant_stats JSON NOT NULL,
+                initial_weaknesses JSON NOT NULL,
+                initial_resistances JSON NOT NULL,
+                
+                -- Dynamic State
+                current_weaknesses JSON DEFAULT '[]',
+                current_curses JSON DEFAULT '[]',
+                
+                -- Curse System Configuration
+                curse_pool JSON NOT NULL,
+                curse_limits JSON NOT NULL,
+                curse_trigger_threshold INTEGER DEFAULT 100,
+                strikes_since_last_curse INTEGER DEFAULT 0,
+                
+                -- Analysis System
+                analysis_thresholds JSON NOT NULL,
+                current_analysis_points BIGINT DEFAULT 0,
+                thresholds_unlocked INTEGER DEFAULT 0,
+                analysis_reward_pool JSON NOT NULL,
+                
+                -- Event State
+                status VARCHAR(50) DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP NULL,
+                created_by VARCHAR(255),
+                
+                -- Metadata
+                description TEXT,
+                victory_rewards JSON,
+                analysis_milestone_rewards JSON
+            );
+            CREATE INDEX IF NOT EXISTS idx_world_threat_raids_status ON world_threat_raids(status);
+            CREATE INDEX IF NOT EXISTS idx_world_threat_raids_created_at ON world_threat_raids(created_at);
+            """
+        )
+
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS world_threat_character_usage (
+                id SERIAL PRIMARY KEY,
+                raid_id INTEGER NOT NULL REFERENCES world_threat_raids(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                character_id INTEGER NOT NULL,
+                used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                
+                UNIQUE(raid_id, user_id, character_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_world_threat_character_usage_raid_user ON world_threat_character_usage(raid_id, user_id);
+            CREATE INDEX IF NOT EXISTS idx_world_threat_character_usage_character ON world_threat_character_usage(character_id);
+            """
+        )
+
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS world_threat_strikes (
+                id SERIAL PRIMARY KEY,
+                raid_id INTEGER NOT NULL REFERENCES world_threat_raids(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                action_type VARCHAR(20) NOT NULL,
+                
+                -- Team Details
+                team_characters JSON NOT NULL,
+                team_size INTEGER NOT NULL,
+                equipped_equipment_id INTEGER REFERENCES equipment(id),
+                
+                -- Calculations
+                base_score BIGINT NOT NULL,
+                affinity_multiplier DECIMAL(5,3) NOT NULL,
+                final_score BIGINT NOT NULL,
+                
+                -- Results
+                damage_dealt BIGINT DEFAULT 0,
+                
+                -- Context Tracking
+                boss_hp_before BIGINT NOT NULL,
+                boss_hp_after BIGINT NOT NULL,
+                boss_weaknesses_at_time JSON NOT NULL,
+                boss_curses_at_time JSON NOT NULL,
+                
+                -- Rewards
+                strike_rewards JSON,
+                
+                struck_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_world_threat_strikes_user_action ON world_threat_strikes(raid_id, user_id, action_type);
+            CREATE INDEX IF NOT EXISTS idx_world_threat_strikes_timestamp ON world_threat_strikes(struck_at);
+            """
+        )
+
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS world_threat_analysis (
+                id SERIAL PRIMARY KEY,
+                raid_id INTEGER NOT NULL REFERENCES world_threat_raids(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                
+                -- Analysis Details
+                team_characters JSON NOT NULL,
+                team_size INTEGER NOT NULL,
+                equipped_equipment_id INTEGER REFERENCES equipment(id),
+                
+                -- Calculations
+                base_score BIGINT NOT NULL,
+                affinity_multiplier DECIMAL(5,3) NOT NULL,
+                final_score BIGINT NOT NULL,
+                analysis_points BIGINT NOT NULL,
+                
+                -- Context Tracking
+                boss_weaknesses_at_time JSON NOT NULL,
+                boss_curses_at_time JSON NOT NULL,
+                
+                -- Milestone Tracking
+                milestone_triggered BOOLEAN DEFAULT FALSE,
+                threshold_reached INTEGER NULL,
+                
+                -- Rewards
+                analysis_rewards JSON,
+                
+                analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_world_threat_analysis_milestone ON world_threat_analysis(raid_id, milestone_triggered);
+            CREATE INDEX IF NOT EXISTS idx_world_threat_analysis_user ON world_threat_analysis(raid_id, user_id);
+            """
+        )
+
     # User-related methods
     async def get_or_create_user(self, discord_id: str) -> Dict[str, Any]:
         """Get user from database or create if doesn't exist (PostgreSQL)."""
@@ -2332,3 +2468,346 @@ class DatabaseService:
                     expedition['expedition_data'] = {}
             
             return expedition
+
+    # === WORLD-THREAT EXPEDITIONS SYSTEM METHODS ===
+    
+    async def create_world_threat_raid(self, raid_data: Dict[str, Any]) -> int:
+        """Create a new world threat raid"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO world_threat_raids (
+                    raid_name, boss_name, total_hp, current_hp, dominant_stats,
+                    initial_weaknesses, initial_resistances, current_weaknesses, current_curses,
+                    curse_pool, curse_limits, curse_trigger_threshold, analysis_thresholds,
+                    analysis_reward_pool, created_by, description,
+                    victory_rewards, analysis_milestone_rewards
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+                RETURNING id
+                """,
+                raid_data['raid_name'], raid_data['boss_name'], raid_data['total_hp'], raid_data['total_hp'],
+                json.dumps(raid_data['dominant_stats']), json.dumps(raid_data['initial_weaknesses']),
+                json.dumps(raid_data['initial_resistances']), json.dumps(raid_data.get('current_weaknesses', [])),
+                json.dumps(raid_data.get('current_curses', [])), json.dumps(raid_data['curse_pool']),
+                json.dumps(raid_data['curse_limits']), raid_data.get('curse_trigger_threshold', 100),
+                json.dumps(raid_data['analysis_thresholds']), json.dumps(raid_data['analysis_reward_pool']),
+                raid_data.get('created_by'), raid_data.get('description'),
+                json.dumps(raid_data.get('victory_rewards', {})), json.dumps(raid_data.get('analysis_milestone_rewards', {}))
+            )
+            return row["id"] if row else 0
+
+    async def get_active_world_threat_raid(self) -> Optional[Dict[str, Any]]:
+        """Get the currently active world threat raid"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM world_threat_raids WHERE status = 'active' ORDER BY created_at DESC LIMIT 1"
+            )
+            if not row:
+                return None
+            
+            raid = dict(row)
+            # Parse JSON fields
+            json_fields = ['dominant_stats', 'initial_weaknesses', 'initial_resistances', 'current_weaknesses',
+                          'current_curses', 'curse_pool', 'curse_limits', 'analysis_thresholds', 'analysis_reward_pool',
+                          'victory_rewards', 'analysis_milestone_rewards']
+            
+            for field in json_fields:
+                if raid[field]:
+                    try:
+                        raid[field] = json.loads(raid[field])
+                    except:
+                        raid[field] = [] if field.endswith(('weaknesses', 'curses', 'thresholds', 'stats')) else {}
+            
+            return raid
+
+    async def get_world_threat_raid_by_id(self, raid_id: int) -> Optional[Dict[str, Any]]:
+        """Get world threat raid by ID"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM world_threat_raids WHERE id = $1", raid_id)
+            if not row:
+                return None
+            
+            raid = dict(row)
+            # Parse JSON fields (same as above)
+            json_fields = ['dominant_stats', 'initial_weaknesses', 'initial_resistances', 'current_weaknesses',
+                          'current_curses', 'curse_pool', 'curse_limits', 'analysis_thresholds', 'analysis_reward_pool',
+                          'victory_rewards', 'analysis_milestone_rewards']
+            
+            for field in json_fields:
+                if raid[field]:
+                    try:
+                        raid[field] = json.loads(raid[field])
+                    except:
+                        raid[field] = [] if field.endswith(('weaknesses', 'curses', 'thresholds', 'stats')) else {}
+            
+            return raid
+
+    async def update_world_threat_raid_hp(self, raid_id: int, new_hp: int) -> bool:
+        """Update boss HP after damage"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE world_threat_raids SET current_hp = $1 WHERE id = $2",
+                max(0, new_hp), raid_id
+            )
+            return result == "UPDATE 1"
+
+    async def update_world_threat_raid_analysis(self, raid_id: int, new_points: int, thresholds_unlocked: int) -> bool:
+        """Update analysis points and unlocked thresholds"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE world_threat_raids SET current_analysis_points = $1, thresholds_unlocked = $2 WHERE id = $3",
+                new_points, thresholds_unlocked, raid_id
+            )
+            return result == "UPDATE 1"
+
+    async def update_world_threat_raid_weaknesses(self, raid_id: int, weaknesses: List[Dict[str, str]]) -> bool:
+        """Update raid weaknesses"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE world_threat_raids SET current_weaknesses = $1 WHERE id = $2",
+                json.dumps(weaknesses), raid_id
+            )
+            return result == "UPDATE 1"
+
+    async def update_world_threat_raid_curses(self, raid_id: int, curses: List[Dict[str, str]]) -> bool:
+        """Update raid curses"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE world_threat_raids SET current_curses = $1 WHERE id = $2",
+                json.dumps(curses), raid_id
+            )
+            return result == "UPDATE 1"
+
+    async def increment_curse_strike_counter(self, raid_id: int) -> int:
+        """Increment strikes since last curse and return new count"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "UPDATE world_threat_raids SET strikes_since_last_curse = strikes_since_last_curse + 1 WHERE id = $1 RETURNING strikes_since_last_curse",
+                raid_id
+            )
+            return row["strikes_since_last_curse"] if row else 0
+
+    async def reset_curse_strike_counter(self, raid_id: int) -> bool:
+        """Reset strikes since last curse to 0"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE world_threat_raids SET strikes_since_last_curse = 0 WHERE id = $1",
+                raid_id
+            )
+            return result == "UPDATE 1"
+
+    async def complete_world_threat_raid(self, raid_id: int) -> bool:
+        """Mark raid as completed"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE world_threat_raids SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = $1",
+                raid_id
+            )
+            return result == "UPDATE 1"
+
+    async def record_world_threat_strike(self, strike_data: Dict[str, Any]) -> int:
+        """Record a strike action"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO world_threat_strikes (
+                    raid_id, user_id, action_type, team_characters, team_size, equipped_equipment_id,
+                    base_score, affinity_multiplier, final_score, damage_dealt,
+                    boss_hp_before, boss_hp_after, boss_weaknesses_at_time, boss_curses_at_time, strike_rewards
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                RETURNING id
+                """,
+                strike_data['raid_id'], strike_data['user_id'], strike_data['action_type'],
+                json.dumps(strike_data['team_characters']), strike_data['team_size'],
+                strike_data.get('equipped_equipment_id'), strike_data['base_score'],
+                strike_data['affinity_multiplier'], strike_data['final_score'], strike_data['damage_dealt'],
+                strike_data['boss_hp_before'], strike_data['boss_hp_after'],
+                json.dumps(strike_data['boss_weaknesses_at_time']), json.dumps(strike_data['boss_curses_at_time']),
+                json.dumps(strike_data.get('strike_rewards', {}))
+            )
+            return row["id"] if row else 0
+
+    async def record_world_threat_analysis(self, analysis_data: Dict[str, Any]) -> int:
+        """Record an analysis action"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO world_threat_analysis (
+                    raid_id, user_id, team_characters, team_size, equipped_equipment_id,
+                    base_score, affinity_multiplier, final_score, analysis_points,
+                    boss_weaknesses_at_time, boss_curses_at_time, milestone_triggered, threshold_reached, analysis_rewards
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+                RETURNING id
+                """,
+                analysis_data['raid_id'], analysis_data['user_id'], json.dumps(analysis_data['team_characters']),
+                analysis_data['team_size'], analysis_data.get('equipped_equipment_id'), analysis_data['base_score'],
+                analysis_data['affinity_multiplier'], analysis_data['final_score'], analysis_data['analysis_points'],
+                json.dumps(analysis_data['boss_weaknesses_at_time']),
+                json.dumps(analysis_data['boss_curses_at_time']), analysis_data.get('milestone_triggered', False),
+                analysis_data.get('threshold_reached'), json.dumps(analysis_data.get('analysis_rewards', {}))
+            )
+            return row["id"] if row else 0
+
+    async def mark_world_threat_characters_used(self, raid_id: int, user_id: int, character_ids: List[int]) -> bool:
+        """Mark characters as used in raid"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            async with conn.transaction():
+                for character_id in character_ids:
+                    try:
+                        await conn.execute(
+                            "INSERT INTO world_threat_character_usage (raid_id, user_id, character_id) VALUES ($1, $2, $3)",
+                            raid_id, user_id, character_id
+                        )
+                    except Exception:
+                        # Character already used - this is expected if validation failed earlier
+                        return False
+                return True
+
+    async def get_world_threat_available_characters(self, raid_id: int, user_id: int) -> List[int]:
+        """Get character IDs not yet used in this raid by the user"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            # Get all user's character IDs
+            all_chars_rows = await conn.fetch(
+                "SELECT id FROM user_waifus WHERE user_id = $1",
+                user_id
+            )
+            all_char_ids = [row["id"] for row in all_chars_rows]
+            
+            # Get used character IDs for this raid
+            used_chars_rows = await conn.fetch(
+                "SELECT character_id FROM world_threat_character_usage WHERE raid_id = $1 AND user_id = $2",
+                raid_id, user_id
+            )
+            used_char_ids = {row["character_id"] for row in used_chars_rows}
+            
+            # Return available characters
+            return [char_id for char_id in all_char_ids if char_id not in used_char_ids]
+
+    async def get_world_threat_user_participation(self, raid_id: int, user_id: int) -> Dict[str, Any]:
+        """Get user's participation summary calculated from logs"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            # Get strike statistics
+            strike_stats = await conn.fetchrow(
+                """
+                SELECT 
+                    COUNT(*) as total_strikes,
+                    SUM(damage_dealt) as total_damage,
+                    COUNT(*) FILTER (WHERE action_type = 'fight') as fight_strikes
+                FROM world_threat_strikes 
+                WHERE raid_id = $1 AND user_id = $2
+                """,
+                raid_id, user_id
+            )
+            
+            # Get analysis statistics
+            analysis_stats = await conn.fetchrow(
+                """
+                SELECT 
+                    COUNT(*) as total_analysis,
+                    SUM(analysis_points) as total_analysis_points
+                FROM world_threat_analysis 
+                WHERE raid_id = $1 AND user_id = $2
+                """,
+                raid_id, user_id
+            )
+            
+            # Get character usage count
+            char_usage = await conn.fetchrow(
+                "SELECT COUNT(*) as characters_used FROM world_threat_character_usage WHERE raid_id = $1 AND user_id = $2",
+                raid_id, user_id
+            )
+            
+            return {
+                'total_strikes': strike_stats['total_strikes'] or 0,
+                'fight_strikes': strike_stats['fight_strikes'] or 0,
+                'analyze_actions': analysis_stats['total_analysis'] or 0,
+                'total_damage_dealt': strike_stats['total_damage'] or 0,
+                'total_analysis_contributed': analysis_stats['total_analysis_points'] or 0,
+                'characters_used': char_usage['characters_used'] or 0
+            }
+
+    async def get_world_threat_leaderboard(self, raid_id: int, sort_by: str = 'damage', limit: int = 10) -> List[Dict[str, Any]]:
+        """Get participation leaderboard"""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        if sort_by == 'damage':
+            query = """
+                SELECT 
+                    u.discord_id,
+                    u.academy_name,
+                    SUM(s.damage_dealt) as total_damage,
+                    COUNT(s.id) as total_strikes
+                FROM world_threat_strikes s
+                JOIN users u ON s.user_id = u.id
+                WHERE s.raid_id = $1 AND s.action_type = 'fight'
+                GROUP BY u.id, u.discord_id, u.academy_name
+                ORDER BY total_damage DESC
+                LIMIT $2
+            """
+        elif sort_by == 'analysis':
+            query = """
+                SELECT 
+                    u.discord_id,
+                    u.academy_name,
+                    SUM(a.analysis_points) as total_analysis,
+                    COUNT(a.id) as total_analysis_actions
+                FROM world_threat_analysis a
+                JOIN users u ON a.user_id = u.id
+                WHERE a.raid_id = $1
+                GROUP BY u.id, u.discord_id, u.academy_name
+                ORDER BY total_analysis DESC
+                LIMIT $2
+            """
+        else:
+            # Combined leaderboard
+            query = """
+                SELECT 
+                    u.discord_id,
+                    u.academy_name,
+                    COALESCE(SUM(s.damage_dealt), 0) as total_damage,
+                    COALESCE(SUM(a.analysis_points), 0) as total_analysis,
+                    COUNT(DISTINCT s.id) as strike_count,
+                    COUNT(DISTINCT a.id) as analysis_count
+                FROM users u
+                LEFT JOIN world_threat_strikes s ON u.id = s.user_id AND s.raid_id = $1
+                LEFT JOIN world_threat_analysis a ON u.id = a.user_id AND a.raid_id = $1
+                WHERE (s.id IS NOT NULL OR a.id IS NOT NULL)
+                GROUP BY u.id, u.discord_id, u.academy_name
+                ORDER BY (total_damage + total_analysis) DESC
+                LIMIT $2
+            """
+        
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch(query, raid_id, limit)
+            return [dict(row) for row in rows]
