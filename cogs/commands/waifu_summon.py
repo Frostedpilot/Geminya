@@ -1129,6 +1129,263 @@ class WaifuSummonCog(BaseCommand):
             await ctx.send(embed=embed)
 
     @commands.hybrid_command(
+        name="nwnl_super_summon",
+        description="🎰💫 Perform multiple 10-pulls with NEW star system! (Choose how many multi-summons)",
+    )
+    @discord.app_commands.describe(
+        count="Number of multi-summons to perform (1-100, each multi-summon = 10 pulls)",
+        banner_id="Banner ID to summon from (optional)"
+    )
+    async def nwnl_super_summon(self, ctx: commands.Context, count: int, banner_id: Optional[int] = None):
+        """Perform multiple multi-summons (each multi-summon = 10 pulls) with the new star upgrade system."""
+        await ctx.defer()
+        
+        # Validate count
+        if count < 1 or count > 100:
+            embed = discord.Embed(
+                title="❌ Invalid Count",
+                description="Please choose between 1-100 multi-summons (10-1000 total pulls).",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
+            return
+        
+        # Check if user has enough crystals upfront
+        user = await self.services.database.get_or_create_user(str(ctx.author.id))
+        total_cost = 100 * count  # Each multi-summon costs 100 crystals
+        
+        if user["sakura_crystals"] < total_cost:
+            embed = discord.Embed(
+                title="❌ Insufficient Crystals",
+                description=f"You need {total_cost} Sakura Crystals for {count} multi-summon{'s' if count > 1 else ''} but have {user['sakura_crystals']}.",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
+            return
+
+        try:
+            # Perform multiple multi-summons
+            all_results = []
+            total_rarity_counts = {1: 0, 2: 0, 3: 0}
+            total_crystals_spent = 0
+            
+            # Send initial message
+            progress_embed = discord.Embed(
+                title="🎰💫 Super Summon in Progress...",
+                description=f"Performing {count} multi-summon{'s' if count > 1 else ''} ({count * 10} total pulls)...",
+                color=0xFFD700,
+            )
+            progress_msg = await ctx.send(embed=progress_embed)
+
+            # Add order index to each result for sorting
+            for i in range(count):
+                # Perform individual multi-summon
+                result = await self.services.waifu_service.perform_multi_summon(str(ctx.author.id), banner_id=banner_id)
+                
+                if not result["success"]:
+                    # If any multi-summon fails, show error and stop
+                    embed = discord.Embed(
+                        title="❌ Super Summon Failed",
+                        description=f"Failed on multi-summon {i+1}/{count}: {result['message']}",
+                        color=0xFF6B6B,
+                    )
+                    await progress_msg.edit(embed=embed)
+                    return
+                
+                # Add order index to each result for sorting
+                for j, summon_result in enumerate(result["results"]):
+                    summon_result["pull_order"] = len(all_results) + j + 1
+                
+                # Aggregate results
+                all_results.extend(result["results"])
+                for rarity, count_val in result["rarity_counts"].items():
+                    total_rarity_counts[rarity] += count_val
+                total_crystals_spent += result["total_cost"]
+
+            # Delete progress message
+            await progress_msg.delete()
+
+            # Sort results: by original rarity (descending), then by pull order (ascending)
+            sorted_results = sorted(all_results, key=lambda x: (-x["rarity"], x["pull_order"]))
+
+            # Get final user state
+            final_user = await self.services.database.get_or_create_user(str(ctx.author.id))
+
+            # Rarity colors and emojis
+            rarity_config = {
+                3: {"color": 0xFFD700, "emoji": "⭐⭐⭐", "name": "Legendary"},
+                2: {"color": 0x9932CC, "emoji": "⭐⭐", "name": "Epic"},
+                1: {"color": 0x808080, "emoji": "⭐", "name": "Basic"},
+            }
+
+            # Create paginated view for results
+            class SuperSummonPaginator(discord.ui.View):
+                def __init__(self, ctx, results, total_rarity_counts, total_crystals_spent, final_crystals, count):
+                    super().__init__(timeout=300)
+                    self.ctx = ctx
+                    self.results = results
+                    self.total_rarity_counts = total_rarity_counts
+                    self.total_crystals_spent = total_crystals_spent
+                    self.final_crystals = final_crystals
+                    self.count = count
+                    self.page_idx = 0
+                    self.page_size = 10
+                    self.page_count = max(1, (len(results) + self.page_size - 1) // self.page_size)
+
+                def get_embed(self):
+                    start = self.page_idx * self.page_size
+                    end = start + self.page_size
+                    page_results = self.results[start:end]
+                    
+                    embed = discord.Embed(
+                        title="🌟💫 Super Summon Results 💫🌟",
+                        description=f"Page {self.page_idx+1}/{self.page_count} • {len(self.results)} total pulls from {self.count} multi-summons",
+                        color=0xFFD700,
+                    )
+
+                    # Add summary stats in description
+                    rarity_text = []
+                    for rarity in [3, 2, 1]:
+                        count_val = self.total_rarity_counts.get(rarity, 0)
+                        if count_val > 0:
+                            config = rarity_config[rarity]
+                            percentage = (count_val / len(self.results)) * 100
+                            rarity_text.append(f"{config['emoji']} {count_val} ({percentage:.1f}%)")
+                    
+                    summary_line = " • ".join(rarity_text)
+                    current_desc = embed.description or ""
+                    embed.description = current_desc + f"\n**Summary:** {summary_line}"
+
+                    # Add detailed results for this page
+                    if page_results:
+                        result_lines = []
+                        for result in page_results:
+                            waifu = result["waifu"]
+                            rarity = result["rarity"]
+                            pull_order = result["pull_order"]
+                            current_star = result.get("current_star_level", rarity)
+                            
+                            # Star display
+                            stars = "⭐" * current_star
+                            
+                            # Status (NEW/shards/quartz)
+                            if result["is_new"]:
+                                status = "🆕 NEW"
+                            elif result.get("quartz_gained", 0) > 0 and result.get("shards_gained", 0) == 0:
+                                status = f"💠 +{result['quartz_gained']} quartz"
+                            else:
+                                status = f"💫 +{result['shards_gained']} shards"
+                            
+                            # Upgrades
+                            upgrade_info = ""
+                            if result.get("upgrades_performed"):
+                                upgrades = result["upgrades_performed"]
+                                if len(upgrades) == 1:
+                                    upgrade_info = f" ⬆️ {upgrades[0]['from_star']}→{upgrades[0]['to_star']}★"
+                                else:
+                                    upgrade_info = f" ⬆️ {len(upgrades)} upgrades"
+                            
+                            # Series (truncated if too long)
+                            series = waifu.get("series", "Unknown")
+                            if len(series) > 20:
+                                series = series[:17] + "..."
+                            
+                            # Build the line
+                            result_line = f"**#{pull_order}** {stars} **{waifu['name']}** ({series})\n{status}{upgrade_info}"
+                            result_lines.append(result_line)
+                        
+                        embed.add_field(
+                            name="� Detailed Results",
+                            value="\n\n".join(result_lines),
+                            inline=False
+                        )
+                    else:
+                        embed.add_field(name="No Results", value="This page is empty.", inline=False)
+                    
+                    # Footer with navigation and cost info
+                    embed.set_footer(
+                        text=f"💎 Crystals: {self.final_crystals} remaining • Cost: {self.total_crystals_spent} • Page {self.page_idx+1}/{self.page_count}"
+                    )
+                    
+                    return embed
+
+                async def interaction_check(self, interaction: discord.Interaction) -> bool:
+                    return interaction.user == self.ctx.author
+
+                @discord.ui.button(label="⬅️ Previous", style=discord.ButtonStyle.primary, row=0)
+                async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.page_idx = (self.page_idx - 1) % self.page_count
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+                @discord.ui.button(label="Next ➡️", style=discord.ButtonStyle.primary, row=0)
+                async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    self.page_idx = (self.page_idx + 1) % self.page_count
+                    await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+                @discord.ui.button(label="🔢 Go to Page", style=discord.ButtonStyle.secondary, row=0)
+                async def goto_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+                    class PageModal(discord.ui.Modal, title="Go to Page"):
+                        page_input = discord.ui.TextInput(
+                            label="Page Number",
+                            placeholder=f"Enter page number (1-{self.page_count})",
+                            min_length=1,
+                            max_length=3
+                        )
+
+                        def __init__(self, paginator):
+                            super().__init__()
+                            self.paginator = paginator
+
+                        async def on_submit(self, interaction: discord.Interaction):
+                            try:
+                                page_num = int(self.page_input.value)
+                                if 1 <= page_num <= self.paginator.page_count:
+                                    self.paginator.page_idx = page_num - 1
+                                    await interaction.response.edit_message(embed=self.paginator.get_embed(), view=self.paginator)
+                                else:
+                                    await interaction.response.send_message(
+                                        f"Invalid page number. Please enter a number between 1 and {self.paginator.page_count}.",
+                                        ephemeral=True
+                                    )
+                            except ValueError:
+                                await interaction.response.send_message(
+                                    "Please enter a valid number.",
+                                    ephemeral=True
+                                )
+
+                    await interaction.response.send_modal(PageModal(self))
+
+            # Create special celebration message
+            three_star_count = total_rarity_counts.get(3, 0)
+            content = ""
+            if three_star_count >= 5:
+                content = "🌟💫⭐ **MIRACLE SUPER SUMMON!** ⭐💫🌟\n🎆🎇✨ **LEGENDARY BONANZA!** ✨🎇🎆"
+            elif three_star_count >= 3:
+                content = "🌟💎 **AMAZING SUPER SUMMON!** 💎🌟\n✨ Multiple legendary waifus obtained! ✨"
+            elif three_star_count >= 1:
+                content = "🌟⭐ **GREAT SUPER SUMMON!** ⭐🌟\n💫 Legendary waifu acquired! 💫"
+
+            # Create and send paginated view
+            view = SuperSummonPaginator(ctx, sorted_results, total_rarity_counts, total_crystals_spent, final_user['sakura_crystals'], count)
+            await ctx.send(content=content, embed=view.get_embed(), view=view)
+
+            # Log the super summon results
+            self.logger.info(
+                f"User {ctx.author} performed x{count} super-summon ({len(all_results)} total pulls): "
+                f"3★:{total_rarity_counts.get(3,0)}, 2★:{total_rarity_counts.get(2,0)}, "
+                f"1★:{total_rarity_counts.get(1,0)}"
+            )
+
+        except Exception as e:
+            self.logger.error(f"Error in super summon: {e}")
+            embed = discord.Embed(
+                title="❌ Super Summon Error",
+                description="Something went wrong during super summoning. Please try again later!",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
         name="nwnl_collection", description="📚 View your waifu academy collection with star levels"
     )
     async def nwnl_collection(self, ctx: commands.Context, user: Optional[discord.Member] = None):

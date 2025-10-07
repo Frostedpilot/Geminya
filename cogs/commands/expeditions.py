@@ -1602,6 +1602,15 @@ class CharacterSelectView(discord.ui.View):
                 inline=False
             )
 
+            # Disable all buttons and selects in the view
+            for item in self.children:
+                if isinstance(item, (discord.ui.Button, discord.ui.Select)):
+                    item.disabled = True
+            
+            # Edit the original message with disabled buttons (keep original embed)
+            await interaction.edit_original_response(view=self)
+            
+            # Send the success embed as a follow-up message
             await interaction.followup.send(embed=embed)
 
         except Exception as e:
@@ -3780,19 +3789,57 @@ class ExpeditionsCog(BaseCommand):
             
             # Get available expeditions
             self.logger.debug(f"[DISCORD_EXPEDITION_START] Loading available expeditions")
-            expeditions = await self.expedition_service.get_available_expeditions()
+            all_expeditions = await self.expedition_service.get_available_expeditions()
+            
+            # Filter out expeditions that the user is currently running
+            running_expedition_ids = set()
+            for active_expedition in active_expeditions:
+                expedition_data = active_expedition.get('expedition_data', {})
+                if isinstance(expedition_data, str):
+                    try:
+                        import json
+                        expedition_data = json.loads(expedition_data)
+                    except:
+                        expedition_data = {}
+                template_data = expedition_data.get('template_data', {})
+                expedition_id = template_data.get('expedition_id')
+                if expedition_id:
+                    running_expedition_ids.add(expedition_id)
+            
+            # Filter available expeditions to exclude currently running ones
+            expeditions = [exp for exp in all_expeditions if exp.get('expedition_id') not in running_expedition_ids]
+            
+            self.logger.info(f"[DISCORD_EXPEDITION_START] User {discord_id} has {len(active_expeditions)} active expeditions, {len(running_expedition_ids)} unique expedition types running, {len(expeditions)} expeditions available to start")
             
             if not expeditions:
-                self.logger.warning(f"[DISCORD_EXPEDITION_START] No expeditions available for user {discord_id}")
-                embed = discord.Embed(
-                    title="🗺️ No Expeditions Available",
-                    description="There are currently no expeditions available. Check back later!",
-                    color=0xF39C12
-                )
+                if not all_expeditions:
+                    # No expeditions exist at all
+                    self.logger.warning(f"[DISCORD_EXPEDITION_START] No expeditions available for user {discord_id}")
+                    embed = discord.Embed(
+                        title="🗺️ No Expeditions Available",
+                        description="There are currently no expeditions available. Check back later!",
+                        color=0xF39C12
+                    )
+                else:
+                    # All expeditions are currently being run by this user
+                    embed = discord.Embed(
+                        title="🗺️ No New Expeditions Available",
+                        description=f"You are currently running all available expedition types ({len(running_expedition_ids)}).\n\nComplete some expeditions using `/nwnl_expeditions_complete` to access them again!",
+                        color=0xF39C12
+                    )
+                    # Show what expeditions they're currently running
+                    running_names = []
+                    for active_expedition in active_expeditions:
+                        name = active_expedition.get('expedition_name', 'Unknown Expedition')
+                        running_names.append(f"• {name}")
+                    if running_names:
+                        embed.add_field(
+                            name="🚀 Currently Running:",
+                            value="\n".join(running_names[:5]) + (f"\n...and {len(running_names)-5} more" if len(running_names) > 5 else ""),
+                            inline=False
+                        )
                 await interaction.followup.send(embed=embed)
                 return
-            
-            self.logger.info(f"[DISCORD_EXPEDITION_START] User {discord_id} has {len(active_expeditions)} active expeditions, {len(expeditions)} expeditions available")
             
             # Check if user has reached expedition limit
             if len(active_expeditions) >= MAX_EXPEDITION_SLOTS:
