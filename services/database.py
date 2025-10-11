@@ -1283,15 +1283,38 @@ class DatabaseService:
     async def add_waifu_to_user(self, discord_id: str, waifu_id: int) -> Dict[str, Any]:
         """Add a waifu to a user's collection, handling constellation system (PostgreSQL), using waifu_id as identifier. Parses waifu JSON fields."""
         async with self.connection_pool.acquire() as conn:
-            user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
-            if not user_row:
-                raise ValueError(f"User {discord_id} not found")
-            user_id = user_row["id"]
-            existing = await conn.fetchrow(
-                "SELECT * FROM user_waifus WHERE user_id = $1 AND waifu_id = $2",
-                user_id, waifu_id
-            )
-            if existing:
+            async with conn.transaction():
+                # Get user_id within transaction
+                user_row = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+                if not user_row:
+                    raise ValueError(f"User {discord_id} not found")
+                user_id = user_row["id"]
+                
+                # Check for existing waifu with FOR UPDATE to prevent race conditions
+                existing = await conn.fetchrow(
+                    "SELECT id FROM user_waifus WHERE user_id = $1 AND waifu_id = $2 FOR UPDATE",
+                    user_id, waifu_id
+                )
+                
+                if existing:
+                    # Waifu already exists, return existing data
+                    user_waifu_id = existing["id"]
+                else:
+                    # Insert new waifu
+                    new_id_row = await conn.fetchrow(
+                        """
+                        INSERT INTO user_waifus (user_id, waifu_id, obtained_at)
+                        VALUES ($1, $2, $3)
+                        RETURNING id
+                        """,
+                        user_id, waifu_id, datetime.now()
+                    )
+                    user_waifu_id = new_id_row["id"] if new_id_row else None
+                
+                if not user_waifu_id:
+                    return {}
+                
+                # Fetch and return complete waifu data
                 row = await conn.fetchrow(
                     """
                     SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id,
@@ -1300,28 +1323,7 @@ class DatabaseService:
                     JOIN waifus w ON uw.waifu_id = w.waifu_id
                     WHERE uw.id = $1
                     """,
-                    existing["id"]
-                )
-                return self._parse_waifu_json_fields(dict(row)) if row else {}
-            else:
-                new_id_row = await conn.fetchrow(
-                    """
-                    INSERT INTO user_waifus (user_id, waifu_id, obtained_at)
-                    VALUES ($1, $2, $3)
-                    RETURNING id
-                    """,
-                    user_id, waifu_id, datetime.now()
-                )
-                new_id = new_id_row["id"] if new_id_row else None
-                row = await conn.fetchrow(
-                    """
-                    SELECT uw.*, w.name, w.series, w.rarity, w.image_url, w.waifu_id as waifu_id,
-                           w.stats, w.elemental_type, w.potency, w.elemental_resistances, w.favorite_gifts, w.special_dialogue
-                    FROM user_waifus uw
-                    JOIN waifus w ON uw.waifu_id = w.waifu_id
-                    WHERE uw.id = $1
-                    """,
-                    new_id
+                    user_waifu_id
                 )
                 return self._parse_waifu_json_fields(dict(row)) if row else {}
 
@@ -1352,6 +1354,275 @@ class DatabaseService:
                 new_rank, discord_id
             )
             return result[-1] != '0'
+
+    async def update_user_daphine(self, discord_id: str, amount: int) -> bool:
+        """Update user's daphine count (PostgreSQL)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE users SET daphine = daphine + $1 WHERE discord_id = $2",
+                amount, discord_id
+            )
+            return result[-1] != '0'
+
+    async def remove_user_daphine(self, discord_id: str, amount: int) -> bool:
+        """Remove daphine from user if enough available (PostgreSQL)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE users SET daphine = daphine - $1 WHERE discord_id = $2 AND daphine >= $1",
+                amount, discord_id
+            )
+            return result[-1] != '0'
+
+    async def clamp_user_pity_counter(self, discord_id: str, max_pity: int) -> bool:
+        """Ensure user's pity counter doesn't exceed the maximum (PostgreSQL)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE users SET pity_counter = $1 WHERE discord_id = $2 AND pity_counter > $1",
+                max_pity, discord_id
+            )
+            return True  # Always return success, as clamping is not critical
+
+    async def awaken_user_waifu(self, discord_id: str, waifu_id: int) -> Dict[str, Any]:
+        """Awaken a waifu for a user by consuming 1 Daphine (transactional)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            async with conn.transaction():
+                # Get user and check daphine
+                user = await conn.fetchrow("SELECT id, daphine FROM users WHERE discord_id = $1", discord_id)
+                if not user:
+                    return {"success": False, "message": "User not found."}
+                
+                if user["daphine"] < 1:
+                    return {"success": False, "message": "You do not have any Daphine."}
+                
+                # Get user_waifu row
+                user_waifu = await conn.fetchrow(
+                    "SELECT * FROM user_waifus WHERE user_id = $1 AND waifu_id = $2",
+                    user["id"], waifu_id
+                )
+                if not user_waifu:
+                    return {"success": False, "message": "You do not own this waifu."}
+                
+                if user_waifu.get("is_awakened"):
+                    return {"success": False, "message": "This waifu is already awakened."}
+                
+                # Deduct Daphine
+                await conn.execute(
+                    "UPDATE users SET daphine = daphine - 1 WHERE id = $1",
+                    user["id"]
+                )
+                
+                # Set is_awakened
+                await conn.execute(
+                    "UPDATE user_waifus SET is_awakened = TRUE WHERE id = $1",
+                    user_waifu["id"]
+                )
+                
+                return {"success": True, "message": "Waifu awakened successfully!"}
+
+    # Character shard management methods
+    async def get_character_shards(self, discord_id: str, waifu_id: int) -> int:
+        """Get current shard count for a specific character."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            # Get user first
+            user = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user:
+                return 0
+            
+            row = await conn.fetchrow(
+                "SELECT star_shards FROM user_waifus WHERE user_id = $1 AND waifu_id = $2",
+                user["id"], waifu_id
+            )
+            return row["star_shards"] if row else 0
+
+    async def add_character_shards(self, discord_id: str, waifu_id: int, amount: int) -> int:
+        """Add shards for a specific character. Returns new total."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            # Get user first
+            user = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user:
+                return 0
+            
+            await conn.execute(
+                "UPDATE user_waifus SET star_shards = star_shards + $1 WHERE user_id = $2 AND waifu_id = $3",
+                amount, user["id"], waifu_id
+            )
+            
+            row = await conn.fetchrow(
+                "SELECT star_shards FROM user_waifus WHERE user_id = $1 AND waifu_id = $2",
+                user["id"], waifu_id
+            )
+            return row["star_shards"] if row else 0
+
+    async def get_character_star_level(self, discord_id: str, waifu_id: int) -> int:
+        """Get current star level of a character in user's collection."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT uw.current_star_level, w.rarity as base_rarity
+                FROM user_waifus uw
+                JOIN waifus w ON uw.waifu_id = w.waifu_id
+                JOIN users u ON uw.user_id = u.id
+                WHERE u.discord_id = $1 AND uw.waifu_id = $2
+                LIMIT 1
+                """,
+                discord_id, waifu_id
+            )
+            if row:
+                return row["current_star_level"] if row["current_star_level"] is not None else row["base_rarity"]
+            
+            # If not in user collection, get base rarity
+            waifu_row = await conn.fetchrow("SELECT rarity FROM waifus WHERE waifu_id = $1", waifu_id)
+            return waifu_row["rarity"] if waifu_row else 1
+
+    async def upgrade_character_star_transaction(self, discord_id: str, waifu_id: int, new_star_level: int, shards_cost: int) -> Dict[str, Any]:
+        """Upgrade a character's star level using shards (transactional)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            async with conn.transaction():
+                # Get user
+                user = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+                if not user:
+                    return {"success": False, "message": "User not found."}
+                
+                # Get current state
+                user_waifu = await conn.fetchrow(
+                    "SELECT current_star_level, star_shards FROM user_waifus WHERE user_id = $1 AND waifu_id = $2",
+                    user["id"], waifu_id
+                )
+                if not user_waifu:
+                    return {"success": False, "message": "Character not owned."}
+                
+                if user_waifu["star_shards"] < shards_cost:
+                    return {
+                        "success": False, 
+                        "message": f"Not enough shards! Need {shards_cost}, have {user_waifu['star_shards']}"
+                    }
+                
+                # Perform upgrade
+                await conn.execute(
+                    "UPDATE user_waifus SET current_star_level = $1, star_shards = star_shards - $2 WHERE user_id = $3 AND waifu_id = $4",
+                    new_star_level, shards_cost, user["id"], waifu_id
+                )
+                
+                # Get character name for response
+                waifu_data = await conn.fetchrow("SELECT name, series FROM waifus WHERE waifu_id = $1", waifu_id)
+                
+                return {
+                    "success": True,
+                    "character_name": waifu_data["name"] if waifu_data else "Unknown",
+                    "character_series": waifu_data["series"] if waifu_data else "Unknown",
+                    "to_star": new_star_level,
+                    "shards_used": shards_cost,
+                    "remaining_shards": user_waifu["star_shards"] - shards_cost
+                }
+
+    async def update_character_star_and_shards(self, discord_id: str, waifu_id: int, star_level: int, shards: int) -> bool:
+        """Update character star level and shards atomically."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            # Get user
+            user = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user:
+                return False
+            
+            result = await conn.execute(
+                "UPDATE user_waifus SET current_star_level = $1, star_shards = $2 WHERE user_id = $3 AND waifu_id = $4",
+                star_level, shards, user["id"], waifu_id
+            )
+            return result[-1] != '0'
+
+    async def set_character_initial_star_level(self, discord_id: str, waifu_id: int, star_level: int) -> bool:
+        """Set initial star level for a newly obtained character."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            # Get user
+            user = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user:
+                return False
+            
+            result = await conn.execute(
+                "UPDATE user_waifus SET current_star_level = $1 WHERE user_id = $2 AND waifu_id = $3",
+                star_level, user["id"], waifu_id
+            )
+            return result[-1] != '0'
+
+    # Multi-summon transaction methods
+    async def update_pity_counter_value(self, discord_id: str, new_value: int) -> bool:
+        """Set pity counter to a specific value."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE users SET pity_counter = $1 WHERE discord_id = $2",
+                new_value, discord_id
+            )
+            return result[-1] != '0'
+
+    async def batch_update_new_waifus_star_and_shards(self, discord_id: str, waifu_updates: List[Dict[str, Any]]) -> bool:
+        """Batch update star levels and shards for newly obtained waifus."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        async with self.connection_pool.acquire() as conn:
+            async with conn.transaction():
+                # Get user
+                user = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+                if not user:
+                    return False
+                
+                # Batch update all waifus
+                for update in waifu_updates:
+                    await conn.execute(
+                        "UPDATE user_waifus SET current_star_level = $1, star_shards = $2 WHERE user_id = $3 AND waifu_id = $4",
+                        update['star_level'], update['shards'], user["id"], update['waifu_id']
+                    )
+                
+                return True
+
+    async def get_user_collection_shard_data(self, discord_id: str, waifu_ids: List[int]) -> Dict[int, int]:
+        """Get shard data for specific waifus in user's collection (optimized for bulk operations)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
+        
+        if not waifu_ids:
+            return {}
+        
+        async with self.connection_pool.acquire() as conn:
+            # Get user
+            user = await conn.fetchrow("SELECT id FROM users WHERE discord_id = $1", discord_id)
+            if not user:
+                return {}
+            
+            rows = await conn.fetch(
+                "SELECT waifu_id, star_shards FROM user_waifus WHERE user_id = $1 AND waifu_id = ANY($2::int[])",
+                user["id"], waifu_ids
+            )
+            return {row["waifu_id"]: row["star_shards"] for row in rows}
 
     # Search methods
     async def search_waifus(self, waifu_name: Optional[str] = None, limit: Optional[int] = None, series_name: Optional[str] = None) -> List[Dict[str, Any]]:

@@ -21,77 +21,22 @@ class WaifuService:
 
     async def add_daphine(self, discord_id: str, amount: int) -> bool:
         """Add Daphine to a user."""
-        user = await self.db.get_or_create_user(discord_id)
-        if not self.db.connection_pool:
-            raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
-        async with self.db.connection_pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE users SET daphine = daphine + $1 WHERE discord_id = $2",
-                amount, discord_id
-            )
-        return True
+        return await self.db.update_user_daphine(discord_id, amount)
 
     async def remove_daphine(self, discord_id: str, amount: int) -> bool:
         """Remove Daphine from a user (if enough)."""
-        user = await self.db.get_or_create_user(discord_id)
-        if user.get("daphine", 0) < amount:
-            return False
-        if not self.db.connection_pool:
-            raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
-        async with self.db.connection_pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE users SET daphine = daphine - $1 WHERE discord_id = $2",
-                amount, discord_id
-            )
-        return True
+        return await self.db.remove_user_daphine(discord_id, amount)
 
     async def awaken_waifu(self, discord_id: str, waifu_id: int) -> Dict[str, Any]:
         """Awaken a waifu for a user by consuming 1 Daphine."""
-        user = await self.db.get_or_create_user(discord_id)
-        if not self.db.connection_pool:
-            raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
-        async with self.db.connection_pool.acquire() as conn:
-            # Get user_waifu row
-            user_waifu = await conn.fetchrow(
-                "SELECT * FROM user_waifus WHERE user_id = $1 AND waifu_id = $2",
-                user["id"], waifu_id
-            )
-            if not user_waifu:
-                return {"success": False, "message": "You do not own this waifu."}
-            if user_waifu.get("is_awakened"):
-                return {"success": False, "message": "This waifu is already awakened."}
-            if user.get("daphine", 0) < 1:
-                return {"success": False, "message": "You do not have any Daphine."}
-            # Deduct Daphine
-            await conn.execute(
-                "UPDATE users SET daphine = daphine - 1 WHERE id = $1 AND daphine >= 1",
-                user["id"]
-            )
-            # Set is_awakened
-            await conn.execute(
-                "UPDATE user_waifus SET is_awakened = TRUE WHERE id = $1",
-                user_waifu["id"]
-            )
-            return {"success": True, "message": "Waifu awakened successfully!"}
+        return await self.db.awaken_user_waifu(discord_id, waifu_id)
 
     async def get_series_genres(self, series_id: int) -> list:
         """Get genres for a given series_id from the database."""
         return await self.db.get_series_genres(series_id)
     async def clamp_pity_counter(self, discord_id: str):
         """Ensure the user's pity counter never exceeds the 3★ pity cap."""
-        user = await self.db.get_or_create_user(discord_id)
-        pity = user.get("pity_counter", 0)
-        if pity > self.PITY_3_STAR:
-            if self.db.connection_pool:
-                async with self.db.connection_pool.acquire() as conn:
-                    await conn.execute(
-                        """
-                        UPDATE users SET pity_counter = $1 WHERE discord_id = $2
-                        """,
-                        self.PITY_3_STAR, discord_id
-                    )
-            else:
-                await self.db.update_pity_counter(discord_id, reset=True)
+        await self.db.clamp_user_pity_counter(discord_id, self.PITY_3_STAR)
     # ... existing code ...
     """Service for managing waifu gacha system with star upgrades."""
 
@@ -223,18 +168,7 @@ class WaifuService:
             total_quartz_gained = await self.convert_excess_shards_to_quartz(discord_id, waifu_id, remaining_shards)
             remaining_shards = 0  # All excess shards converted
         # Update database with final values
-        user = await self.db.get_or_create_user(discord_id)
-        if not self.db.connection_pool:
-            raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
-        async with self.db.connection_pool.acquire() as conn:
-            await conn.execute(
-                """
-                UPDATE user_waifus 
-                SET current_star_level = $1, star_shards = $2 
-                WHERE user_id = $3 AND waifu_id = $4
-                """,
-                final_star_level, remaining_shards, user["id"], waifu_id
-            )
+        await self.db.update_character_star_and_shards(discord_id, waifu_id, final_star_level, remaining_shards)
         return {
             "final_star_level": final_star_level,
             "remaining_shards": remaining_shards,
@@ -246,87 +180,20 @@ class WaifuService:
 
     async def get_character_shards(self, discord_id: str, waifu_id: int) -> int:
         """Get current shard count for a specific character."""
-        try:
-            user = await self.db.get_or_create_user(discord_id)
-            
-            if not self.db.connection_pool:
-                raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
-            async with self.db.connection_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT star_shards 
-                    FROM user_waifus 
-                    WHERE user_id = $1 AND waifu_id = $2
-                    """,
-                    user["id"], waifu_id
-                )
-                return row["star_shards"] if row else 0
-                    
-        except Exception as e:
-            self.logger.error(f"Error getting character shards: {e}")
-            return 0
+        return await self.db.get_character_shards(discord_id, waifu_id)
 
     async def add_character_shards(self, discord_id: str, waifu_id: int, amount: int) -> int:
         """Add shards for a specific character. Returns new total."""
-        try:
-            user = await self.db.get_or_create_user(discord_id)
-            
-            if not self.db.connection_pool:
-                raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
-            async with self.db.connection_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE user_waifus 
-                    SET star_shards = star_shards + $1 
-                    WHERE user_id = $2 AND waifu_id = $3
-                    """,
-                    amount, user["id"], waifu_id
-                )
-                row = await conn.fetchrow(
-                    """
-                    SELECT star_shards 
-                    FROM user_waifus 
-                    WHERE user_id = $1 AND waifu_id = $2
-                    """,
-                    user["id"], waifu_id
-                )
-                new_total = row["star_shards"] if row else 0
-                return new_total
-                    
-        except Exception as e:
-            self.logger.error(f"Error adding character shards: {e}")
-            return 0
+        return await self.db.add_character_shards(discord_id, waifu_id, amount)
 
     async def get_character_star_level(self, discord_id: str, waifu_id: int) -> int:
         """Get current star level of a character in user's collection."""
-        try:
-            if not self.db.connection_pool:
-                raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
-            async with self.db.connection_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    SELECT uw.current_star_level, w.rarity as base_rarity
-                    FROM user_waifus uw
-                    JOIN waifus w ON uw.waifu_id = w.waifu_id
-                    JOIN users u ON uw.user_id = u.id
-                    WHERE u.discord_id = $1 AND uw.waifu_id = $2
-                    LIMIT 1
-                    """,
-                    discord_id, waifu_id
-                )
-                if row:
-                    return row["current_star_level"] if row["current_star_level"] is not None else row["base_rarity"]
-                waifu_row = await conn.fetchrow("SELECT rarity FROM waifus WHERE waifu_id = $1", waifu_id)
-                return waifu_row["rarity"] if waifu_row else 1
-                    
-        except Exception as e:
-            self.logger.error(f"Error getting character star level: {e}")
-            return 1
+        return await self.db.get_character_star_level(discord_id, waifu_id)
 
     async def upgrade_character_star(self, discord_id: str, waifu_id: int) -> Dict[str, Any]:
         """Upgrade a character's star level using shards."""
         try:
-            # Get current star level
+            # Get current star level and check upgrade requirements
             current_star = await self.get_character_star_level(discord_id, waifu_id)
             
             if current_star >= self.MAX_STAR_LEVEL:
@@ -355,30 +222,8 @@ class WaifuService:
                     "current": current_shards
                 }
             
-            # Perform upgrade
-            user = await self.db.get_or_create_user(discord_id)
-            if not self.db.connection_pool:
-                raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
-            async with self.db.connection_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE user_waifus 
-                    SET current_star_level = $1, star_shards = star_shards - $2 
-                    WHERE user_id = $3 AND waifu_id = $4
-                    """,
-                    next_star, required_shards, user["id"], waifu_id
-                )
-                waifu_data = await conn.fetchrow("SELECT name, series FROM waifus WHERE waifu_id = $1", waifu_id)
-                remaining_shards = current_shards - required_shards
-                return {
-                    "success": True,
-                    "character_name": waifu_data["name"] if waifu_data else "Unknown",
-                    "character_series": waifu_data["series"] if waifu_data else "Unknown",
-                    "from_star": current_star,
-                    "to_star": next_star,
-                    "shards_used": required_shards,
-                    "remaining_shards": remaining_shards
-                }
+            # Use database service transaction
+            return await self.db.upgrade_character_star_transaction(discord_id, waifu_id, next_star, required_shards)
                     
         except Exception as e:
             self.logger.error(f"Error upgrading character star: {e}")
@@ -554,16 +399,7 @@ class WaifuService:
             # NEW CHARACTER: Add to collection
             await self.db.add_waifu_to_user(discord_id, waifu_id)
             # Set initial star level to pulled rarity
-            user = await self.db.get_or_create_user(discord_id)
-            async with self.db.connection_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE user_waifus 
-                    SET current_star_level = $1 
-                    WHERE user_id = $2 AND waifu_id = $3
-                    """,
-                    pulled_rarity, user["id"], waifu_id
-                )
+            await self.db.set_character_initial_star_level(discord_id, waifu_id, pulled_rarity)
             return {
                 "is_new": True,
                 "is_duplicate": False,
@@ -715,16 +551,7 @@ class WaifuService:
         # Clamp to max
         if pity_counter > self.PITY_3_STAR:
             pity_counter = self.PITY_3_STAR
-        if self.db.connection_pool:
-            async with self.db.connection_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    UPDATE users SET pity_counter = $1 WHERE discord_id = $2
-                    """,
-                    pity_counter, discord_id
-                )
-        else:
-            await self.db.update_pity_counter(discord_id, reset=True)
+        await self.db.update_pity_counter_value(discord_id, pity_counter)
 
         # ...existing code for result processing...
 
@@ -871,28 +698,30 @@ class WaifuService:
         # Batch add new waifus at the end
         if new_waifu_ids:
             await self.db.add_waifus_to_user_batch(discord_id, new_waifu_ids)
-            # Set initial star level and shards for all new waifus
-            user = await self.db.get_or_create_user(discord_id)
-            if not self.db.connection_pool:
-                raise RuntimeError("Database connection pool is not initialized. Call 'await waifu_service.initialize()' first.")
-            async with self.db.connection_pool.acquire() as conn:
-                for waifu_id in new_waifu_ids:
-                    rarity = session_new_star_level[waifu_id]
-                    shards = session_new_shards[waifu_id]
-                    upgrades = session_new_upgrades[waifu_id]
-                    quartz_gained = session_new_quartz[waifu_id]
-                    # Set star level and shards
-                    await conn.execute(
-                        """
-                        UPDATE user_waifus 
-                        SET current_star_level = $1, star_shards = $2 
-                        WHERE user_id = $3 AND waifu_id = $4
-                        """,
-                        rarity, shards, user["id"], waifu_id
-                    )
-                    # If any quartz was gained (from excess shards), add to user
-                    if quartz_gained > 0:
-                        await self.db.update_user_quartzs(discord_id, quartz_gained)
+            
+            # Prepare batch update data for star levels and shards
+            waifu_updates = []
+            total_quartz_gained = 0
+            
+            for waifu_id in new_waifu_ids:
+                rarity = session_new_star_level[waifu_id]
+                shards = session_new_shards[waifu_id]
+                quartz_gained = session_new_quartz[waifu_id]
+                
+                waifu_updates.append({
+                    'waifu_id': waifu_id,
+                    'star_level': rarity,
+                    'shards': shards
+                })
+                
+                total_quartz_gained += quartz_gained
+            
+            # Batch update star levels and shards
+            await self.db.batch_update_new_waifus_star_and_shards(discord_id, waifu_updates)
+            
+            # Add any gained quartz
+            if total_quartz_gained > 0:
+                await self.db.update_user_quartzs(discord_id, total_quartz_gained)
 
         new_waifus = [w for (w, _) in waifu_rarity_pairs if w["waifu_id"] in new_waifu_ids]
         results = summon_results
@@ -928,19 +757,8 @@ class WaifuService:
                 return []
 
             waifu_ids = [waifu["waifu_id"] for waifu in collection]
-            user = await self.db.get_or_create_user(discord_id)
-            shard_map = {}
-            if waifu_ids and self.db.connection_pool:
-                async with self.db.connection_pool.acquire() as conn:
-                    rows = await conn.fetch(
-                        """
-                        SELECT waifu_id, star_shards
-                        FROM user_waifus
-                        WHERE user_id = $1 AND waifu_id = ANY($2::int[])
-                        """,
-                        user["id"], waifu_ids
-                    )
-                    shard_map = {row["waifu_id"]: row["star_shards"] for row in rows}
+            # Use database service to get shard data
+            shard_map = await self.db.get_user_collection_shard_data(discord_id, waifu_ids)
 
             enhanced_collection = []
             for waifu in collection:
