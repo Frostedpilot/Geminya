@@ -179,6 +179,13 @@ DEFAULT_GIFT_CODES = [
         "reward_value": 5000,
         "is_active": True,
         "usage_limit": 1,
+    },
+    {
+        "code": "CLAUDEDOG",
+        "reward_type": "daphine",
+        "reward_value": 1,
+        "is_active": True,
+        "usage_limit": 1,
     }
 ]
 

@@ -7,7 +7,7 @@ EXPEDITIONS_PATH = os.path.join('data', 'expeditions', 'base_expeditions.json')
 # Output file for selected expedition IDs
 OUTPUT_PATH = os.path.join('data', 'expeditions', 'selected_expedition_ids.json')
 
-SIZE = 2
+SIZE = 6
 
 def main():
     # Read expeditions
@@ -16,7 +16,7 @@ def main():
 
 
     # Bin expeditions by difficulty (bin size 200, from 1 to 2000)
-    bins = [(start, start + 199) for start in range(1, 2000, 200)]
+    bins = [(start, start + 199) for start in range(1, 2000, 400)]
     selected_ids = []
     for bin_start, bin_end in bins:
         # Expeditions in this bin

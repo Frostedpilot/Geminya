@@ -917,7 +917,7 @@ class CharacterSelectView(discord.ui.View):
         # Helper to count affinity matches, now includes equipment affinity adds
         def calc_affinity_count(character, favored_affinities, disfavored_affinities, extra_favored=None, extra_disfavored=None):
             if not character:
-                return 0
+                return (0, 0)  # Return (favored_count, disfavored_count)
             # Merge in extra affinities from equipment if provided
             all_favored = list(favored_affinities)
             all_disfavored = list(disfavored_affinities)
@@ -958,7 +958,7 @@ class CharacterSelectView(discord.ui.View):
                 elif affinity.type.name == 'GENRE':
                     if affinity.value in getattr(character, 'anime_genres', []):
                         debuff_matches += 1
-            return buff_matches - debuff_matches
+            return (buff_matches, debuff_matches)  # Return separate counts
 
         # Prepare extra affinities from equipment (if any selected)
         extra_favored = []
@@ -991,18 +991,19 @@ class CharacterSelectView(discord.ui.View):
             if character:
                 if not search_lower or (search_lower in character.name.lower() or search_lower in character.series.lower()):
                     raw_stats = calc_raw_stats(waifu, character, dominant_stats)
-                    affinity_count = calc_affinity_count(character, favored_affinities, disfavored_affinities, extra_favored, extra_disfavored)
+                    favored_count, disfavored_count = calc_affinity_count(character, favored_affinities, disfavored_affinities, extra_favored, extra_disfavored)
                     waifu = dict(waifu)  # Copy to annotate
                     waifu['__raw_stats'] = raw_stats
-                    waifu['__affinity_count'] = affinity_count
+                    waifu['__favored_affinities'] = favored_count
+                    waifu['__disfavored_affinities'] = disfavored_count
                     filtered_waifus.append(waifu)
         # Double sorting logic
         if self.sorting_mode == 'raw_power':
-            # Primary: raw stats, Secondary: affinity count
-            filtered_waifus.sort(key=lambda w: (w.get('__raw_stats', 0), w.get('__affinity_count', 0)), reverse=True)
+            # Primary: raw stats, Secondary: favored affinities, Tertiary: disfavored affinities (ascending - fewer is better)
+            filtered_waifus.sort(key=lambda w: (w.get('__raw_stats', 0), w.get('__favored_affinities', 0), -w.get('__disfavored_affinities', 0)), reverse=True)
         else:
-            # Primary: affinity count, Secondary: raw stats
-            filtered_waifus.sort(key=lambda w: (w.get('__affinity_count', 0), w.get('__raw_stats', 0)), reverse=True)
+            # Primary: favored affinities, Secondary: disfavored affinities (ascending - fewer is better), Tertiary: raw stats
+            filtered_waifus.sort(key=lambda w: (w.get('__favored_affinities', 0), -w.get('__disfavored_affinities', 0), w.get('__raw_stats', 0)), reverse=True)
         return filtered_waifus
     
     def _setup_ui(self):
@@ -1011,7 +1012,7 @@ class CharacterSelectView(discord.ui.View):
 
         # Add sorting toggle button
         sorting_label = (
-            "Sort: Raw Power > Affinity" if self.sorting_mode == 'raw_power' else "Sort: Affinity > Raw Power"
+            "Sort: Raw Power > Buffs > Debuffs" if self.sorting_mode == 'raw_power' else "Sort: Buffs > Debuffs > Raw Power"
         )
         sorting_button = discord.ui.Button(
             label=sorting_label,
@@ -1087,18 +1088,19 @@ class CharacterSelectView(discord.ui.View):
                 selected_on_page.append(str(user_waifu_id))
             name_prefix = "✅ " if is_selected else ""
             raw_stats = waifu.get('__raw_stats', 0)
-            affinity_count = waifu.get('__affinity_count', 0)
+            favored_count = waifu.get('__favored_affinities', 0)
+            disfavored_count = waifu.get('__disfavored_affinities', 0)
             star_level = waifu.get('current_star_level', 1)
             if character:
                 awaken_icon = "🦋" if waifu.get('is_awakened') else ""
                 label = f"{awaken_icon}{name_prefix}{character.name}"[:100]
-                desc = f"⭐{star_level} | {character.series[:40]} | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
+                desc = f"⭐{star_level} | {character.series[:40]} | Stats: {raw_stats:.1f} | Buffs: {favored_count} | Debuffs: {disfavored_count}"
                 emoji = "👤"
             else:
                 fallback_name = waifu.get('name', f'Character {waifu["waifu_id"]}')
                 awaken_icon = "🦋" if waifu.get('is_awakened') else ""
                 label = f"{awaken_icon}{name_prefix}{fallback_name}"[:100]
-                desc = f"⭐{star_level} | Unknown series | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
+                desc = f"⭐{star_level} | Unknown series | Stats: {raw_stats:.1f} | Buffs: {favored_count} | Debuffs: {disfavored_count}"
                 emoji = "❓"
             options.append(discord.SelectOption(
                 label=label,
@@ -2990,7 +2992,7 @@ class MockCharacterSelectView(discord.ui.View):
         # Helper to count affinity matches (identical to CharacterSelectView, includes equipment and 3-per-character cap)
         def calc_affinity_count(character, favored_affinities, disfavored_affinities, extra_favored=None, extra_disfavored=None):
             if not character:
-                return 0
+                return (0, 0)  # Return (favored_count, disfavored_count)
             all_favored = list(favored_affinities)
             all_disfavored = list(disfavored_affinities)
             if extra_favored:
@@ -3029,7 +3031,7 @@ class MockCharacterSelectView(discord.ui.View):
                 elif affinity.type.name == 'GENRE':
                     if affinity.value in getattr(character, 'anime_genres', []):
                         debuff_matches += 1
-            return buff_matches - debuff_matches
+            return (buff_matches, debuff_matches)  # Return separate counts
 
         # Get expedition affinity data
         affinity_pools = self.expedition.get('affinity_pools', {})
@@ -3074,19 +3076,20 @@ class MockCharacterSelectView(discord.ui.View):
                 
             # Calculate real power values
             raw_power = calc_raw_stats(waifu, character, dominant_stats)
-            affinity_count = calc_affinity_count(character, favored_affinities, disfavored_affinities)
+            favored_count, disfavored_count = calc_affinity_count(character, favored_affinities, disfavored_affinities)
             
             # Store calculated values (same as real system)
             waifu['__raw_stats'] = raw_power
-            waifu['__affinity_count'] = affinity_count
+            waifu['__favored_affinities'] = favored_count
+            waifu['__disfavored_affinities'] = disfavored_count
             
             filtered_waifus.append(waifu)
         
         # Sort by selected mode (same as real system)
         if self.sorting_mode == 'raw_power':
-            filtered_waifus.sort(key=lambda x: (x['__raw_stats'], x['__affinity_count']), reverse=True)
+            filtered_waifus.sort(key=lambda x: (x['__raw_stats'], x['__favored_affinities'], -x['__disfavored_affinities']), reverse=True)
         else:
-            filtered_waifus.sort(key=lambda x: (x['__affinity_count'], x['__raw_stats']), reverse=True)
+            filtered_waifus.sort(key=lambda x: (x['__favored_affinities'], -x['__disfavored_affinities'], x['__raw_stats']), reverse=True)
         
         return filtered_waifus
     
@@ -3096,7 +3099,7 @@ class MockCharacterSelectView(discord.ui.View):
 
         # Add sorting toggle button
         sorting_label = (
-            "Sort: Raw Power > Affinity" if self.sorting_mode == 'raw_power' else "Sort: Affinity > Raw Power"
+            "Sort: Raw Power > Buffs > Debuffs" if self.sorting_mode == 'raw_power' else "Sort: Buffs > Debuffs > Raw Power"
         )
         sorting_button = discord.ui.Button(
             label=sorting_label,
@@ -3144,19 +3147,20 @@ class MockCharacterSelectView(discord.ui.View):
                     selected_on_page.append(str(user_waifu_id))
                 name_prefix = "✅ " if is_selected else ""
                 raw_stats = waifu.get('__raw_stats', 0)
-                affinity_count = waifu.get('__affinity_count', 0)
+                favored_count = waifu.get('__favored_affinities', 0)
+                disfavored_count = waifu.get('__disfavored_affinities', 0)
                 star_level = waifu.get('current_star_level', 1)
                 
                 if character:
                     # Do NOT show awaken icon in mock view
                     label = f"{name_prefix}{character.name}"[:100]
-                    desc = f"⭐{star_level} | {character.series[:40]} | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
+                    desc = f"⭐{star_level} | {character.series[:40]} | Stats: {raw_stats:.1f} | Buffs: {favored_count} | Debuffs: {disfavored_count}"
                     emoji = "👤"
                 else:
                     fallback_name = waifu.get('name', f'Character {waifu["waifu_id"]}')
                     # Do NOT show awaken icon in mock view
                     label = f"{name_prefix}{fallback_name}"[:100]
-                    desc = f"⭐{star_level} | Unknown series | Stats: {raw_stats:.1f} | Affinities: {affinity_count}"
+                    desc = f"⭐{star_level} | Unknown series | Stats: {raw_stats:.1f} | Buffs: {favored_count} | Debuffs: {disfavored_count}"
                     emoji = "❓"
                 
                 if len(desc) > 100:
@@ -4263,56 +4267,6 @@ class ExpeditionsCog(BaseCommand):
     @app_commands.describe(
         difficulty="The difficulty level to calculate probabilities for (default: 1000)"
     )
-    async def loot_probability(self, interaction: discord.Interaction, difficulty: int = 1000):
-        """View item probability chances for different difficulty levels."""
-        # Implementation would go here - for now just acknowledge
-        embed = discord.Embed(
-            title="🎯 Loot Probability Calculator",
-            description=f"Calculating probabilities for difficulty level: {difficulty}",
-            color=0x3498DB
-        )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(
-        name="nwnl_expeditions_mocktest",
-        description="🧪 Test expedition outcomes with mock simulations (no data saved)"
-    )
-    @app_commands.describe(
-        use_maxed_characters="Use maxed characters instead of your own characters for testing"
-    )
-    async def nwnl_expeditions_mocktest(self, interaction: discord.Interaction, use_maxed_characters: bool = False):
-        """Mock test expeditions with simulated results - no data is saved."""
-        await interaction.response.defer()
-        
-        try:
-            discord_id = str(interaction.user.id)
-            
-            # Get ALL expeditions (including closed ones) for mock testing
-            expeditions = await self.expedition_service.get_available_expeditions()
-            
-            if not expeditions:
-                embed = discord.Embed(
-                    title="❌ No Expeditions Available",
-                    description="No expedition templates found for testing.",
-                    color=0xFF6B6B
-                )
-                await interaction.followup.send(embed=embed)
-                return
-            
-            # Create expedition selection view (modified to show ALL expeditions)
-            view = MockExpeditionSelectView(expeditions, interaction.user.id, self.expedition_service, use_maxed_characters)
-            embed = await view._create_expedition_list_embed()
-            
-            await interaction.followup.send(embed=embed, view=view)
-            
-        except Exception as e:
-            self.logger.error(f"Error in mock test command: {e}")
-            embed = discord.Embed(
-                title="❌ Error",
-                description=f"An error occurred while setting up the mock test: {str(e)}",
-                color=0xFF6B6B
-            )
-            await interaction.followup.send(embed=embed)
     async def nwnl_loot_probability(self, interaction: discord.Interaction, difficulty: int = 1000):
         from utils.ban_utils import is_user_banned
         if is_user_banned(interaction.user.id):
@@ -4474,6 +4428,47 @@ class ExpeditionsCog(BaseCommand):
                 color=0xFF0000
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @app_commands.command(
+        name="nwnl_expeditions_mocktest",
+        description="🧪 Test expedition outcomes with mock simulations (no data saved)"
+    )
+    @app_commands.describe(
+        use_maxed_characters="Use maxed characters instead of your own characters for testing"
+    )
+    async def nwnl_expeditions_mocktest(self, interaction: discord.Interaction, use_maxed_characters: bool = False):
+        """Mock test expeditions with simulated results - no data is saved."""
+        await interaction.response.defer()
+        
+        try:
+            discord_id = str(interaction.user.id)
+            
+            # Get ALL expeditions (including closed ones) for mock testing
+            expeditions = await self.expedition_service.get_available_expeditions()
+            
+            if not expeditions:
+                embed = discord.Embed(
+                    title="❌ No Expeditions Available",
+                    description="No expedition templates found for testing.",
+                    color=0xFF6B6B
+                )
+                await interaction.followup.send(embed=embed)
+                return
+            
+            # Create expedition selection view (modified to show ALL expeditions)
+            view = MockExpeditionSelectView(expeditions, interaction.user.id, self.expedition_service, use_maxed_characters)
+            embed = await view._create_expedition_list_embed()
+            
+            await interaction.followup.send(embed=embed, view=view)
+            
+        except Exception as e:
+            self.logger.error(f"Error in mock test command: {e}")
+            embed = discord.Embed(
+                title="❌ Error",
+                description=f"An error occurred while setting up the mock test: {str(e)}",
+                color=0xFF6B6B
+            )
+            await interaction.followup.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):
