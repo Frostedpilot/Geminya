@@ -186,6 +186,13 @@ DEFAULT_GIFT_CODES = [
         "reward_value": 1,
         "is_active": True,
         "usage_limit": 1,
+    },
+    {
+        "code": "THISISABUG",
+        "reward_type": "daphine",
+        "reward_value": 1,
+        "is_active": True,
+        "usage_limit": 99,
     }
 ]
 

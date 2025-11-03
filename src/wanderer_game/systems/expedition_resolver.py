@@ -328,7 +328,7 @@ class ExpeditionResolver:
         
         # Apply expedition-specific difficulty modifiers
         effective_difficulty = expedition.get_effective_difficulty(encounter.difficulty)
-        
+        print(team_score,effective_difficulty)
         # Calculate success threshold with expedition bonuses
         success_threshold = ChanceTable.calculate_success_threshold(team_score, effective_difficulty)
         
@@ -445,12 +445,13 @@ class ExpeditionResolver:
 
         # Calculate base score with all multipliers
         score = effective_stat_sum * affinity_multiplier * series_multiplier
-
         # Apply final stat check bonus (after all multipliers)
         bonus = 0
         if hasattr(expedition, 'final_stat_check_bonuses') and expedition.final_stat_check_bonuses:
             # Try stat-specific bonus first
             bonus = expedition.final_stat_check_bonuses.get(stat_name, 0)
+        print(base_stat_sum, effective_stat_sum, affinity_multiplier, series_multiplier, bonus)
+        print(str(team),str(expedition))
         return score + bonus
     
     def _calculate_affinity_multiplier(self, expedition: Expedition, team: Team) -> float:

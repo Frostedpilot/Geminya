@@ -47,31 +47,31 @@ class ChanceTable:
         },
         (1.0, 1.25): {
             EncounterOutcome.GREAT_SUCCESS: (1, 5),    
-            EncounterOutcome.SUCCESS: (6, 60),         
-            EncounterOutcome.FAILURE: (61, 95),        
+            EncounterOutcome.SUCCESS: (6, 65),         
+            EncounterOutcome.FAILURE: (66, 95),        
             EncounterOutcome.MISHAP: (96, 100)         
         },
         (1.25, 1.5): {
             EncounterOutcome.GREAT_SUCCESS: (1, 10),    
-            EncounterOutcome.SUCCESS: (11, 75),         
-            EncounterOutcome.FAILURE: (76, 95),        
-            EncounterOutcome.MISHAP: (96, 100)         
+            EncounterOutcome.SUCCESS: (11, 77),         
+            EncounterOutcome.FAILURE: (78, 96),        
+            EncounterOutcome.MISHAP: (97, 100)         
         },
         (1.5, 1.75): {
             EncounterOutcome.GREAT_SUCCESS: (1, 15),   
-            EncounterOutcome.SUCCESS: (16, 85),        
-            EncounterOutcome.FAILURE: (86, 98),        
+            EncounterOutcome.SUCCESS: (16, 87),        
+            EncounterOutcome.FAILURE: (88, 98),        
             EncounterOutcome.MISHAP: (99, 100)         
         },
         (1.75, 2.0): {
-            EncounterOutcome.GREAT_SUCCESS: (1, 30),   
-            EncounterOutcome.SUCCESS: (30, 97),       
+            EncounterOutcome.GREAT_SUCCESS: (1, 25),   
+            EncounterOutcome.SUCCESS: (26, 97),       
             EncounterOutcome.FAILURE: (98, 100),       
             EncounterOutcome.MISHAP: (101, 100)        
         },
         (2.0, float('inf')): {
-            EncounterOutcome.GREAT_SUCCESS: (1, 60),  
-            EncounterOutcome.SUCCESS: (61, 100),      
+            EncounterOutcome.GREAT_SUCCESS: (1, 35),  
+            EncounterOutcome.SUCCESS: (36, 100),      
             EncounterOutcome.FAILURE: (101, 100),      
             EncounterOutcome.MISHAP: (101, 100)        
         }

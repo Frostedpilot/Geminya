@@ -230,6 +230,19 @@ class Expedition:
         for mult in self.loot_multipliers:
             multiplier *= mult
         return multiplier
+    
+    def __str__(self):
+        """String representation of the expedition for debugging. Only info for stats bonus"""
+        res = f"Expedition: {self.name} (ID: {self.expedition_id})\n"
+        res += f"  Duration: {self.duration_hours} hours\n"
+        res += f"  Difficulty: {self.difficulty}\n"
+        res += f"  Effective Difficulty: {self.get_effective_difficulty(self.difficulty)}\n"
+        res += f"  Encounter Count: {self.encounter_count}\n"
+        res += f"  Favored Affinities: {[str(a) for a in self.get_all_favored_affinities()]}\n"
+        res += f"  Disfavored Affinities: {[str(a) for a in self.get_all_disfavored_affinities()]}\n"
+        res += f"  Stat Bonuses: {self.stat_bonuses}\n"
+        res += f"  Final Stat Check Bonuses: {self.final_stat_check_bonuses}\n"
+        return res
 
 
 class ExpeditionStatus(Enum):

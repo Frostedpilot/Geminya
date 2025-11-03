@@ -215,3 +215,15 @@ class Team:
     def get_series_ids(self) -> List[int]:
         """Get unique series IDs represented in this team"""
         return list(set(char.series_id for char in self.characters))
+    
+    def __str__(self):
+        """String representation of the team. For extensive debugging, should show all stats detail for that char too"""
+        res = ""
+        for char in self.characters:
+            res += f"{char.name} ({char.series}) - Star Level: {char.star_level}\n"
+            res += f"  Base Stats: {char.base_stats.to_dict()}\n"
+            res += f"  Expedition Stats: {char.get_expedition_stats().to_dict()}\n"
+            res += f"  Elemental Types: {char.elemental_types}\n"
+            res += f"  Archetype: {char.archetype}\n"
+        return res.strip()
+            

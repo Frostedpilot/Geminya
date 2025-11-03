@@ -3813,6 +3813,9 @@ class ExpeditionsCog(BaseCommand):
             # Filter available expeditions to exclude currently running ones
             expeditions = [exp for exp in all_expeditions if exp.get('expedition_id') not in running_expedition_ids]
             
+            # Sort expeditions by difficulty (ascending)
+            expeditions.sort(key=lambda exp: exp.get('difficulty', 100))
+            
             self.logger.info(f"[DISCORD_EXPEDITION_START] User {discord_id} has {len(active_expeditions)} active expeditions, {len(running_expedition_ids)} unique expedition types running, {len(expeditions)} expeditions available to start")
             
             if not expeditions:
@@ -3857,7 +3860,7 @@ class ExpeditionsCog(BaseCommand):
                     color=0xFF6B6B
                 )
                 
-                # Still show available expeditions for reference
+                # Still show available expeditions for reference (already sorted by difficulty)
                 for i, expedition in enumerate(expeditions[:MAX_EXPEDITION_SLOTS]):
                     duration = expedition.get('duration_hours', 4)
                     difficulty = expedition.get('difficulty', 100)  # Use original difficulty
