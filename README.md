@@ -22,7 +22,7 @@ A modern Discord AI chatbot with integrated waifu collection system, powered by 
 
 ### 🌸 **NWNL (No Waifu No Laifu) Academy**
 - **Gacha System:** 1★-3★ character summoning with pity system
-- **Star Progression:** Automatic upgrades to 4★-5★ using duplicate shards
+- **Star Progression:** Automatic upgrades to 4★-6★ using duplicate shards
 - **Currency System:** Sakura Crystals for summoning, Quartz for premium items
 - **Academy Management:** Ranks, daily rewards, collection statistics
 - **Data Pipeline:** MAL integration for authentic character data

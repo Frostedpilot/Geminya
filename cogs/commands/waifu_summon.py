@@ -848,7 +848,7 @@ class WaifuSummonCog(BaseCommand):
                             if summon_result.get("quartz_gained", 0) > 0 and summon_result.get("shards_gained", 0) == 0:
                                 embed.add_field(
                                     name="🌟 Max Level Duplicate!",
-                                    value=f"**{waifu['name']}** is already 5⭐! Converted to {summon_result['quartz_gained']} quartz!",
+                                    value=f"**{waifu['name']}** is already {self.services.waifu_service.MAX_STAR_LEVEL}⭐! Converted to {summon_result['quartz_gained']} quartz!",
                                     inline=False,
                                 )
                             else:
@@ -1431,8 +1431,8 @@ class WaifuSummonCog(BaseCommand):
                     awakened_count += 1
                 # Check if upgradeable
                 shards = waifu.get("character_shards", 0)
-                if current_star < 5:
-                    required = {2: 50, 3: 100, 4: 200, 5: 300}.get(current_star + 1, 999)
+                if current_star < self.services.waifu_service.MAX_STAR_LEVEL:
+                    required = self.services.waifu_service.UPGRADE_COSTS.get(current_star + 1, 999)
                     if shards >= required:
                         upgradeable_count += 1
                 total_shards += shards
@@ -1475,8 +1475,8 @@ class WaifuSummonCog(BaseCommand):
                 if shards > 0:
                     top_text += f" - {shards} shards"
                 # Check if can upgrade
-                if current_star < 5:
-                    required = {2: 50, 3: 100, 4: 200, 5: 300}.get(current_star + 1, 999)
+                if current_star < self.services.waifu_service.MAX_STAR_LEVEL:
+                    required = self.services.waifu_service.UPGRADE_COSTS.get(current_star + 1, 999)
                     if shards >= required:
                         top_text += f" 🔥"
                 top_text += "\n"
@@ -1559,6 +1559,7 @@ class WaifuSummonCog(BaseCommand):
                 3: 0x9932CC,  # Purple for 3★ (Epic)
                 2: 0x4169E1,  # Blue for 2★ (Rare)
                 1: 0x808080,  # Gray for 1★ (Common)
+                6: 0xFF1493,  # Deep Pink for 6★ (Transcendent)
             }
 
 
@@ -1765,7 +1766,7 @@ class WaifuSummonCog(BaseCommand):
                     combat_stats = None
                     if user_waifu:
                         shards = await self.waifu_service.get_character_shards(str(self.ctx.author.id), waifu["waifu_id"])
-                        is_max_star = current_star >= 5
+                        is_max_star = current_star >= self.waifu_service.MAX_STAR_LEVEL
                         if not is_awakened:
                             star_info = f"**Current Star Level:** {'⭐' * current_star} ({current_star}★)\n"
                         else:
@@ -1775,8 +1776,7 @@ class WaifuSummonCog(BaseCommand):
                             star_info += " (MAX STAR - converts to quartz)"
                         else:
                             next_star = current_star + 1
-                            upgrade_costs = {2: 50, 3: 100, 4: 150, 5: 200}
-                            required = upgrade_costs.get(next_star, 999)
+                            required = self.waifu_service.UPGRADE_COSTS.get(next_star, 999)
                             star_info += f"/{required:,} (for {next_star}★)"
                             if shards >= required:
                                 star_info += " 🔥 READY TO UPGRADE!"

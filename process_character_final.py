@@ -185,7 +185,7 @@ class CharacterFinalProcessor:
         logger.info(f"📈 Star System Analysis:")
         logger.info(f"  Total Characters: {total_chars}")
         logger.info(f"  All characters available in gacha (1-3★): {gacha_chars} (100%)")
-        logger.info(f"  Characters can be upgraded to 4-5★ using shards after summoning")
+        logger.info(f"  Characters can be upgraded to 4-6★ using shards after summoning")
         
         # Show rarity distribution
         logger.info("🎯 Current Rarity Distribution:")
@@ -310,7 +310,7 @@ def main():
     print("")
     print("🎯 New Star System Features:")
     print("  ⭐ 1-3★: Available through direct gacha")
-    print("  ⭐ 4-5★: Obtainable only through shard upgrades")
+    print("  ⭐ 4-6★: Obtainable only through shard upgrades")
     print("  🔄 Automatic validation and cleaning")
     print("  📊 Rarity distribution analysis")
     print("  ✅ Compatible with upload_to_mysql.py")

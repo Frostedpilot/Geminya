@@ -62,11 +62,12 @@ class WaifuService:
         2: 50,   # 1→2 star: 50 shards
         3: 100,  # 2→3 star: 100 shards
         4: 150,  # 3→4 star: 150 shards
-        5: 200,  # 4→5 star: 200 shards
+        5: 250,  # 4→5 star: 250 shards
+        6: 350,  # 5→6 star: 350 shards
     }
 
     # Maximum star level
-    MAX_STAR_LEVEL = 5
+    MAX_STAR_LEVEL = 6
 
     # Elements for diversity
     ELEMENTS = ["Fire", "Water", "Earth", "Air", "Light", "Dark"]

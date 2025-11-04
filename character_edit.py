@@ -138,7 +138,7 @@ class CharacterEditor:
         favorites = int(character.get("favorites", 0))
         
         # New star system: Only assign 1-3 stars for gacha
-        # 4-5 stars will be achieved through upgrade system
+        # 4-6 stars will be achieved through upgrade system
         if favorites >= 2000:
             return 3  # 3-star (rare) - highest direct gacha tier
         elif favorites >= 500:

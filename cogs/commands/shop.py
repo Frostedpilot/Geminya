@@ -457,19 +457,23 @@ class ShopCog(BaseCommand):
             self.logger.error(f"Error in inventory autocomplete outer: {e}")
             return []
 
-    @app_commands.command(name="nwnl_use_item", description="Use an item from your inventory. For series/selectix tickets, specify the series_id or waifu_id.")
+    @app_commands.command(name="nwnl_use_item", description="Use items from your inventory. For series/selectix tickets, specify the series_id or waifu_id.")
     @app_commands.describe(
         item_name="Name of the item to use",
+        num_item="Number of items to use (default: 1, max: 15)",
         series_id="Series ID (for series ticket)",
         waifu_id="Waifu/Character ID (for selectix ticket)"
     )
     @app_commands.autocomplete(item_name=inventory_item_autocomplete)
-    async def nwnl_use_item(self, interaction: discord.Interaction, item_name: str, series_id: Optional[int] = None, waifu_id: Optional[int] = None):
-        """Use an item from inventory and apply its effects. For series/selectix tickets, specify the series_id or waifu_id."""
+    async def nwnl_use_item(self, interaction: discord.Interaction, item_name: str, num_item: int = 1, series_id: Optional[int] = None, waifu_id: Optional[int] = None):
+        """Use items from inventory and apply their effects. For series/selectix tickets, specify the series_id or waifu_id."""
         await interaction.response.defer()
 
         try:
             user_id = str(interaction.user.id)
+
+            # Validate num_item parameter
+            num_item = max(1, min(num_item, 15))  # Clamp between 1-15
 
             # Get user's inventory
             inventory = await self.db.get_user_inventory(user_id)
@@ -512,10 +516,147 @@ class ShopCog(BaseCommand):
                 await interaction.followup.send(embed=embed)
                 return
 
-            # Use the item and apply effects
-            result = await self.apply_item_effects(user_id, item_to_use, series_id=series_id, waifu_id=waifu_id)
+            # Validate item type and quantity restrictions
+            item_type = item_to_use.get('item_type', '')
+            available_quantity = item_to_use['quantity']
 
-            if result['success']:
+            # Check if multi_guarantee_ticket is being used multiple times
+            if item_type == "multi_guarantee_ticket" and num_item > 1:
+                embed = discord.Embed(
+                    title="❌ Invalid Usage",
+                    description="Multi-guarantee tickets can only be used one at a time (each gives 10 summons).",
+                    color=0xff6b6b
+                )
+                await interaction.followup.send(embed=embed)
+                return
+
+            # Check available quantity
+            if num_item > available_quantity:
+                embed = discord.Embed(
+                    title="❌ Insufficient Quantity",
+                    description=f"You only have {available_quantity} of '{item_name}' but requested {num_item}.",
+                    color=0xff6b6b
+                )
+                await interaction.followup.send(embed=embed)
+                return
+
+            # Use the items and apply effects
+            if num_item == 1:
+                # Use existing single-item logic for backward compatibility
+                result = await self.apply_item_effects(user_id, item_to_use, series_id=series_id, waifu_id=waifu_id)
+                
+                if result['success']:
+                    await self.db.use_inventory_item(user_id, item_to_use['id'], 1)
+                    
+                    # Handle existing display logic for single items...
+                    # (keeping all existing display code for single items)
+                    
+            else:
+                # Use new multiple-item logic
+                result = await self.apply_multiple_item_effects(user_id, item_to_use, num_item, series_id=series_id, waifu_id=waifu_id)
+                
+                if result['success']:
+                    items_actually_used = result['items_used']
+                    await self.db.use_inventory_item(user_id, item_to_use['id'], items_actually_used)
+                    
+                    # Determine display mode based on total results
+                    all_results = result['results']
+                    total_summons = len(all_results)
+                    display_mode = self.determine_display_mode(total_summons)
+                    
+                    if display_mode == "detailed":
+                        # Show individual detailed embeds for each result (1-5 summons)
+                        embeds = []
+                        
+                        for i, single_result in enumerate(all_results, 1):
+                            if single_result.get('rolled_waifu'):
+                                rolled_waifu = single_result['rolled_waifu']
+                                guarantee_rarity = rolled_waifu.get('rarity', 3)
+                                
+                                # Create detailed individual embed
+                                embed_info = self.create_detailed_individual_embed(
+                                    rolled_waifu, guarantee_rarity, item_name, summon_number=i
+                                )
+                                embed = self.create_discord_embed_from_data(embed_info['embed_data'])
+                                embeds.append(embed)
+                        
+                        # Add failure and remaining items info to last embed
+                        if embeds:
+                            if result.get('items_failed', 0) > 0:
+                                embeds[-1].add_field(
+                                    name="⚠️ Partial Success",
+                                    value=f"Successfully used {items_actually_used}/{result['requested_items']} items",
+                                    inline=False
+                                )
+                            
+                            remaining = item_to_use['quantity'] - items_actually_used
+                            if remaining > 0:
+                                embeds[-1].add_field(
+                                    name="📦 Remaining Items",
+                                    value=f"You have {remaining} more {item_name}.",
+                                    inline=False
+                                )
+                        
+                        await interaction.followup.send(embeds=embeds)
+                        return
+                    
+                    elif display_mode == "compact":
+                        # Show 2 best individual detailed embeds + detailed summary (6-15 summons)
+                        embeds = []
+                        shown_individual = 0
+                        max_individual = 2
+                        
+                        # Sort results to prioritize best ones (3★ > 2★ > upgrades > new)
+                        sorted_results = sorted(all_results, key=lambda r: (
+                            -r.get('rolled_waifu', {}).get('rarity', 0),
+                            -len(r.get('rolled_waifu', {}).get('upgrades_performed', [])),
+                            r.get('rolled_waifu', {}).get('is_new', False)
+                        ))
+                        
+                        # Show top 2 results as detailed individual embeds
+                        for i, single_result in enumerate(sorted_results[:max_individual]):
+                            if single_result.get('rolled_waifu'):
+                                rolled_waifu = single_result['rolled_waifu']
+                                guarantee_rarity = rolled_waifu.get('rarity', 3)
+                                
+                                # Create detailed individual embed
+                                embed_info = self.create_detailed_individual_embed(
+                                    rolled_waifu, guarantee_rarity, item_name, summon_number=i+1
+                                )
+                                embed = self.create_discord_embed_from_data(embed_info['embed_data'])
+                                embeds.append(embed)
+                                shown_individual += 1
+                        
+                        # Add detailed summary for remaining results
+                        if len(all_results) > shown_individual:
+                            summary_data = self.create_detailed_summary_embed(
+                                all_results, items_actually_used, item_name, shown_individual
+                            )
+                            summary_embed = self.create_discord_embed_from_data(summary_data)
+                            
+                            # Add failure and remaining items info to summary
+                            if result.get('items_failed', 0) > 0:
+                                summary_embed.add_field(
+                                    name="⚠️ Partial Success",
+                                    value=f"Successfully used {items_actually_used}/{result['requested_items']} items",
+                                    inline=False
+                                )
+                            
+                            remaining = item_to_use['quantity'] - items_actually_used
+                            if remaining > 0:
+                                summary_embed.add_field(
+                                    name="📦 Remaining Items",
+                                    value=f"You have {remaining} more {item_name}.",
+                                    inline=False
+                                )
+                            
+                            embeds.append(summary_embed)
+                        
+                        await interaction.followup.send(embeds=embeds)
+                        return
+
+            # Original single-item logic continues here...
+            if num_item == 1 and result['success']:
                 await self.db.use_inventory_item(user_id, item_to_use['id'], 1)
                 # Handle multi-result (10x summon) case
                 if result.get('multi_result'):
@@ -576,7 +717,7 @@ class ShopCog(BaseCommand):
                                 if quartzs_gained > 0 and shard_reward == 0:
                                     embed.add_field(
                                         name="🌟 Max Level Duplicate!",
-                                        value=f"**{waifu_name}** is already 5⭐! Converted to {quartzs_gained} quartz!",
+                                        value=f"**{waifu_name}** is already {self.services.waifu_service.MAX_STAR_LEVEL}⭐! Converted to {quartzs_gained} quartz!",
                                         inline=False,
                                     )
                                 else:
@@ -835,12 +976,21 @@ class ShopCog(BaseCommand):
                             inline=False
                         )
                     await interaction.followup.send(embed=embed)
-            else:
-                embed = discord.Embed(
-                    title="❌ Cannot Use Item",
-                    description=result['error'],
-                    color=0xff6b6b
-                )
+            
+            # Handle error cases
+            if not result['success']:
+                if num_item == 1:
+                    embed = discord.Embed(
+                        title="❌ Cannot Use Item",
+                        description=result.get('error', 'Failed to use item'),
+                        color=0xff6b6b
+                    )
+                else:
+                    embed = discord.Embed(
+                        title="❌ Cannot Use Items",
+                        description=result.get('error', 'Failed to use multiple items'),
+                        color=0xff6b6b
+                    )
                 await interaction.followup.send(embed=embed)
 
         except Exception as e:
@@ -851,6 +1001,302 @@ class ShopCog(BaseCommand):
                 color=0xff6b6b
             )
             await interaction.followup.send(embed=embed)
+
+    def determine_display_mode(self, total_summons: int) -> str:
+        """Determine the display mode based on total number of summons."""
+        if total_summons <= 5:
+            return "detailed"      # Individual embeds for each result (1-5)
+        else:  # 6-15
+            return "compact"       # Some individual + detailed summary
+
+    def create_detailed_individual_embed(self, rolled_waifu: dict, guarantee_rarity: int, item_name: str, summon_number: Optional[int] = None) -> dict:
+        """Create a detailed individual embed that matches the original single-item format."""
+        rarity_config = {
+            3: {"color": 0xFFD700, "emoji": "⭐⭐⭐", "name": "Legendary"},
+            2: {"color": 0x9932CC, "emoji": "⭐⭐", "name": "Epic"},
+            1: {"color": 0x808080, "emoji": "⭐", "name": "Basic"},
+        }
+        config = rarity_config[guarantee_rarity]
+        
+        title = f"🌟 Guaranteed {guarantee_rarity}★ Roll Complete!"
+        if summon_number:
+            title += f" (#{summon_number})"
+        
+        embed_data = {
+            'title': title,
+            'description': f"🎟️ **{item_name}** activated!",
+            'color': config["color"],
+            'fields': [],
+            'image_url': rolled_waifu.get("image_url"),
+            'footer_text': f"Use /nwnl_collection to view your academy! • Guaranteed roll"
+        }
+        
+        # Main status field
+        if rolled_waifu.get('is_new', True):
+            embed_data['fields'].append({
+                'name': "✨ NEW SUMMON!",
+                'value': f"**{rolled_waifu['name']}** joined your academy!",
+                'inline': False
+            })
+        else:
+            if rolled_waifu.get("quartzs_gained", 0) > 0 and rolled_waifu.get("shard_reward", 0) == 0:
+                embed_data['fields'].append({
+                    'name': "🌟 Max Level Duplicate!",
+                    'value': f"**{rolled_waifu['name']}** is already 5⭐! Converted to {rolled_waifu.get('quartzs_gained', 0)} quartz!",
+                    'inline': False
+                })
+            else:
+                embed_data['fields'].append({
+                    'name': "🌟 Duplicate Summon!",
+                    'value': f"**{rolled_waifu['name']}** gained {rolled_waifu.get('shard_reward', 0)} shards!",
+                    'inline': False
+                })
+        
+        # Upgrades field
+        if rolled_waifu.get("upgrades_performed"):
+            upgrade_text = []
+            for upgrade in rolled_waifu["upgrades_performed"]:
+                upgrade_text.append(f"🔥 {upgrade['from_star']}★ → {upgrade['to_star']}★")
+            embed_data['fields'].append({
+                'name': "⬆️ AUTOMATIC UPGRADES!",
+                'value': "\n".join(upgrade_text),
+                'inline': False
+            })
+        
+        # Character info fields
+        embed_data['fields'].extend([
+            {
+                'name': "Character",
+                'value': f"**{rolled_waifu['name']}**",
+                'inline': True
+            },
+            {
+                'name': "Series",
+                'value': rolled_waifu.get("series", "Unknown"),
+                'inline': True
+            },
+            {
+                'name': "Current Star Level",
+                'value': f"{'⭐' * rolled_waifu.get('current_star_level', guarantee_rarity)} ({rolled_waifu.get('current_star_level', guarantee_rarity)}★)",
+                'inline': True
+            },
+            {
+                'name': "Pull Rarity",
+                'value': f"{config['emoji']} {config['name']}",
+                'inline': True
+            }
+        ])
+        
+        # Additional info fields
+        if not rolled_waifu.get('is_new', True):
+            embed_data['fields'].append({
+                'name': "Star Shards",
+                'value': f"💫 {rolled_waifu.get('total_shards', 0)}",
+                'inline': True
+            })
+        
+        if rolled_waifu.get('quartzs_gained', 0) > 0:
+            embed_data['fields'].append({
+                'name': "Quartz Gained",
+                'value': f"💠 +{rolled_waifu['quartzs_gained']} (from excess shards)",
+                'inline': True
+            })
+        
+        # Content for special cases
+        content = ""
+        if rolled_waifu.get("upgrades_performed"):
+            content = "🔥✨ **AUTO UPGRADE!** ✨🔥"
+        elif guarantee_rarity == 3:
+            content = "🌟💫 **LEGENDARY GUARANTEED SUMMON!** 💫🌟"
+        elif guarantee_rarity == 2:
+            content = "✨🎆 **EPIC GUARANTEED SUMMON!** 🎆✨"
+        
+        return {
+            'embed_data': embed_data,
+            'content': content
+        }
+
+    def create_detailed_summary_embed(self, all_results: List[dict], items_used: int, item_name: str, shown_individual: int = 0) -> dict:
+        """Create a detailed summary embed for compact mode with full information about each summon."""
+        remaining_results = all_results[shown_individual:] if shown_individual > 0 else all_results
+        
+        embed_data = {
+            'title': f"📊 Detailed Summary: {items_used}x {item_name}",
+            'description': f"Complete breakdown of {len(remaining_results)} {'additional ' if shown_individual > 0 else ''}summons",
+            'color': 0x4A90E2,
+            'fields': [],
+            'footer_text': "Use /nwnl_collection to view your academy!"
+        }
+        
+        # Group results by outcome type for detailed reporting
+        new_characters = []
+        duplicate_shards = []
+        max_level_conversions = []
+        upgrades_performed = []
+        rarity_counts = {1: 0, 2: 0, 3: 0}
+        
+        # Process each result in detail
+        for i, result in enumerate(remaining_results, shown_individual + 1):
+            if result.get('rolled_waifu'):
+                waifu = result['rolled_waifu']
+                rarity = waifu.get('rarity', 1)
+                rarity_counts[rarity] += 1
+                waifu_name = waifu['name']
+                series = waifu.get('series', 'Unknown')
+                star_level = waifu.get('current_star_level', rarity)
+                
+                # Categorize the result
+                if waifu.get('is_new', True):
+                    rarity_stars = "⭐" * rarity
+                    new_characters.append(f"#{i}: **{waifu_name}** ({series}) - {rarity_stars} {star_level}★")
+                else:
+                    if waifu.get("quartzs_gained", 0) > 0 and waifu.get("shard_reward", 0) == 0:
+                        max_level_conversions.append(f"#{i}: **{waifu_name}** → +{waifu['quartzs_gained']} 💠 quartz (max level)")
+                    else:
+                        shard_reward = waifu.get('shard_reward', 0)
+                        total_shards = waifu.get('total_shards', 0)
+                        duplicate_shards.append(f"#{i}: **{waifu_name}** → +{shard_reward} shards (total: {total_shards})")
+                
+                # Track upgrades
+                if waifu.get('upgrades_performed'):
+                    for upgrade in waifu['upgrades_performed']:
+                        upgrades_performed.append(f"#{i}: **{waifu_name}** upgraded {upgrade['from_star']}★ → {upgrade['to_star']}★")
+        
+        # Rarity breakdown field
+        rarity_text = []
+        for rarity in [3, 2, 1]:
+            count = rarity_counts[rarity]
+            if count > 0:
+                stars = "⭐" * rarity
+                rarity_name = {3: "Legendary", 2: "Epic", 1: "Basic"}[rarity]
+                rarity_text.append(f"{stars} {rarity_name}: {count}")
+        
+        if rarity_text:
+            embed_data['fields'].append({
+                'name': "📊 Rarity Breakdown",
+                'value': "\n".join(rarity_text),
+                'inline': False
+            })
+        
+        # New characters field (detailed)
+        if new_characters:
+            # Split into chunks if too many
+            chunk_size = 8
+            for chunk_start in range(0, len(new_characters), chunk_size):
+                chunk = new_characters[chunk_start:chunk_start + chunk_size]
+                chunk_num = (chunk_start // chunk_size) + 1
+                field_name = f"🆕 New Characters ({len(new_characters)} total)"
+                if len(new_characters) > chunk_size:
+                    field_name += f" - Part {chunk_num}"
+                
+                embed_data['fields'].append({
+                    'name': field_name,
+                    'value': "\n".join(chunk),
+                    'inline': False
+                })
+        
+        # Duplicate shards field (detailed)
+        if duplicate_shards:
+            chunk_size = 8
+            for chunk_start in range(0, len(duplicate_shards), chunk_size):
+                chunk = duplicate_shards[chunk_start:chunk_start + chunk_size]
+                chunk_num = (chunk_start // chunk_size) + 1
+                field_name = f"💫 Duplicate Shards ({len(duplicate_shards)} total)"
+                if len(duplicate_shards) > chunk_size:
+                    field_name += f" - Part {chunk_num}"
+                
+                embed_data['fields'].append({
+                    'name': field_name,
+                    'value': "\n".join(chunk),
+                    'inline': False
+                })
+        
+        # Max level conversions field
+        if max_level_conversions:
+            embed_data['fields'].append({
+                'name': f"💠 Max Level Conversions ({len(max_level_conversions)})",
+                'value': "\n".join(max_level_conversions),
+                'inline': False
+            })
+        
+        # Upgrades field (detailed)
+        if upgrades_performed:
+            embed_data['fields'].append({
+                'name': f"⬆️ Automatic Upgrades ({len(upgrades_performed)})",
+                'value': "\n".join(upgrades_performed),
+                'inline': False
+            })
+        
+        return embed_data
+    
+    def create_discord_embed_from_data(self, embed_data: dict) -> discord.Embed:
+        """Convert embed data dictionary to Discord Embed object."""
+        embed = discord.Embed(
+            title=embed_data['title'],
+            description=embed_data.get('description', ''),
+            color=embed_data.get('color', 0x4A90E2)
+        )
+        
+        for field in embed_data.get('fields', []):
+            embed.add_field(
+                name=field['name'],
+                value=field['value'],
+                inline=field.get('inline', False)
+            )
+        
+        if embed_data.get('image_url'):
+            embed.set_image(url=embed_data['image_url'])
+        
+        if embed_data.get('footer_text'):
+            embed.set_footer(text=embed_data['footer_text'])
+        
+        return embed
+
+    async def apply_multiple_item_effects(self, user_id: str, item: dict, num_items: int, *, series_id: Optional[int] = None, waifu_id: Optional[int] = None) -> dict:
+        """Apply effects for multiple items of the same type."""
+        try:
+            item_type = item.get('item_type', '')
+            
+            # Multi-guarantee tickets are handled normally (only 1 allowed due to validation)
+            if item_type == "multi_guarantee_ticket":
+                # This should never happen due to validation, but safety check
+                if num_items > 1:
+                    return {'success': False, 'error': "Multi-guarantee tickets can only be used one at a time"}
+                return await self.apply_item_effects(user_id, item, series_id=series_id, waifu_id=waifu_id)
+            
+            # Handle single-result items in batch
+            all_results = []
+            failed_count = 0
+            
+            for i in range(num_items):
+                try:
+                    result = await self.apply_item_effects(user_id, item, series_id=series_id, waifu_id=waifu_id)
+                    if result.get('success'):
+                        all_results.append(result)
+                    else:
+                        failed_count += 1
+                        self.logger.warning(f"Failed to apply item effect {i+1}/{num_items}: {result.get('error', 'Unknown error')}")
+                        # Continue processing remaining items
+                except Exception as e:
+                    self.logger.error(f"Error applying item effect {i+1}/{num_items}: {e}")
+                    failed_count += 1
+                    # Continue processing remaining items
+            
+            return {
+                'success': len(all_results) > 0,
+                'batch_result': True,
+                'results': all_results,
+                'items_used': len(all_results),
+                'items_failed': failed_count,
+                'requested_items': num_items
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in apply_multiple_item_effects: {e}")
+            return {
+                'success': False,
+                'error': "An error occurred while processing multiple items. Please try again later."
+            }
 
     async def apply_item_effects(self, user_id: str, item: dict, *, series_id: Optional[int] = None, waifu_id: Optional[int] = None) -> dict:
         """Apply the effects of using an item. Supports guarantee, series, selectix, and multi guarantee tickets."""
