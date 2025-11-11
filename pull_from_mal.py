@@ -224,7 +224,8 @@ class MALDataPuller:
                             "synopsis": anime.get("synopsis", ""),
                             "image_url": anime.get("images", {}).get("jpg", {}).get("large_image_url", ""),
                             "genres": genres_and_themes,
-                            "studios": "|".join([s.get("name", "") for s in anime.get("studios", [])]),
+                            "creator": json.dumps({"studio": "|".join([s.get("name", "") for s in anime.get("studios", [])])} if anime.get("studios") else {}),
+                            "media_type": "anime",
                         }
                         
                         logger.info(f"Retrieved anime {anime_id}: {res['title']}")
@@ -383,7 +384,7 @@ class MALDataPuller:
         fieldnames = [
             "mal_id", "title", "title_english", "title_japanese", "type", "episodes",
             "status", "aired_from", "aired_to", "score", "scored_by", "rank",
-            "popularity", "members", "favorites", "synopsis", "image_url", "genres", "studios"
+            "popularity", "members", "favorites", "synopsis", "image_url", "genres", "creator", "media_type"
         ]
 
         # Ensure data directory exists

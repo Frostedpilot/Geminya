@@ -30,6 +30,10 @@ class ExpeditionResult:
     # Awakened mechanic fields
     awakened_count: int = 0
     awaken_multiplier: float = 1.0
+    
+    # Dominant stats multiplier fields
+    dominant_stats_count: int = 0
+    dominant_stats_multiplier: float = 1.0
 
     def add_encounter_result(self, result: EncounterResult):
         """Add an encounter result and update statistics"""

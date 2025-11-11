@@ -103,7 +103,9 @@ async def main():
             'end_time': end_time,
             'description': banner.get('description', ''),
             'is_active': banner.get('is_active', True),
-            'series_ids': _json.dumps(banner.get('series_ids', []))
+            'series_ids': _json.dumps(banner.get('series_ids', [])),
+            'cost': banner.get('cost', 10),  # Default cost is 10
+            'currency_type': banner.get('currency_type', 'sakura_crystals')  # Default currency
         }
         banner_id = await db.create_banner(banner_data)
         print(f"Inserted banner: {banner['name']} (ID: {banner_id})")
@@ -136,6 +138,8 @@ async def main():
         'description': f'Rate-up for 5 random anime series: {random_series_ids}',
         'is_active': True,
         'series_ids': _json.dumps(random_series_ids),
+        'cost': 10,  # Default cost
+        'currency_type': 'sakura_crystals'  # Default currency
     }
     banner_id = await db.create_banner(banner_data)
     print(f"Inserted special banner: Random Series Rate-Up Banner (ID: {banner_id})")
@@ -157,6 +161,8 @@ async def main():
         'description': f'Rate-up for 10 random 3★ and 10 random 2★ characters.',
         'is_active': True,
         'series_ids': "[]",
+        'cost': 10,  # Default cost
+        'currency_type': 'sakura_crystals'  # Default currency
     }
     banner_id = await db.create_banner(banner_data)
     print(f"Inserted special banner: Random Character Rate-Up Banner (ID: {banner_id})")

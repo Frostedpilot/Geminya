@@ -249,19 +249,103 @@ class WaifuService:
             self.logger.error(f"Error converting excess shards to quartz: {e}")
             return 0
 
+    # ==================== CURRENCY AND BANNER HELPER METHODS ====================
+
+    async def _get_summon_cost_and_currency(self, banner_id: Optional[int] = None) -> tuple[int, str]:
+        """Get cost and currency type for summoning, with defaults for non-banner summons."""
+        if banner_id is None:
+            # No banner specified, use default values
+            return self.SUMMON_COST, "sakura_crystals"
+        
+        # Get banner info
+        banner = await self.db.get_banner(banner_id)
+        if not banner:
+            # Banner not found, use defaults
+            return self.SUMMON_COST, "sakura_crystals"
+        
+        # Return banner-specific cost and currency, with fallback to defaults
+        cost = banner.get('cost', self.SUMMON_COST)
+        currency_type = banner.get('currency_type', 'sakura_crystals')
+        return cost, currency_type
+
+    async def _check_user_currency(self, discord_id: str, currency_type: str, required_amount: int) -> tuple[bool, int]:
+        """
+        Check if user has enough of specified currency.
+        Returns (has_enough, current_amount).
+        """
+        user = await self.db.get_or_create_user(discord_id)
+        
+        # Map currency types to user fields
+        currency_fields = {
+            'sakura_crystals': 'sakura_crystals',
+            'quartzs': 'quartzs', 
+            'daphine': 'daphine'
+        }
+        
+        if currency_type not in currency_fields:
+            # Invalid currency type, assume they don't have enough
+            return False, 0
+        
+        field_name = currency_fields[currency_type]
+        current_amount = user.get(field_name, 0)
+        return current_amount >= required_amount, current_amount
+
+    async def _deduct_user_currency(self, discord_id: str, currency_type: str, amount: int) -> bool:
+        """
+        Deduct specified amount of currency from user.
+        Returns True if successful, False if insufficient funds or invalid currency.
+        """
+        # Check if user has enough currency first
+        has_enough, current_amount = await self._check_user_currency(discord_id, currency_type, amount)
+        if not has_enough:
+            return False
+        
+        # Deduct the currency based on type
+        if currency_type == 'sakura_crystals':
+            return await self.db.update_user_crystals(discord_id, -amount)
+        elif currency_type == 'quartzs':
+            return await self.db.update_user_quartzs(discord_id, -amount)
+        elif currency_type == 'daphine':
+            return await self.db.remove_user_daphine(discord_id, amount)
+        else:
+            return False
+
+    def _get_currency_display_name(self, currency_type: str) -> str:
+        """Get user-friendly display name for currency type."""
+        currency_names = {
+            'sakura_crystals': 'Sakura Crystals',
+            'quartzs': 'Quartzs',
+            'daphine': 'Daphine'
+        }
+        return currency_names.get(currency_type, currency_type.title())
+
+    def _get_currency_emoji(self, currency_type: str) -> str:
+        """Get emoji for currency type."""
+        currency_emojis = {
+            'sakura_crystals': '💎',
+            'quartzs': '💠',
+            'daphine': '🦋'
+        }
+        return currency_emojis.get(currency_type, '💰')
+
     # ==================== UPDATED GACHA METHODS ====================
 
 
     async def perform_summon(self, discord_id: str, banner_id: Optional[int] = None) -> Dict[str, Any]:
         """Perform a waifu summon with new star system, optionally from a banner pool or normal pool."""
-        user = await self.db.get_or_create_user(discord_id)
-
-        # Check if user has enough crystals
-        if user["sakura_crystals"] < self.SUMMON_COST:
+        # Get cost and currency type for this summon
+        cost, currency_type = await self._get_summon_cost_and_currency(banner_id)
+        
+        # Check if user has enough of the required currency
+        has_enough, current_amount = await self._check_user_currency(discord_id, currency_type, cost)
+        if not has_enough:
+            currency_name = self._get_currency_display_name(currency_type)
+            currency_emoji = self._get_currency_emoji(currency_type)
             return {
                 "success": False,
-                "message": f"Not enough Sakura Crystals! You need {self.SUMMON_COST} but have {user['sakura_crystals']}.",
+                "message": f"Not enough {currency_name}! You need {cost} but have {current_amount}. {currency_emoji}",
             }
+        
         if banner_id is not None:
             banner = await self.db.get_banner(banner_id)
             if not banner:
@@ -271,8 +355,25 @@ class WaifuService:
             if not is_active:
                 return {"success": False, "message": f"The banner '{banner.get('name')}' is currently not active."}
 
+        # Get user data for pity calculation
+        user = await self.db.get_or_create_user(discord_id)
+
+        # Get banner type if using a banner
+        banner_type = "standard"
+        if banner_id is not None:
+            banner = await self.db.get_banner(banner_id)
+            if banner:
+                banner_type = banner.get("type", "standard")
+
         # Determine rarity using new gacha rates
-        rarity = await self._determine_summon_rarity(user)
+        rarity = await self._determine_summon_rarity(user, currency_type, banner_type)
+
+        # For non-sakura currencies, check for 1% daphine chance
+        daphine_gained = 0
+        if currency_type != "sakura_crystals":
+            if random.random() < 0.01:  # 1% chance
+                daphine_gained = 1
+                await self.db.update_user_daphine(discord_id, 1)
 
         available_waifus = []
         weights = []
@@ -307,6 +408,9 @@ class WaifuService:
                     all_one_star_waifus = [w for w in self._waifu_list if w.get("rarity") == 1]
                     waifu_ids_in_banner = set(w["waifu_id"] for w in waifus)
                     waifus += [w for w in all_one_star_waifus if w["waifu_id"] not in waifu_ids_in_banner]
+                elif banner_type == "premium":
+                    # Premium banners only contain 2★ and 3★ waifus from the banner pool
+                    waifus = [w for w in self._waifu_list if w["waifu_id"] in waifu_ids and w.get("rarity") == rarity and rarity >= 2]
                 else:
                     waifus = [w for w in self._waifu_list if w["waifu_id"] in waifu_ids and w.get("rarity") == rarity]
                 available_waifus = waifus
@@ -328,16 +432,23 @@ class WaifuService:
         # Handle duplicate/new character logic with new shard system
         summon_result = await self._handle_summon_result(discord_id, selected_waifu, rarity)
 
-        # Update user's crystals and pity counter
-        await self.db.update_user_crystals(discord_id, -self.SUMMON_COST)
+        # Deduct the required currency
+        success = await self._deduct_user_currency(discord_id, currency_type, cost)
+        if not success:
+            currency_name = self._get_currency_display_name(currency_type)
+            return {
+                "success": False,
+                "message": f"Failed to deduct {currency_name}. Please try again.",
+            }
 
-        # Update pity system (only reset on 3* pulls now)
-        if rarity >= 3:
-            await self.db.update_pity_counter(discord_id, reset=True)
-        else:
-            await self.db.update_pity_counter(discord_id)
-        # Clamp pity counter after update
-        await self.clamp_pity_counter(discord_id)
+        # Update pity system (only for sakura_crystals and only reset on 3* pulls now)
+        if currency_type == "sakura_crystals":
+            if rarity >= 3:
+                await self.db.update_pity_counter(discord_id, reset=True)
+            else:
+                await self.db.update_pity_counter(discord_id)
+            # Clamp pity counter after update
+            await self.clamp_pity_counter(discord_id)
 
         # Check for automatic rank up after summon
         await self.check_and_update_rank(discord_id)
@@ -345,13 +456,27 @@ class WaifuService:
         # Add 1 quartz for every single roll (not a guaranteed ticket)
         await self.db.update_user_quartzs(discord_id, 1)
 
-        # Get updated user state for crystals_remaining
+        # Get updated user state for currency_remaining
         updated_user = await self.db.get_or_create_user(discord_id)
+        
+        # Get current currency amount based on currency type
+        currency_amount = 0
+        if currency_type == 'sakura_crystals':
+            currency_amount = updated_user.get("sakura_crystals", 0)
+        elif currency_type == 'quartzs':
+            currency_amount = updated_user.get("quartzs", 0)
+        elif currency_type == 'daphine':
+            currency_amount = updated_user.get("daphine", 0)
+        
         return {
             "success": True,
             "waifu": selected_waifu,
             "rarity": rarity,
-            "crystals_remaining": updated_user.get("sakura_crystals", 0),
+            "crystals_remaining": updated_user.get("sakura_crystals", 0),  # Keep for backward compatibility
+            "currency_remaining": currency_amount,  # New field for actual currency used
+            "currency_type": currency_type,  # What currency was used
+            "cost": cost,  # How much was spent
+            "daphine_gained": daphine_gained,  # Daphine bonus for non-sakura currencies
             **summon_result
         }
 
@@ -411,8 +536,45 @@ class WaifuService:
                 "upgrades_performed": []
             }
 
-    async def _determine_summon_rarity(self, user: Dict[str, Any]) -> int:
-        """Determine summon rarity using NEW gacha rates and pity system."""
+    async def _determine_summon_rarity(self, user: Dict[str, Any], currency_type: str = "sakura_crystals", banner_type: str = "standard") -> int:
+        """Determine summon rarity using NEW gacha rates and pity system (only for sakura_crystals)."""
+        
+        # Premium banners use special 95%/5% rates (2★/3★ only)
+        if banner_type == "premium":
+            premium_rates = {
+                3: 5.0,   # 3-star: 5%
+                2: 95.0,  # 2-star: 95%
+            }
+            
+            # For premium banners with sakura_crystals, still respect pity
+            if currency_type == "sakura_crystals":
+                pity_count = user["pity_counter"]
+                if pity_count >= self.PITY_3_STAR:
+                    return 3
+            
+            # Use premium rates
+            roll = random.random() * 100
+            cumulative = 0
+            for rarity in sorted(premium_rates.keys()):  # Process 2, 3
+                cumulative += premium_rates[rarity]
+                if roll <= cumulative:
+                    return rarity
+            return 2  # Fallback to 2★ for premium banners
+        
+        # For non-sakura_crystal currencies, use base rates without pity
+        if currency_type != "sakura_crystals":
+            rates = self.GACHA_RATES.copy()
+            roll = random.random() * 100
+            
+            # Build proper cumulative ranges from lowest to highest rarity
+            cumulative = 0
+            for rarity in sorted(rates.keys()):  # Process 1, 2, 3
+                cumulative += rates[rarity]
+                if roll <= cumulative:
+                    return rarity
+            return 1  # Fallback
+        
+        # Original pity logic for sakura_crystals
         pity_count = user["pity_counter"]
 
         # NEW Pity system check - 3* pity at 50 pulls
@@ -445,16 +607,19 @@ class WaifuService:
     async def perform_multi_summon(self, discord_id: str, banner_id: Optional[int] = None) -> Dict[str, Any]:
         """Perform multiple waifu summons with new star system - always 10 rolls. Guarantees at least one 2★ or higher per multi. Optionally use a banner pool."""
         count = 10  # Fixed to always be 10 rolls
-        user = await self.db.get_or_create_user(discord_id)
+        
+        # Get cost and currency type for this summon
+        single_cost, currency_type = await self._get_summon_cost_and_currency(banner_id)
+        total_cost = single_cost * count
 
-        # Calculate cost (no discount)
-        total_cost = self.SUMMON_COST * count
-
-        # Check if user has enough crystals
-        if user["sakura_crystals"] < total_cost:
+        # Check if user has enough of the required currency
+        has_enough, current_amount = await self._check_user_currency(discord_id, currency_type, total_cost)
+        if not has_enough:
+            currency_name = self._get_currency_display_name(currency_type)
+            currency_emoji = self._get_currency_emoji(currency_type)
             return {
                 "success": False,
-                "message": f"Not enough Sakura Crystals! You need {total_cost} but have {user['sakura_crystals']}.",
+                "message": f"Not enough {currency_name}! You need {total_cost} but have {current_amount}. {currency_emoji}",
             }
 
         if banner_id is not None:
@@ -485,27 +650,43 @@ class WaifuService:
             }
         
         # Deduct the total cost upfront
-        await self.db.update_user_crystals(discord_id, -total_cost)
+        success = await self._deduct_user_currency(discord_id, currency_type, total_cost)
+        if not success:
+            currency_name = self._get_currency_display_name(currency_type)
+            return {
+                "success": False,
+                "message": f"Failed to deduct {currency_name}. Please try again.",
+            }
 
-        # Use a local pity counter for this multi
-        pity_counter = user.get("pity_counter", 0)
+        # Get user data for pity calculation
+        user = await self.db.get_or_create_user(discord_id)
+
+        # Use a local pity counter for this multi (only for sakura_crystals)
+        pity_counter = user.get("pity_counter", 0) if currency_type == "sakura_crystals" else 0
         waifu_rarity_pairs = []
         rarity_counts = {1: 0, 2: 0, 3: 0}
         forced_3star_this_multi = False
+        total_daphine_gained = 0
         
         for i in range(count):
+            # For non-sakura currencies, check for 1% daphine chance per roll
+            if currency_type != "sakura_crystals":
+                if random.random() < 0.01:  # 1% chance
+                    total_daphine_gained += 1
+            
             # Determine rarity for this roll
-            if not forced_3star_this_multi and pity_counter >= self.PITY_3_STAR:
+            if currency_type == "sakura_crystals" and not forced_3star_this_multi and pity_counter >= self.PITY_3_STAR:
                 rarity = 3
                 forced_3star_this_multi = True
                 pity_counter = 0  # Reset local pity after forced 3★
             else:
                 # Simulate user dict for _determine_summon_rarity
-                rarity = await self._determine_summon_rarity({"pity_counter": pity_counter})
-                if rarity == 3:
-                    pity_counter = 0  # Reset local pity after natural 3★
-                else:
-                    pity_counter += 1
+                rarity = await self._determine_summon_rarity({"pity_counter": pity_counter}, currency_type, banner_type or "standard")
+                if currency_type == "sakura_crystals":
+                    if rarity == 3:
+                        pity_counter = 0  # Reset local pity after natural 3★
+                    else:
+                        pity_counter += 1
 
             # Banner pool selection logic
             weights = []
@@ -533,6 +714,9 @@ class WaifuService:
                         all_one_star_waifus = [w for w in self._waifu_list if w.get("rarity") == 1]
                         waifu_ids_in_banner = set(w["waifu_id"] for w in pool)
                         pool += [w for w in all_one_star_waifus if w["waifu_id"] not in waifu_ids_in_banner]
+                    elif banner_type == "premium":
+                        # Premium banners only contain 2★ and 3★ waifus from the banner pool
+                        pool = [w for w in self._waifu_list if w["waifu_id"] in waifu_ids and w.get("rarity") == rarity and rarity >= 2]
                     else:
                         pool = [w for w in self._waifu_list if w["waifu_id"] in waifu_ids and w.get("rarity") == rarity]
                     available_waifus = pool
@@ -548,11 +732,16 @@ class WaifuService:
             waifu_rarity_pairs.append((selected_waifu, rarity))
             rarity_counts[rarity] += 1
 
-        # After all rolls, update the user's pity counter in the DB to match local
-        # Clamp to max
-        if pity_counter > self.PITY_3_STAR:
-            pity_counter = self.PITY_3_STAR
-        await self.db.update_pity_counter_value(discord_id, pity_counter)
+        # After all rolls, update the user's pity counter in the DB to match local (only for sakura_crystals)
+        if currency_type == "sakura_crystals":
+            # Clamp to max
+            if pity_counter > self.PITY_3_STAR:
+                pity_counter = self.PITY_3_STAR
+            await self.db.update_pity_counter_value(discord_id, pity_counter)
+        
+        # Add total daphine gained for non-sakura currencies
+        if total_daphine_gained > 0:
+            await self.db.update_user_daphine(discord_id, total_daphine_gained)
 
         # ...existing code for result processing...
 
@@ -736,16 +925,32 @@ class WaifuService:
         # Add 10 quartz for every multi roll (not a guaranteed ticket)
         await self.db.update_user_quartzs(discord_id, 10)
 
+        # Get updated user state AFTER all post-summon operations
+        final_user = await self.db.get_or_create_user(discord_id)
+
+        # Get current currency amount based on currency type used
+        currency_amount = 0
+        if currency_type == 'sakura_crystals':
+            currency_amount = final_user.get("sakura_crystals", 0)
+        elif currency_type == 'quartzs':
+            currency_amount = final_user.get("quartzs", 0)
+        elif currency_type == 'daphine':
+            currency_amount = final_user.get("daphine", 0)
+
         return {
             "success": True,
             "results": results,
             "count": len(results),
             "total_cost": total_cost,
-            "crystals_remaining": final_user["sakura_crystals"],
+            "crystals_remaining": final_user["sakura_crystals"],  # Keep for backward compatibility
+            "currency_remaining": currency_amount,  # Actual currency used
+            "currency_type": currency_type,
+            "single_cost": single_cost,
             "rarity_counts": rarity_counts,
             "new_waifus": new_waifus,
             "shard_summary": shard_summary,
             "upgrade_summary": upgrade_summary,
+            "daphine_gained": total_daphine_gained,  # Daphine bonus for non-sakura currencies
         }
 
     # ==================== UTILITY METHODS ====================

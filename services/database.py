@@ -584,8 +584,8 @@ class DatabaseService:
         async with self.connection_pool.acquire() as conn:
             row = await conn.fetchrow(
                 """
-                INSERT INTO banners (name, type, start_time, end_time, description, is_active, series_ids)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                INSERT INTO banners (name, type, start_time, end_time, description, is_active, series_ids, cost, currency_type)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 RETURNING id
                 """,
                 banner_data["name"],
@@ -595,6 +595,8 @@ class DatabaseService:
                 banner_data.get("description", ""),
                 banner_data.get("is_active", True),
                 banner_data.get("series_ids", "[]"),
+                banner_data.get("cost", 10),
+                banner_data.get("currency_type", "sakura_crystals"),
             )
             return row["id"] if row else 0
 
@@ -677,30 +679,32 @@ class DatabaseService:
             row = await conn.fetchrow(
                 """
                 INSERT INTO series (
-                    series_id, name, english_name, image_link, studios, genres, synopsis, favorites, members, score
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    series_id, name, english_name, image_link, creator, genres, synopsis, favorites, members, score, media_type
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                 ON CONFLICT (series_id) DO UPDATE SET
                     name = EXCLUDED.name,
                     english_name = EXCLUDED.english_name,
                     image_link = EXCLUDED.image_link,
-                    studios = EXCLUDED.studios,
+                    creator = EXCLUDED.creator,
                     genres = EXCLUDED.genres,
                     synopsis = EXCLUDED.synopsis,
                     favorites = EXCLUDED.favorites,
                     members = EXCLUDED.members,
-                    score = EXCLUDED.score
+                    score = EXCLUDED.score,
+                    media_type = EXCLUDED.media_type
                 RETURNING series_id
                 """,
                 series_data['series_id'],
                 series_data.get('name', ''),
                 series_data.get('english_name', ''),
                 series_data.get('image_link', ''),
-                series_data.get('studios', ''),
+                series_data.get('creator', ''),
                 series_data.get('genres', ''),
                 series_data.get('synopsis', ''),
                 series_data.get('favorites', None),
                 series_data.get('members', None),
-                series_data.get('score', None)
+                series_data.get('score', None),
+                series_data.get('media_type', 'anime')
             )
             if row and 'series_id' in row:
                 return row['series_id']
@@ -850,12 +854,13 @@ class DatabaseService:
                 name VARCHAR(255) NOT NULL UNIQUE,
                 english_name VARCHAR(255),
                 image_link TEXT,
-                studios TEXT,
+                creator TEXT,
                 genres TEXT,
                 synopsis TEXT,
                 favorites INTEGER,
                 members INTEGER,
-                score FLOAT
+                score FLOAT,
+                media_type VARCHAR(50) NOT NULL DEFAULT 'anime'
             );
             CREATE INDEX IF NOT EXISTS idx_series_name ON series(name);
             """
@@ -1045,11 +1050,14 @@ class DatabaseService:
                 end_time TIMESTAMP NOT NULL,
                 description TEXT,
                 is_active BOOLEAN DEFAULT TRUE,
-                series_ids TEXT
+                series_ids TEXT,
+                cost INTEGER DEFAULT 10,
+                currency_type VARCHAR(50) DEFAULT 'sakura_crystals'
             );
             CREATE INDEX IF NOT EXISTS idx_banner_active ON banners(is_active);
             CREATE INDEX IF NOT EXISTS idx_banner_type ON banners(type);
             CREATE INDEX IF NOT EXISTS idx_banner_time ON banners(start_time, end_time);
+            CREATE INDEX IF NOT EXISTS idx_banner_currency ON banners(currency_type);
             """
         )
 

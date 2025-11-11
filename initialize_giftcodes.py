@@ -193,7 +193,14 @@ DEFAULT_GIFT_CODES = [
         "reward_value": 1,
         "is_active": True,
         "usage_limit": 99,
-    }
+    },
+    {
+        "code": "6STAR",
+        "reward_type": "daphine",
+        "reward_value": 2,
+        "is_active": True,
+        "usage_limit": 99,
+    },
 ]
 
 async def initialize_giftcodes():

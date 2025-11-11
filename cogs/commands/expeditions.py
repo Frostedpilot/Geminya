@@ -213,6 +213,7 @@ MAX_EXPEDITION_SLOTS = 5  # Should match ExpeditionManager default
 """Expedition system Discord commands with comprehensive UI."""
 
 import discord
+import json
 from src.wanderer_game.utils.equipment_utils import format_equipment_compact, format_equipment_full
 from discord.ext import commands
 from discord import app_commands
@@ -691,6 +692,22 @@ class ExpeditionSelectView(discord.ui.View):
                 value=", ".join(dominant_stats),
                 inline=False
             )
+        
+        # Add reward multiplier based on dominant stats
+        count, multiplier = _calculate_dominant_stats_multiplier(dominant_stats)
+        multiplier_text = f"**{multiplier:.2f}x** currency rewards"
+        if count == 0:
+            multiplier_text += " (standard)"
+        elif count == 1:
+            multiplier_text += " ⚠️ (single stat penalty)"
+        elif count >= 3:
+            multiplier_text += " 🎯 (diversity bonus)"
+        
+        embed.add_field(
+            name="💰 Reward Multiplier",
+            value=multiplier_text,
+            inline=True
+        )
         # Add per-encounter affinity info
         per_encounter_affinity = ""
         if favored > 0 or disfavored > 0:
@@ -747,8 +764,42 @@ class ExpeditionSelectView(discord.ui.View):
         return embed
 
 
+def _calculate_dominant_stats_multiplier(dominant_stats: List[str]) -> tuple[int, float]:
+    """Calculate dominant stats multiplier and return count + multiplier value."""
+    count = len(dominant_stats)
+    
+    if count == 0:
+        multiplier = 1.0  # No dominant stats = normal
+    elif count == 1:
+        multiplier = 0.5  # Single stat = penalty
+    else:  # count >= 2
+        multiplier = 1.0 * (1.2 ** (count - 2))
+    
+    return count, multiplier
+
+
 class CharacterSelectView(discord.ui.View):
-    import json
+    # Global cache for series name to series_id
+    _series_name_to_id_cache = None
+    """View for selecting characters for expeditions with search and pagination."""
+    
+    def __init__(self, user_waifus: List[Dict], user_id: int, expedition_service, expedition: Dict, equipment_list: list):
+        super().__init__(timeout=300.0)
+        self.user_waifus = user_waifus
+        self.user_id = user_id
+        self.expedition_service = expedition_service
+        self.expedition = expedition
+        self.selected_characters = []
+        self.search_filter = ""
+        self.current_page = 0
+        self.items_per_page = 25  # Discord select menu limit
+        self.sorting_mode = 'raw_power'  # or 'affinity_count'
+        self.char_registry = expedition_service.data_manager.get_character_registry()
+        # Equipment selection state
+        self.equipment_list = equipment_list or []
+        self.selected_equipment_id = None
+        self._setup_ui()
+    
     def _get_equipment_effects(self, eq):
         """Return a list of all effect dicts for the given equipment (main + subslots)."""
         effects = []
@@ -757,7 +808,7 @@ class CharacterSelectView(discord.ui.View):
         if main:
             if isinstance(main, str):
                 try:
-                    main = self.json.loads(main)
+                    main = json.loads(main)
                 except Exception:
                     main = None
             if isinstance(main, dict):
@@ -768,7 +819,7 @@ class CharacterSelectView(discord.ui.View):
             if eff:
                 if isinstance(eff, str):
                     try:
-                        eff = self.json.loads(eff)
+                        eff = json.loads(eff)
                     except Exception:
                         eff = None
                 if isinstance(eff, dict):
@@ -829,27 +880,7 @@ class CharacterSelectView(discord.ui.View):
                 elif dominant_stats and stat in dominant_stats and num_dom > 0:
                     total_bonus += value / num_dom
         return total_bonus
-    # Global cache for series name to series_id
-    _series_name_to_id_cache = None
-    """View for selecting characters for expeditions with search and pagination."""
-    
-    def __init__(self, user_waifus: List[Dict], user_id: int, expedition_service, expedition: Dict, equipment_list: list):
-        super().__init__(timeout=300.0)
-        self.user_waifus = user_waifus
-        self.user_id = user_id
-        self.expedition_service = expedition_service
-        self.expedition = expedition
-        self.selected_characters = []
-        self.search_filter = ""
-        self.current_page = 0
-        self.items_per_page = 25  # Discord select menu limit
-        self.sorting_mode = 'raw_power'  # or 'affinity_count'
-        self.char_registry = expedition_service.data_manager.get_character_registry()
-        # Equipment selection state
-        self.equipment_list = equipment_list or []
-        self.selected_equipment_id = None
-        self._setup_ui()
-    
+
     def _get_filtered_waifus(self) -> List[Dict]:
         """Get waifus filtered by search term, annotated with raw stats and affinity count (including equipment), sorted by selected mode."""
         from src.wanderer_game.models.character import Affinity, AffinityType
@@ -1850,6 +1881,14 @@ class CharacterSelectView(discord.ui.View):
                         f"**Expected Encounters:** ~{self.expedition.get('expected_encounters', 5)}"
         if dominant_stats:
             details_value += f"\n📊 **Dominant Stats:** {', '.join(dominant_stats)}"
+        
+        # Add reward multiplier based on dominant stats
+        count, multiplier = _calculate_dominant_stats_multiplier(dominant_stats)
+        details_value += f"\n💰 **Reward Multiplier:** {multiplier:.2f}x currency"
+        if count == 1:
+            details_value += " ⚠️"
+        elif count >= 3:
+            details_value += " 🎯"
         embed.add_field(
             name="📋 Expedition Details",
             value=details_value,
@@ -2360,6 +2399,21 @@ class ExpeditionResultsView(discord.ui.View):
                 inline=False
             )
         
+        # Show dominant stats multiplier if present
+        dominant_stats_count = expedition.get('dominant_stats_count', 0)
+        dominant_stats_multiplier = expedition.get('dominant_stats_multiplier', 1.0)
+        if dominant_stats_multiplier and dominant_stats_multiplier != 1.0:
+            multiplier_text = f"x{dominant_stats_multiplier:.2f} to currency rewards"
+            if dominant_stats_count == 1:
+                multiplier_text += " ⚠️ (single stat penalty)"
+            elif dominant_stats_count >= 3:
+                multiplier_text += " 🎯 (diversity bonus)"
+            embed.add_field(
+                name="📊 Dominant Stats Bonus",
+                value=multiplier_text,
+                inline=False
+            )
+        
         # Currency rewards
         crystals = loot.get('sakura_crystals', 0)
         quartzs = loot.get('quartzs', 0)
@@ -2807,10 +2861,20 @@ class MockExpeditionSelectView(discord.ui.View):
             encounters = expedition.get('expected_encounters', 5)
             favored = expedition.get('num_favored_affinities', 0)
             disfavored = expedition.get('num_disfavored_affinities', 0)
+            
+            # Add dominant stats multiplier info
+            dominant_stats = expedition.get('dominant_stats', [])
+            count, multiplier = _calculate_dominant_stats_multiplier(dominant_stats)
+            multiplier_text = f"{multiplier:.2f}x"
+            if count == 1:
+                multiplier_text += " ⚠️"
+            elif count >= 3:
+                multiplier_text += " 🎯"
 
             value = (
                 f"**Difficulty:** {difficulty} | **Duration:** {duration_hours}h\n"
-                f"**Encounters:** ~{encounters} | **Buffs/Debuffs:** {favored}/{disfavored}"
+                f"**Encounters:** ~{encounters} | **Buffs/Debuffs:** {favored}/{disfavored}\n"
+                f"**Reward Multiplier:** {multiplier_text}"
             )
 
             embed.add_field(
@@ -3701,6 +3765,14 @@ class MockCharacterSelectView(discord.ui.View):
                         f"**Expected Encounters:** ~{self.expedition.get('expected_encounters', 5)}"
         if dominant_stats:
             details_value += f"\n📊 **Dominant Stats:** {', '.join(dominant_stats)}"
+        
+        # Add reward multiplier based on dominant stats
+        count, multiplier = _calculate_dominant_stats_multiplier(dominant_stats)
+        details_value += f"\n💰 **Reward Multiplier:** {multiplier:.2f}x currency"
+        if count == 1:
+            details_value += " ⚠️"
+        elif count >= 3:
+            details_value += " 🎯"
         embed.add_field(
             name="📋 Expedition Details",
             value=details_value,

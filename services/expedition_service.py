@@ -818,6 +818,9 @@ class ExpeditionService:
                 # Expose awakened info for UI (real game only)
                 "awakened_count": getattr(expedition_instance, "awakened_count", 0),
                 "awakened_multiplier": pow(1.2, getattr(expedition_instance, "awakened_count", 0)),
+                # Expose dominant stats multiplier info for UI
+                "dominant_stats_count": expedition_result.dominant_stats_count,
+                "dominant_stats_multiplier": expedition_result.dominant_stats_multiplier,
                 "daphine_rewarded": daphine_rewarded
             }
             
@@ -938,6 +941,9 @@ class ExpeditionService:
                                     # Expose awakened info for UI
                                     'awakened_count': result.get('awakened_count', 0),
                                     'awakened_multiplier': result.get('awakened_multiplier', 1.0),
+                                    # Expose dominant stats multiplier info for UI
+                                    'dominant_stats_count': result.get('dominant_stats_count', 0),
+                                    'dominant_stats_multiplier': result.get('dominant_stats_multiplier', 1.0),
                                     'daphine_rewarded': result.get('daphine_rewarded', 0)
                                 })
 
@@ -1124,6 +1130,11 @@ class ExpeditionService:
                 "loot_result": mock_loot_result,
                 "loot_items": loot_items,
                 "loot_currency": mock_loot_result["currency_rewards"],
+                # Include awakened and dominant stats multiplier info for UI (consistent with real expedition service)
+                "awakened_count": expedition_result.awakened_count,
+                "awakened_multiplier": expedition_result.awaken_multiplier,
+                "dominant_stats_count": expedition_result.dominant_stats_count,
+                "dominant_stats_multiplier": expedition_result.dominant_stats_multiplier,
                 "completion_time": datetime.now(timezone.utc).isoformat(),
                 "awarded_equipment": [
                     {

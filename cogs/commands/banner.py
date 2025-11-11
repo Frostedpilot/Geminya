@@ -28,12 +28,12 @@ class Banner(commands.Cog):
         )
         embed.add_field(
             name="/nwnl_banner_list",
-            value="List all active banners.",
+            value="List all active banners with their costs and currency types.",
             inline=False,
         )
         embed.add_field(
             name="/nwnl_banner_info <banner_id>",
-            value="Show details for a banner, including its series, type, and description. Example: `/nwnl_banner_info 1`",
+            value="Show details for a banner, including its series, type, cost, currency, and description. Example: `/nwnl_banner_info 1`",
             inline=False,
         )
         embed.add_field(
@@ -44,12 +44,12 @@ class Banner(commands.Cog):
         # --- Waifu Summon Cog ---
         embed.add_field(
             name="/nwnl_summon [banner_id]",
-            value="Summon a waifu using Sakura Crystals. Optionally specify a banner ID.",
+            value="Summon a waifu using the banner's currency (cost varies by banner). Optionally specify a banner ID.",
             inline=False,
         )
         embed.add_field(
             name="/nwnl_multi_summon [display_mode] [banner_id]",
-            value="Perform 10 waifu summons at once. Choose display mode (full/simple/minimal) and optionally a banner ID.",
+            value="Perform 10 waifu summons at once using the banner's currency (cost varies by banner). Choose display mode (full/simple/minimal) and optionally a banner ID.",
             inline=False,
         )
         embed.add_field(
@@ -211,6 +211,25 @@ class Banner(commands.Cog):
         self.bot = bot
         self.db = db
 
+    def _get_currency_display(self, cost: int, currency_type: str) -> tuple[str, str, str]:
+        """Get currency emoji, name, and formatted display string."""
+        currency_emojis = {
+            'sakura_crystals': '💎',
+            'quartzs': '💠',
+            'daphine': '🦋'
+        }
+        currency_names = {
+            'sakura_crystals': 'Sakura Crystals',
+            'quartzs': 'Quartzs',
+            'daphine': 'Daphine'
+        }
+        
+        emoji = currency_emojis.get(currency_type, '💰')
+        name = currency_names.get(currency_type, currency_type.title())
+        display = f"{emoji} {cost} {name}"
+        
+        return emoji, name, display
+
     @commands.hybrid_command(name="nwnl_banner_list", description="List all active banners.")
     async def nwnl_banner_list(self, ctx):
         from utils.ban_utils import is_user_banned
@@ -223,10 +242,18 @@ class Banner(commands.Cog):
             await ctx.send("No active banners.")
             return
         embed = discord.Embed(title="Active Banners", color=0x4A90E2)
+        
         for b in banners:
+            cost = b.get('cost', 10)
+            currency_type = b.get('currency_type', 'sakura_crystals')
+            _, _, currency_display = self._get_currency_display(cost, currency_type)
+            
             embed.add_field(
                 name=f"{b['name']} (ID: {b['id']})",
-                value=f"Type: {b['type']}\n{b['description']}\nTime: {b['start_time']} - {b['end_time']}",
+                value=f"Type: {b['type']}\n"
+                      f"Cost: {currency_display}\n"
+                      f"{b['description']}\n"
+                      f"Time: {b['start_time']} - {b['end_time']}",
                 inline=False
             )
         await ctx.send(embed=embed)
@@ -300,6 +327,18 @@ class Banner(commands.Cog):
 
         embed.add_field(name="Type", value=banner['type'], inline=True)
         embed.add_field(name="Active", value=str(banner['is_active']), inline=True)
+        
+        # Add cost and currency information
+        cost = banner.get('cost', 10)
+        currency_type = banner.get('currency_type', 'sakura_crystals')
+        _, _, currency_display = self._get_currency_display(cost, currency_type)
+        
+        embed.add_field(
+            name="Cost per Summon", 
+            value=currency_display, 
+            inline=True
+        )
+        
         embed.add_field(name="Time", value=f"{banner['start_time']} - {banner['end_time']}", inline=False)
         embed.add_field(name="Description", value=banner['description'] or "No description.", inline=False)
     # Waifu pool removed to avoid exceeding Discord field length limits

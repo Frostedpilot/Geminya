@@ -7,6 +7,8 @@
     "end_time": "2025-09-01 23:59:59",
     "description": "Initial rate-up banner with increased drop rates for select series!",
     "is_active": true,
+    "cost": 10,
+    "currency_type": "sakura_crystals",
     "waifu_ids": [],
     "series_ids": [31,74,218,19,107,123]
   },
@@ -18,6 +20,8 @@
     "end_time": "2025-09-20 23:59:59",
     "description": "Anniversary celebration! Exclusive waifus available for a limited time.",
     "is_active": false,
+    "cost": 10,
+    "currency_type": "sakura_crystals",
     "waifu_ids": [],
     "series_ids": [2, 3]
   },
@@ -29,6 +33,8 @@
     "end_time": "2025-09-01 23:59:59",
     "description": "Have fun getting all Sunshine characters before finding others!",
     "is_active": false,
+    "cost": 15,
+    "currency_type": "sakura_crystals",
     "waifu_ids": [],
     "series_ids": [75,76,77,74]
   },
@@ -39,6 +45,8 @@
     "start_time": "2025-08-26 00:00:00",
     "end_time": "2025-09-01 23:59:59",
     "description": "You are a lolicon",
+    "cost": 10,
+    "currency_type": "sakura_crystals",
     "is_active": false,
     "waifu_ids": [94941,82525,136728,54151,105177,142987,46163,155554,164022,24515,144048,4628],
     "series_ids": []
@@ -61,12 +69,14 @@
     "start_time": "2025-08-26 00:00:00",
     "end_time": "2025-09-01 23:59:59",
     "description": "Nam Cuong",
-    "is_active": false,
+    "is_active": true,
+    "cost": 20,
+    "currency_type": "quartzs",
     "waifu_ids": [],
     "series_ids": [138]
   },
   {
-    "id": 5,
+    "id": 7,
     "name": "Lazy af",
     "type": "rate-up",
     "start_time": "2025-08-26 00:00:00",
@@ -75,5 +85,18 @@
     "is_active": true,
     "waifu_ids": [],
     "series_ids": [41,139,152,9,214,5,156,157]
+  },
+  {
+    "id": 8,
+    "name": "Premium Elite Banner",
+    "type": "premium",
+    "start_time": "2025-11-01 00:00:00",
+    "end_time": "2025-12-01 23:59:59",
+    "description": "Premium banner with only 2★ and 3★ waifus! 95% chance for 2★, 5% for 3★. No 1★ guaranteed!",
+    "is_active": true,
+    "cost": 100,
+    "currency_type": "quartzs",
+    "waifu_ids": [],
+    "series_ids": [1, 31, 74]
   }
 ]

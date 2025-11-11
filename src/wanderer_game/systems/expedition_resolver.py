@@ -177,6 +177,9 @@ class ExpeditionResolver:
 
         # Apply awakened multiplier after final multiplier
         self._apply_awakened_multiplier(result, expedition)
+        
+        # Apply dominant stats multiplier after awakened multiplier
+        self._apply_dominant_stats_multiplier(result, expedition)
         return result
     
     def _apply_awakened_multiplier(self, result: ExpeditionResult, expedition: Expedition):
@@ -204,6 +207,38 @@ class ExpeditionResolver:
         else:
             result.awakened_count = awakened_count
             result.awaken_multiplier = 1.0
+    
+    def _apply_dominant_stats_multiplier(self, result: ExpeditionResult, expedition: Expedition):
+        """Apply dominant stats multiplier: 0.5 for 1 stat, 1*1.2^(n-2) for n>=2 stats to currency rewards only."""
+        dominant_count = len(expedition.dominant_stats)
+        
+        if dominant_count == 0:
+            multiplier = 1.0  # No dominant stats = normal rewards
+        elif dominant_count == 1:
+            multiplier = 0.5  # Single stat = penalty 
+        else:  # dominant_count >= 2
+            multiplier = 1.0 * (1.2 ** (dominant_count - 2))
+        
+        if multiplier != 1.0 and result.loot_pool and result.loot_pool.items:
+            currency_types = {"gems", "quartzs"}
+            new_items = []
+            for item in result.loot_pool.items:
+                if getattr(item.item_type, 'value', item.item_type) in currency_types:
+                    new_qty = max(1, int(item.quantity * multiplier)) if item.quantity > 0 else 0
+                    new_items.append(type(item)(
+                        item_type=item.item_type,
+                        item_id=item.item_id,
+                        quantity=new_qty,
+                        rarity=item.rarity,
+                        value=item.value
+                    ))
+                else:
+                    new_items.append(item)
+            result.loot_pool.items = new_items
+        
+        # Always store the multiplier info for UI display
+        result.dominant_stats_count = dominant_count
+        result.dominant_stats_multiplier = multiplier
     
     def _select_encounter(self, available_tags: List[str], expedition_difficulty: int = 0) -> Optional[Encounter]:
         """

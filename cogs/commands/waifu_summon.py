@@ -84,12 +84,13 @@ class WaifuSummonCog(BaseCommand):
             if series.get('image_link'):
                 embed.set_image(url=series['image_link'])
             display_fields = [
-                ('Studios', 'studios'),
+                ('Creator', 'creator'),
                 ('Genres', 'genres'),
                 ('Synopsis', 'synopsis'),
                 ('Favorites', 'favorites'),
                 ('Members', 'members'),
                 ('Score', 'score'),
+                ('Media Type', 'media_type'),
                 ('Genre', 'genre'),
                 ('Description', 'description'),
             ]
@@ -97,6 +98,22 @@ class WaifuSummonCog(BaseCommand):
                 val = series.get(key)
                 if val and str(val).strip() and str(val).lower() != 'nan':
                     sval = str(val)
+                    
+                    # Format creator field from JSON to readable text
+                    if key == 'creator' and sval.startswith('{'):
+                        try:
+                            import json
+                            creator_data = json.loads(sval)
+                            if creator_data:
+                                creator_parts = []
+                                for creator_type, creator_name in creator_data.items():
+                                    creator_parts.append(f"{creator_type.title()}: {creator_name}")
+                                sval = " | ".join(creator_parts)
+                            else:
+                                sval = "Unknown"
+                        except:
+                            pass  # If JSON parsing fails, show raw value
+                    
                     if len(sval) > 1024:
                         sval = sval[:1021] + '...'
                     embed.add_field(name=label, value=sval, inline=False)
@@ -436,12 +453,13 @@ class WaifuSummonCog(BaseCommand):
                         embed.set_image(url=self.series['image_link'])
                     # Add info fields, truncate if needed
                     display_fields = [
-                        ('Studios', 'studios'),
+                        ('Creator', 'creator'),
                         ('Genres', 'genres'),
                         ('Synopsis', 'synopsis'),
                         ('Favorites', 'favorites'),
                         ('Members', 'members'),
                         ('Score', 'score'),
+                        ('Media Type', 'media_type'),
                         ('Genre', 'genre'),
                         ('Description', 'description'),
                     ]
@@ -449,6 +467,22 @@ class WaifuSummonCog(BaseCommand):
                         val = self.series.get(key)
                         if val and str(val).strip() and str(val).lower() != 'nan':
                             sval = str(val)
+                            
+                            # Format creator field from JSON to readable text
+                            if key == 'creator' and sval.startswith('{'):
+                                try:
+                                    import json
+                                    creator_data = json.loads(sval)
+                                    if creator_data:
+                                        creator_parts = []
+                                        for creator_type, creator_name in creator_data.items():
+                                            creator_parts.append(f"{creator_type.title()}: {creator_name}")
+                                        sval = " | ".join(creator_parts)
+                                    else:
+                                        sval = "Unknown"
+                                except:
+                                    pass  # If JSON parsing fails, show raw value
+                            
                             if len(sval) > 1024:
                                 sval = sval[:1021] + '...'
                             embed.add_field(name=label, value=sval, inline=False)
@@ -496,7 +530,7 @@ class WaifuSummonCog(BaseCommand):
 
     @commands.hybrid_command(
         name="nwnl_summon",
-        description="🎰 Summon waifus using Sakura Crystals with NEW star system! (10 crystals per summon)",
+        description="🎰 Summon waifus with NEW star system! (Cost varies by banner)",
     )
     @discord.app_commands.describe(banner_id="Banner ID to summon from (optional)")
     async def nwnl_summon(self, ctx: commands.Context, banner_id: Optional[int] = None):
@@ -603,11 +637,40 @@ class WaifuSummonCog(BaseCommand):
                     inline=True,
                 )
 
+            # Dynamic currency display based on what was used
+            currency_type = result.get("currency_type", "sakura_crystals")
+            currency_remaining = result.get("currency_remaining", result.get("crystals_remaining", 0))
+            cost = result.get("cost", 10)
+            
+            # Get currency emoji and display name
+            currency_emojis = {
+                'sakura_crystals': '💎',
+                'quartzs': '💠', 
+                'daphine': '🦋'
+            }
+            currency_names = {
+                'sakura_crystals': 'Sakura Crystals',
+                'quartzs': 'Quartzs',
+                'daphine': 'Daphine'
+            }
+            
+            currency_emoji = currency_emojis.get(currency_type, '💰')
+            currency_name = currency_names.get(currency_type, currency_type.title())
+            
             embed.add_field(
-                name="Crystals Left",
-                value=f"💎 {result.get('crystals_remaining', result.get('crystals', 'N/A'))}",
+                name=f"{currency_name} Left",
+                value=f"{currency_emoji} {currency_remaining} (Cost: {cost})",
                 inline=True,
             )
+            
+            # Show daphine gained if any (for non-sakura currencies)
+            daphine_gained = result.get("daphine_gained", 0)
+            if daphine_gained > 0:
+                embed.add_field(
+                    name="Daphine Bonus",
+                    value=f"🦋 +{daphine_gained} (1% chance bonus)",
+                    inline=True,
+                )
 
             # Show quartz gained if any
             if summon_result.get("quartz_gained", 0) > 0:
@@ -660,7 +723,7 @@ class WaifuSummonCog(BaseCommand):
 
     @commands.hybrid_command(
         name="nwnl_multi_summon",
-        description="🎰🎊 Perform 10 summons with NEW star system! (100 crystals total)",
+        description="🎰🎊 Perform 10 summons with NEW star system! (Cost varies by banner)",
     )
     @discord.app_commands.describe(
         display_mode="How much detail to show for each pull (full, simple, minimal)",
@@ -773,18 +836,47 @@ class WaifuSummonCog(BaseCommand):
                     inline=False,
                 )
 
+            # Dynamic currency display
+            currency_type = result.get("currency_type", "sakura_crystals")
+            currency_remaining = result.get("currency_remaining", result.get("crystals_remaining", 0))
+            total_cost = result.get("total_cost", 0)
+            
+            currency_emojis = {
+                'sakura_crystals': '💎',
+                'quartzs': '💠',
+                'daphine': '🦋'
+            }
+            currency_names = {
+                'sakura_crystals': 'Sakura Crystals',
+                'quartzs': 'Quartzs',
+                'daphine': 'Daphine'
+            }
+            
+            currency_emoji = currency_emojis.get(currency_type, '💰')
+            currency_name = currency_names.get(currency_type, currency_type.title())
+            
             final_summary.add_field(
-                name="💎 Crystals Remaining",
-                value=f"{result['crystals_remaining']}",
+                name=f"{currency_emoji} {currency_name} Remaining",
+                value=f"{currency_remaining} (Spent: {total_cost})",
                 inline=True,
             )
             final_summary.add_field(
                 name="💰 Total Cost",
-                value=f"{result['total_cost']} crystals",
+                value=f"{result['total_cost']} {currency_name}",
                 inline=True,
             )
+            
+            # Show daphine gained if any (for non-sakura currencies)
+            daphine_gained = result.get("daphine_gained", 0)
+            if daphine_gained > 0:
+                final_summary.add_field(
+                    name="🦋 Daphine Bonus",
+                    value=f"+{daphine_gained} (1% chance per pull)",
+                    inline=True,
+                )
+            
             final_summary.set_footer(
-                text=f"Multi-summon complete! Cost: {result['total_cost']} crystals • Remaining: {result['crystals_remaining']} crystals"
+                text=f"Multi-summon complete! Cost: {result['total_cost']} {currency_name} • Remaining: {currency_remaining} {currency_name}"
             )
             embeds.append(final_summary)
             await ctx.send(embeds=embeds)
@@ -1061,17 +1153,45 @@ class WaifuSummonCog(BaseCommand):
                     inline=False,
                 )
 
+            # Dynamic currency display for super summon
+            currency_type = result.get("currency_type", "sakura_crystals")
+            currency_remaining = result.get("currency_remaining", result.get("crystals_remaining", 0))
+            total_cost = result.get("total_cost", 0)
+            
+            currency_emojis = {
+                'sakura_crystals': '💎',
+                'quartzs': '💠',
+                'daphine': '🦋'
+            }
+            currency_names = {
+                'sakura_crystals': 'Sakura Crystals',
+                'quartzs': 'Quartzs',
+                'daphine': 'Daphine'
+            }
+            
+            currency_emoji = currency_emojis.get(currency_type, '💰')
+            currency_name = currency_names.get(currency_type, currency_type.title())
+
             # Summary
             final_summary.add_field(
-                name="💎 Crystals Remaining",
-                value=f"{result['crystals_remaining']}",
+                name=f"{currency_emoji} {currency_name} Remaining",
+                value=f"{currency_remaining}",
                 inline=True,
             )
             final_summary.add_field(
                 name="💰 Total Cost",
-                value=f"{result['total_cost']} crystals",
+                value=f"{total_cost} {currency_name}",
                 inline=True,
             )
+            
+            # Show daphine gained if any (for non-sakura currencies)
+            daphine_gained = result.get("daphine_gained", 0)
+            if daphine_gained > 0:
+                final_summary.add_field(
+                    name="🦋 Daphine Bonus",
+                    value=f"+{daphine_gained} (1% chance per pull)",
+                    inline=True,
+                )
             
 
             # Add the final summary to embeds
@@ -1081,8 +1201,8 @@ class WaifuSummonCog(BaseCommand):
             # Add footer to the last embed
             if embeds:
                 embeds[-1].set_footer(
-                    text=f"Multi-summon complete! Cost: {result['total_cost']} crystals • "
-                    f"Remaining: {result['crystals_remaining']} crystals"
+                    text=f"Super-summon complete! Cost: {total_cost} {currency_name} • "
+                    f"Remaining: {currency_remaining} {currency_name}"
                 )
 
             # Create special content message for high rarity pulls like old system
@@ -1130,7 +1250,7 @@ class WaifuSummonCog(BaseCommand):
 
     @commands.hybrid_command(
         name="nwnl_super_summon",
-        description="🎰💫 Perform multiple 10-pulls with NEW star system! (Choose how many multi-summons)",
+        description="🎰💫 Perform multiple 10-pulls with NEW star system! (Cost varies by banner)",
     )
     @discord.app_commands.describe(
         count="Number of multi-summons to perform (1-100, each multi-summon = 10 pulls)",
@@ -1149,15 +1269,31 @@ class WaifuSummonCog(BaseCommand):
             )
             await ctx.send(embed=embed)
             return
-        
-        # Check if user has enough crystals upfront
-        user = await self.services.database.get_or_create_user(str(ctx.author.id))
-        total_cost = 100 * count  # Each multi-summon costs 100 crystals
-        
-        if user["sakura_crystals"] < total_cost:
+
+        # Get cost and currency info from banner (or defaults)
+        try:
+            cost, currency_type = await self.services.waifu_service._get_summon_cost_and_currency(banner_id)
+            total_cost = cost * 10 * count  # Each multi-summon = 10 pulls
+            
+            # Check if user has enough of the required currency
+            has_enough, current_amount = await self.services.waifu_service._check_user_currency(
+                str(ctx.author.id), currency_type, total_cost
+            )
+            
+            if not has_enough:
+                currency_name = self.services.waifu_service._get_currency_display_name(currency_type)
+                currency_emoji = self.services.waifu_service._get_currency_emoji(currency_type)
+                embed = discord.Embed(
+                    title="❌ Insufficient Currency",
+                    description=f"You need {total_cost} {currency_name} for {count} multi-summon{'s' if count > 1 else ''} but have {current_amount}. {currency_emoji}",
+                    color=0xFF6B6B,
+                )
+                await ctx.send(embed=embed)
+                return
+        except Exception as e:
             embed = discord.Embed(
-                title="❌ Insufficient Crystals",
-                description=f"You need {total_cost} Sakura Crystals for {count} multi-summon{'s' if count > 1 else ''} but have {user['sakura_crystals']}.",
+                title="❌ Error",
+                description="Failed to check currency requirements. Please try again.",
                 color=0xFF6B6B,
             )
             await ctx.send(embed=embed)
@@ -1168,6 +1304,8 @@ class WaifuSummonCog(BaseCommand):
             all_results = []
             total_rarity_counts = {1: 0, 2: 0, 3: 0}
             total_crystals_spent = 0
+            total_daphine_gained = 0  # Track total daphine gained
+            last_multi_result = None  # Store the last multi-summon result for currency info
             
             # Send initial message
             progress_embed = discord.Embed(
@@ -1181,6 +1319,7 @@ class WaifuSummonCog(BaseCommand):
             for i in range(count):
                 # Perform individual multi-summon
                 result = await self.services.waifu_service.perform_multi_summon(str(ctx.author.id), banner_id=banner_id)
+                last_multi_result = result  # Store the latest result
                 
                 if not result["success"]:
                     # If any multi-summon fails, show error and stop
@@ -1201,6 +1340,7 @@ class WaifuSummonCog(BaseCommand):
                 for rarity, count_val in result["rarity_counts"].items():
                     total_rarity_counts[rarity] += count_val
                 total_crystals_spent += result["total_cost"]
+                total_daphine_gained += result.get("daphine_gained", 0)  # Aggregate daphine gained
 
             # Delete progress message
             await progress_msg.delete()
@@ -1220,14 +1360,16 @@ class WaifuSummonCog(BaseCommand):
 
             # Create paginated view for results
             class SuperSummonPaginator(discord.ui.View):
-                def __init__(self, ctx, results, total_rarity_counts, total_crystals_spent, final_crystals, count):
+                def __init__(self, ctx, results, total_rarity_counts, total_crystals_spent, final_currency, count, currency_type="sakura_crystals", total_daphine_gained=0):
                     super().__init__(timeout=300)
                     self.ctx = ctx
                     self.results = results
                     self.total_rarity_counts = total_rarity_counts
                     self.total_crystals_spent = total_crystals_spent
-                    self.final_crystals = final_crystals
+                    self.final_currency = final_currency  # Renamed from final_crystals
+                    self.currency_type = currency_type
                     self.count = count
+                    self.total_daphine_gained = total_daphine_gained
                     self.page_idx = 0
                     self.page_size = 10
                     self.page_count = max(1, (len(results) + self.page_size - 1) // self.page_size)
@@ -1302,10 +1444,28 @@ class WaifuSummonCog(BaseCommand):
                     else:
                         embed.add_field(name="No Results", value="This page is empty.", inline=False)
                     
+                    # Get currency display info
+                    currency_emojis = {
+                        'sakura_crystals': '💎',
+                        'quartzs': '💠',
+                        'daphine': '🦋'
+                    }
+                    currency_names = {
+                        'sakura_crystals': 'Crystals',
+                        'quartzs': 'Quartzs',
+                        'daphine': 'Daphine'
+                    }
+                    
+                    currency_emoji = currency_emojis.get(self.currency_type, '💰')
+                    currency_name = currency_names.get(self.currency_type, self.currency_type.title())
+                    
                     # Footer with navigation and cost info
-                    embed.set_footer(
-                        text=f"💎 Crystals: {self.final_crystals} remaining • Cost: {self.total_crystals_spent} • Page {self.page_idx+1}/{self.page_count}"
-                    )
+                    footer_text = f"{currency_emoji} {currency_name}: {self.final_currency} remaining • Cost: {self.total_crystals_spent}"
+                    if self.total_daphine_gained > 0:
+                        footer_text += f" • 🦋 Daphine Gained: {self.total_daphine_gained}"
+                    footer_text += f" • Page {self.page_idx+1}/{self.page_count}"
+                    
+                    embed.set_footer(text=footer_text)
                     
                     return embed
 
@@ -1365,8 +1525,18 @@ class WaifuSummonCog(BaseCommand):
             elif three_star_count >= 1:
                 content = "🌟⭐ **GREAT SUPER SUMMON!** ⭐🌟\n💫 Legendary waifu acquired! 💫"
 
+            # Get currency info from the last multi-summon result
+            if last_multi_result:
+                currency_type = last_multi_result.get("currency_type", "sakura_crystals")
+                currency_remaining = last_multi_result.get("currency_remaining", 0)
+            else:
+                # Fallback: get fresh user state
+                final_user = await self.services.database.get_or_create_user(str(ctx.author.id))
+                currency_type = "sakura_crystals"
+                currency_remaining = final_user.get("sakura_crystals", 0)
+
             # Create and send paginated view
-            view = SuperSummonPaginator(ctx, sorted_results, total_rarity_counts, total_crystals_spent, final_user['sakura_crystals'], count)
+            view = SuperSummonPaginator(ctx, sorted_results, total_rarity_counts, total_crystals_spent, currency_remaining, count, currency_type, total_daphine_gained)
             await ctx.send(content=content, embed=view.get_embed(), view=view)
 
             # Log the super summon results

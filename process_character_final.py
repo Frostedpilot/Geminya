@@ -5,6 +5,7 @@ import pandas as pd
 import os
 import sys
 import logging
+import json
 from typing import Dict, Any, Optional
 
 # Setup logging
@@ -201,7 +202,7 @@ class CharacterFinalProcessor:
             logger.info(f"💾 Saving anime/series data to {self.anime_output_file}")
             anime_column_order = [
                 'series_id', 'name', 'english_name', 'image_link',
-                'studios', 'genres', 'synopsis', 'favorites', 'members', 'score'
+                'creator', 'genres', 'synopsis', 'favorites', 'members', 'score', 'media_type'
             ]
             for col in anime_column_order:
                 if col not in df_anime.columns:
@@ -254,12 +255,16 @@ class CharacterFinalProcessor:
             df_anime['name'] = df_anime['title'].astype(str).str.strip()
             df_anime['english_name'] = df_anime['title_english'].astype(str).str.strip() if 'title_english' in df_anime.columns else ''
             df_anime['image_link'] = df_anime['image_url'].astype(str).str.strip() if 'image_url' in df_anime.columns else ''
-            df_anime['studios'] = df_anime['studios'].astype(str).str.strip() if 'studios' in df_anime.columns else ''
+            # Creator field should already exist from pulling script
+            # Ensure it exists and is properly formatted
+            if 'creator' not in df_anime.columns:
+                df_anime['creator'] = json.dumps({})
             df_anime['genres'] = df_anime['genres'].astype(str).str.strip() if 'genres' in df_anime.columns else ''
             df_anime['synopsis'] = df_anime['synopsis'].astype(str).str.strip() if 'synopsis' in df_anime.columns else ''
             df_anime['favorites'] = pd.to_numeric(df_anime['favorites'], errors='coerce').fillna(0).astype(int) if 'favorites' in df_anime.columns else 0
             df_anime['members'] = pd.to_numeric(df_anime['members'], errors='coerce').fillna(0).astype(int) if 'members' in df_anime.columns else 0
             df_anime['score'] = pd.to_numeric(df_anime['score'], errors='coerce').fillna(0).astype(float) if 'score' in df_anime.columns else 0.0
+            # media_type should already be set from pulling script, leave it untouched
             # Deduplicate by name
             df_anime = df_anime.drop_duplicates(subset=['name'])
             df_anime = df_anime.reset_index(drop=True)

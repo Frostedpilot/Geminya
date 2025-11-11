@@ -14,14 +14,16 @@
 
 ## Overview
 
-The Geminya Discord bot uses a **PostgreSQL database** as its primary data store, designed to support a comprehensive waifu collection and expedition game system. The database handles user management, character collections, equipment systems, expeditions, shop transactions, and social features.
+The Geminya Discord bot uses a **PostgreSQL database** as its primary data store, designed to support a comprehensive character collection and expedition game system across multiple media types. The database handles user management, character collections, equipment systems, expeditions, shop transactions, and social features for anime, manga, visual novels, light novels, games, and other media.
 
 ### Key Features
+- **Multi-media support** for anime, manga, visual novels, light novels, games, and more
 - **PostgreSQL-only implementation** with asyncpg for high-performance async operations
 - **Connection pooling** for efficient database resource management
 - **Transactional integrity** for complex operations
 - **Comprehensive indexing** for optimized query performance
 - **Modular schema design** supporting multiple game systems
+- **Flexible creator metadata** with JSON-based creator information
 
 ### Technology Stack
 - **Database**: PostgreSQL 12+
@@ -89,16 +91,48 @@ CREATE TABLE series (
     name VARCHAR(255) NOT NULL UNIQUE,
     english_name VARCHAR(255),
     image_link TEXT,
-    studios TEXT,
+    creator TEXT,                          -- JSON: creator information by type
     genres TEXT,
     synopsis TEXT,
     favorites INTEGER,
     members INTEGER,
-    score FLOAT
+    score FLOAT,
+    media_type VARCHAR(50) NOT NULL DEFAULT 'anime'
 );
 ```
 
-**Purpose**: Anime/manga series metadata imported from external sources
+**Purpose**: Multi-media series metadata (anime, manga, visual novels, games, etc.) imported from external sources
+
+**Key Features**:
+
+- **`creator`**: JSON field storing creator information by type (e.g., `{"studio": "Kyoto Animation"}`, `{"author": "Nisio Isin", "publisher": "Kodansha"}`)
+- **`media_type`**: Distinguishes between different media types (anime, manga, visual_novel, light_novel, game, etc.)
+- **Extensible**: Can support any media type through the flexible creator and media_type fields
+
+**Supported Media Types**:
+
+- `anime`: Animation series/movies
+- `manga`: Japanese comics
+- `visual_novel`: Interactive fiction games
+- `light_novel`: Japanese novels
+- `game`: Video games
+- Additional types can be added as needed
+
+**Creator Field Examples**:
+
+```json
+// Anime
+{"studio": "Kyoto Animation"}
+
+// Manga/Light Novel
+{"author": "Nisio Isin", "publisher": "Kodansha"}
+
+// Game/Visual Novel
+{"developer": "Key", "publisher": "Visual Arts"}
+
+// Multiple creators
+{"author": "Nisio Isin", "illustrator": "VOFAN", "publisher": "Kodansha"}
+```
 
 #### `waifus` Table
 ```sql
@@ -541,6 +575,70 @@ class PostgresUploader:
         # Imports anime series and character data
         # Handles JSON field parsing and validation
 ```
+
+## Schema Migration: Multi-Media Support
+
+### Migration Overview
+The database schema was enhanced to support multiple media types beyond anime. This migration adds `media_type` and `creator` fields to the `series` table while maintaining backward compatibility.
+
+### Migration Script
+Execute the following migration script to update the database schema:
+
+```sql
+-- Migration: Add media_type and creator columns, migrate existing data
+
+-- Step 1: Add new columns
+ALTER TABLE series 
+ADD COLUMN creator TEXT,
+ADD COLUMN media_type VARCHAR(50) NOT NULL DEFAULT 'anime';
+
+-- Step 2: Migrate existing data (convert studios to creator as JSON)
+UPDATE series 
+SET creator = CASE 
+    WHEN studios IS NOT NULL AND studios != '' 
+    THEN '{"studio": "' || replace(studios, '"', '\"') || '"}' 
+    ELSE '{}' 
+END
+WHERE studios IS NOT NULL;
+
+-- Step 3: Drop the old studios column
+ALTER TABLE series DROP COLUMN studios;
+
+-- Step 4: Set media_type to 'anime' for all existing series (already done by DEFAULT)
+-- All existing data is anime from MyAnimeList
+
+-- Step 5: Verify migration
+SELECT series_id, name, creator, media_type FROM series LIMIT 5;
+```
+
+### Data Import Updates
+After migration, data import scripts handle the new schema:
+
+```python
+# New series data structure
+series_data = {
+    'series_id': anime_id,
+    'name': anime['title'],
+    'creator': json.dumps({"studio": studio_name}),  # JSON format
+    'media_type': 'anime',  # Explicit media type
+    # ... other fields
+}
+
+# Support for different media types
+manga_data = {
+    'series_id': manga_id,
+    'name': manga['title'],
+    'creator': json.dumps({"author": author_name, "publisher": publisher_name}),
+    'media_type': 'manga',
+    # ... other fields
+}
+```
+
+### Backward Compatibility
+- Existing anime data automatically converted to new format
+- All existing series marked as `media_type: 'anime'`
+- Database queries updated to use new `creator` field
+- UI displays appropriate creator information based on media type
 
 ## Development and Deployment
 
