@@ -9,7 +9,7 @@ def load_affinity_pools():
     """
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../data'))
     pools = {'series_id': set(), 'archetype': set(), 'elemental': set(), 'genre': set()}
-    anime_df = pd.read_csv(os.path.join(base_dir, 'anime_final.csv'))
+    anime_df = pd.read_csv(os.path.join(base_dir, 'final', 'series_final.csv'))
     for _, row in anime_df.iterrows():
         series_id = row.get('series_id')
         if pd.notna(series_id):
@@ -33,7 +33,7 @@ def load_affinity_pools():
     except Exception as e:
         pass
     # --- characters_with_stats.csv: elemental_type ---
-    chars_pd = pd.read_csv(os.path.join(base_dir, 'character_final.csv'))
+    chars_pd = pd.read_csv(os.path.join(base_dir, 'final', 'characters_final.csv'))
     for _, row in chars_pd.iterrows():
         elem = row.get('elemental_type')
         elems = _json.loads(elem)

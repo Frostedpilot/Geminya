@@ -28,6 +28,59 @@ async def series_name_autocomplete(interaction, current: str):
     return [discord.app_commands.Choice(name=s, value=s) for s in filtered[:20]]
 
 
+def format_media_type(media_type: str) -> str:
+    """Format media_type for display with proper capitalization and full names."""
+    if not media_type:
+        return "Unknown"
+    
+    media_type_mapping = {
+        'anime': '📺 Anime',
+        'visual_novel': '🎮 Visual Novel', 
+        'game': '🎮 Game',
+        'manga': '📖 Manga',
+        'light_novel': '📚 Light Novel'
+    }
+    
+    return media_type_mapping.get(media_type.lower(), f"📄 {media_type.title()}")
+
+
+def format_creator(creator_json: str) -> str:
+    """Format creator JSON field for display with proper labels."""
+    if not creator_json or not creator_json.strip():
+        return "Unknown"
+    
+    if creator_json.startswith('{'):
+        try:
+            import json
+            creator_data = json.loads(creator_json)
+            if creator_data:
+                creator_parts = []
+                # Map creator types to display names
+                creator_type_mapping = {
+                    'studio': 'Studio',
+                    'developer': 'Developer', 
+                    'author': 'Author',
+                    'publisher': 'Publisher',
+                    'director': 'Director',
+                    'producer': 'Producer'
+                }
+                
+                for creator_type, creator_name in creator_data.items():
+                    if creator_name and creator_name.strip():
+                        display_type = creator_type_mapping.get(creator_type.lower(), creator_type.title())
+                        creator_parts.append(f"{display_type}: {creator_name}")
+                        
+                return " | ".join(creator_parts) if creator_parts else "Unknown"
+            else:
+                return "Unknown"
+        except:
+            # If JSON parsing fails, return raw value
+            return creator_json
+    else:
+        # Not JSON, return as-is (backward compatibility)
+        return creator_json
+
+
 """New waifu summon command with star upgrade system."""
 
 import discord
@@ -53,11 +106,11 @@ class WaifuSummonCog(BaseCommand):
 
     @commands.hybrid_command(
         name="nwnl_series_id",
-        description="📺 View detailed info about an anime series by series ID"
+        description="📺 View detailed info about a series by series ID"
     )
-    @discord.app_commands.describe(series_id="ID of the anime series to search for")
+    @discord.app_commands.describe(series_id="ID of the series to search for")
     async def nwnl_series_id(self, ctx: commands.Context, series_id: int):
-        """Display detailed info about an anime series by its series_id, including all characters in the series (no pagination)."""
+        """Display detailed info about a series by its series_id, including all characters in the series (no pagination)."""
         await ctx.defer()
         try:
             series = await self.get_series_by_id(series_id)
@@ -99,20 +152,11 @@ class WaifuSummonCog(BaseCommand):
                 if val and str(val).strip() and str(val).lower() != 'nan':
                     sval = str(val)
                     
-                    # Format creator field from JSON to readable text
-                    if key == 'creator' and sval.startswith('{'):
-                        try:
-                            import json
-                            creator_data = json.loads(sval)
-                            if creator_data:
-                                creator_parts = []
-                                for creator_type, creator_name in creator_data.items():
-                                    creator_parts.append(f"{creator_type.title()}: {creator_name}")
-                                sval = " | ".join(creator_parts)
-                            else:
-                                sval = "Unknown"
-                        except:
-                            pass  # If JSON parsing fails, show raw value
+                    # Format creator and media_type fields for better display
+                    if key == 'creator':
+                        sval = format_creator(sval)
+                    elif key == 'media_type':
+                        sval = format_media_type(sval)
                     
                     if len(sval) > 1024:
                         sval = sval[:1021] + '...'
@@ -387,11 +431,11 @@ class WaifuSummonCog(BaseCommand):
 
     @commands.hybrid_command(
         name="nwnl_series",
-        description="📺 View detailed info about an anime series by name"
+        description="📺 View detailed info about a series by name"
     )
     @discord.app_commands.autocomplete(series_name=series_name_autocomplete)
     async def nwnl_series(self, ctx: commands.Context, *, series_name: str):
-        """Display detailed info about an anime series, including all characters in the series, with pagination."""
+        """Display detailed info about a series, including all characters in the series, with pagination."""
         await ctx.defer()
         try:
             # Search for the series (case-insensitive, partial match)
@@ -468,20 +512,11 @@ class WaifuSummonCog(BaseCommand):
                         if val and str(val).strip() and str(val).lower() != 'nan':
                             sval = str(val)
                             
-                            # Format creator field from JSON to readable text
-                            if key == 'creator' and sval.startswith('{'):
-                                try:
-                                    import json
-                                    creator_data = json.loads(sval)
-                                    if creator_data:
-                                        creator_parts = []
-                                        for creator_type, creator_name in creator_data.items():
-                                            creator_parts.append(f"{creator_type.title()}: {creator_name}")
-                                        sval = " | ".join(creator_parts)
-                                    else:
-                                        sval = "Unknown"
-                                except:
-                                    pass  # If JSON parsing fails, show raw value
+                            # Format media_type and creator fields for display
+                            if key == 'media_type':
+                                sval = format_media_type(sval)
+                            elif key == 'creator':
+                                sval = format_creator(sval)
                             
                             if len(sval) > 1024:
                                 sval = sval[:1021] + '...'

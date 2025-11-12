@@ -6,7 +6,7 @@
 - Add new entries to `data/expeditions/base_expeditions.json` (for templates) or `data/expeditions/encounters.json` (for encounters). Use the existing format as a guide.
 
 **Q: How do I add new characters?**
-- Add rows to `data/character_final.csv` with the required fields. See the Character model for details.
+- Add rows to `data/final/characters_final.csv` with the required fields. See the Character model for details.
 
 **Q: How are affinity buffs/nerfs calculated?**
 - The system uses a multiplicative model: each favored match multiplies by 1.2, each disfavored by 0.6 (clamped).

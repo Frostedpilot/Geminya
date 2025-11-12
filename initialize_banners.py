@@ -14,7 +14,7 @@ import json as _json
 
 
 BANNER_JSON = 'banners.json'
-CHARACTER_CSV = 'data/character_final.csv'
+CHARACTER_CSV = 'data/final/characters_final.csv'
 
 def load_waifu_data():
     waifus = []

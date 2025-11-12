@@ -129,7 +129,7 @@ class WaifuService:
     async def initialize(self):
         """Initialize the waifu service and load waifus from CSV."""
         await self.db.initialize()
-        self._waifu_list = self._load_waifus_from_csv('data/character_final.csv')
+        self._waifu_list = self._load_waifus_from_csv('data/final/characters_final.csv')
         self.logger.info("Waifu service initialized with new star system. Loaded %d waifus from CSV.", len(self._waifu_list))
 
     async def close(self):

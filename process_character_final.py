@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Process character_cleaned.xlsx and output data/character_final.csv for new star system."""
+"""Process character_cleaned.xlsx and output data/final/characters_final.csv for new star system."""
 
 import pandas as pd
 import os
@@ -16,43 +16,67 @@ logger = logging.getLogger(__name__)
 
 
 class CharacterFinalProcessor:
-    """Process cleaned Excel file for the new star system."""
+    """Process manually edited Excel files for the new multi-media system."""
 
     def __init__(self):
-        self.input_file = os.path.join("data", "characters_with_stats.csv")
-        self.anime_input_file = os.path.join("data", "anime_mal.xlsx")
-        self.character_output_file = os.path.join("data", "character_final.csv")
-        self.anime_output_file = os.path.join("data", "anime_final.csv")
-        # Ensure data directory exists
-        os.makedirs("data", exist_ok=True)
-    def load_anime_excel(self) -> Optional[pd.DataFrame]:
-        """Load the anime Excel file for series info."""
+        # New multi-media input files (manually edited Excel files)
+        self.characters_input_file = os.path.join("data", "final", "characters_cleaned.xlsx")
+        self.series_input_file = os.path.join("data", "final", "series_cleaned.xlsx") 
+        
+        # LLM-enhanced character file (optional)
+        self.characters_with_stats_file = os.path.join("data", "final", "characters_with_stats.csv")
+        
+        # Output files
+        self.character_output_file = os.path.join("data", "final", "character_final.csv")
+        self.series_output_file = os.path.join("data", "final", "series_final.csv")
+        
+        # Ensure directories exist
+        os.makedirs("data/final", exist_ok=True)
+        
+        # Initialize ID Manager for unique ID assignment
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'data', 'registries'))
+        from data.registries.id_manager import IDManager
+        self.id_manager = IDManager()
+    def load_series_excel(self) -> Optional[pd.DataFrame]:
+        """Load the manually edited series Excel file for series info."""
         try:
-            logger.info(f"Loading Anime Excel file: {self.anime_input_file}")
-            df = pd.read_excel(self.anime_input_file)
-            logger.info(f"✅ Loaded {len(df)} anime/series from Excel file")
-            logger.info(f"📋 Anime Columns: {list(df.columns)}")
+            logger.info(f"Loading Series Excel file: {self.series_input_file}")
+            df = pd.read_excel(self.series_input_file)
+            logger.info(f"✅ Loaded {len(df)} series from Excel file")
+            logger.info(f"📋 Series Columns: {list(df.columns)}")
             return df
         except FileNotFoundError:
-            logger.error(f"❌ Anime Excel file {self.anime_input_file} not found!")
+            logger.error(f"❌ Series Excel file {self.series_input_file} not found!")
             return None
         except Exception as e:
-            logger.error(f"❌ Error loading Anime Excel file: {e}")
+            logger.error(f"❌ Error loading Series Excel file: {e}")
             return None
 
-    def load_excel_data(self) -> Optional[pd.DataFrame]:
-        """Load the character data from CSV file."""
+    def load_characters_data(self) -> Optional[pd.DataFrame]:
+        """Load the character data from manually edited Excel file or LLM-enhanced CSV."""
+        # First try to load the LLM-enhanced file if it exists
+        if os.path.exists(self.characters_with_stats_file):
+            try:
+                logger.info(f"Loading LLM-enhanced character file: {self.characters_with_stats_file}")
+                df = pd.read_csv(self.characters_with_stats_file)
+                logger.info(f"✅ Loaded {len(df)} characters from LLM-enhanced CSV file")
+                logger.info(f"📋 Columns: {list(df.columns)}")
+                return df
+            except Exception as e:
+                logger.warning(f"⚠️ Error loading LLM-enhanced file: {e}")
+        
+        # Fallback to manually edited Excel file
         try:
-            logger.info(f"Loading character CSV file: {self.input_file}")
-            df = pd.read_csv(self.input_file)
-            logger.info(f"✅ Loaded {len(df)} characters from CSV file")
+            logger.info(f"Loading manually edited character Excel file: {self.characters_input_file}")
+            df = pd.read_excel(self.characters_input_file)
+            logger.info(f"✅ Loaded {len(df)} characters from Excel file")
             logger.info(f"📋 Columns: {list(df.columns)}")
             return df
         except FileNotFoundError:
-            logger.error(f"❌ Character CSV file {self.input_file} not found!")
+            logger.error(f"❌ Character Excel file {self.characters_input_file} not found!")
             return None
         except Exception as e:
-            logger.error(f"❌ Error loading character CSV file: {e}")
+            logger.error(f"❌ Error loading character Excel file: {e}")
             return None
 
 
@@ -199,18 +223,18 @@ class CharacterFinalProcessor:
     def save_final_csvs(self, df_char: pd.DataFrame, df_anime: pd.DataFrame) -> bool:
         """Save the final processed character and anime data to CSV, including new waifu fields."""
         try:
-            logger.info(f"💾 Saving anime/series data to {self.anime_output_file}")
-            anime_column_order = [
+            logger.info(f"💾 Saving series data to {self.series_output_file}")
+            series_column_order = [
                 'series_id', 'name', 'english_name', 'image_link',
                 'creator', 'genres', 'synopsis', 'favorites', 'members', 'score', 'media_type'
             ]
-            for col in anime_column_order:
+            for col in series_column_order:
                 if col not in df_anime.columns:
                     df_anime[col] = '' if col not in ['favorites', 'members', 'score'] else 0
-            df_anime_final = df_anime[anime_column_order]
-            df_anime_final.to_csv(self.anime_output_file, index=False, encoding='utf-8')
-            logger.info(f"✅ Saved {len(df_anime_final)} series to {self.anime_output_file}")
-            logger.info(f"📁 File size: {os.path.getsize(self.anime_output_file)} bytes")
+            df_series_final = df_anime[series_column_order]
+            df_series_final.to_csv(self.series_output_file, index=False, encoding='utf-8')
+            logger.info(f"✅ Saved {len(df_series_final)} series to {self.series_output_file}")
+            logger.info(f"📁 File size: {os.path.getsize(self.series_output_file)} bytes")
 
             logger.info(f"💾 Saving character data to {self.character_output_file}")
             # Include about column if present
@@ -236,9 +260,9 @@ class CharacterFinalProcessor:
         try:
             logger.info("🚀 Starting character and series processing for new star system...")
             # Load character and anime data
-            df_char = self.load_excel_data()
-            df_anime = self.load_anime_excel()
-            if df_char is None or df_anime is None:
+            df_char = self.load_characters_data()
+            df_series = self.load_series_excel()
+            if df_char is None or df_series is None:
                 logger.error("❌ Missing input files!")
                 return False
             # Clean character data
@@ -250,34 +274,63 @@ class CharacterFinalProcessor:
             # --- No need to parse JSON columns; just pass them through as strings ---
             # (If present, these columns are preserved as-is from input to output)
 
-            # Clean and deduplicate anime/series data
-            # Map anime_mal.xlsx columns to expected names and new fields
-            df_anime['name'] = df_anime['title'].astype(str).str.strip()
-            df_anime['english_name'] = df_anime['title_english'].astype(str).str.strip() if 'title_english' in df_anime.columns else ''
-            df_anime['image_link'] = df_anime['image_url'].astype(str).str.strip() if 'image_url' in df_anime.columns else ''
-            # Creator field should already exist from pulling script
-            # Ensure it exists and is properly formatted
-            if 'creator' not in df_anime.columns:
-                df_anime['creator'] = json.dumps({})
-            df_anime['genres'] = df_anime['genres'].astype(str).str.strip() if 'genres' in df_anime.columns else ''
-            df_anime['synopsis'] = df_anime['synopsis'].astype(str).str.strip() if 'synopsis' in df_anime.columns else ''
-            df_anime['favorites'] = pd.to_numeric(df_anime['favorites'], errors='coerce').fillna(0).astype(int) if 'favorites' in df_anime.columns else 0
-            df_anime['members'] = pd.to_numeric(df_anime['members'], errors='coerce').fillna(0).astype(int) if 'members' in df_anime.columns else 0
-            df_anime['score'] = pd.to_numeric(df_anime['score'], errors='coerce').fillna(0).astype(float) if 'score' in df_anime.columns else 0.0
-            # media_type should already be set from pulling script, leave it untouched
-            # Deduplicate by name
-            df_anime = df_anime.drop_duplicates(subset=['name'])
-            df_anime = df_anime.reset_index(drop=True)
-            df_anime['series_id'] = df_anime.index + 1
+            # Clean and process multi-media series data
+            # Handle both legacy (title/title_english) and new (name/english_name) column formats
+            if 'name' not in df_series.columns and 'title' in df_series.columns:
+                df_series['name'] = df_series['title'].astype(str).str.strip()
+            if 'english_name' not in df_series.columns and 'title_english' in df_series.columns:
+                df_series['english_name'] = df_series['title_english'].astype(str).str.strip()
+            if 'image_link' not in df_series.columns and 'image_url' in df_series.columns:
+                df_series['image_link'] = df_series['image_url'].astype(str).str.strip()
+            
+            # Ensure required fields exist with defaults
+            if 'creator' not in df_series.columns:
+                df_series['creator'] = json.dumps({})
+            if 'media_type' not in df_series.columns:
+                df_series['media_type'] = 'anime'  # Default for backward compatibility
+                
+            # Clean and validate series fields
+            df_series['name'] = df_series['name'].astype(str).str.strip()
+            df_series['english_name'] = df_series['english_name'].astype(str).str.strip() if 'english_name' in df_series.columns else ''
+            df_series['image_link'] = df_series['image_link'].astype(str).str.strip() if 'image_link' in df_series.columns else ''
+            df_series['genres'] = df_series['genres'].astype(str).str.strip() if 'genres' in df_series.columns else ''
+            df_series['synopsis'] = df_series['synopsis'].astype(str).str.strip() if 'synopsis' in df_series.columns else ''
+            df_series['favorites'] = pd.to_numeric(df_series['favorites'], errors='coerce').fillna(0).astype(int) if 'favorites' in df_series.columns else 0
+            df_series['members'] = pd.to_numeric(df_series['members'], errors='coerce').fillna(0).astype(int) if 'members' in df_series.columns else 0
+            df_series['score'] = pd.to_numeric(df_series['score'], errors='coerce').fillna(0).astype(float) if 'score' in df_series.columns else 0.0
+            
+            # Assign unique series IDs using ID Manager
+            logger.info("🔢 Assigning unique series IDs...")
+            df_series['series_id'] = df_series.apply(
+                lambda row: self.id_manager.get_or_create_series_id(
+                    row['source_type'], 
+                    row['source_id'], 
+                    row['name']
+                ), axis=1
+            )
+            
             # Map series name to series_id for characters
-            char_series_map = {n.strip().lower(): sid for n, sid in zip(df_anime['name'], df_anime['series_id'])}
+            char_series_map = {n.strip().lower(): sid for n, sid in zip(df_series['name'], df_series['series_id'])}
+            
+            # First, map series names to series_id for characters
             df_char_clean['series_id'] = df_char_clean['series'].astype(str).str.strip().str.lower().map(char_series_map)
             missing_series = df_char_clean[df_char_clean['series_id'].isnull()]['series'].unique()
             if len(missing_series) > 0:
-                logger.warning(f"⚠️ Some characters have series not found in anime_mal.xlsx: {missing_series}")
-                # Optionally, assign a default series_id or drop these rows
+                logger.warning(f"⚠️ Some characters have series not found in series data: {missing_series}")
+                # Drop characters with missing series
                 df_char_clean = df_char_clean.dropna(subset=['series_id'])
             df_char_clean['series_id'] = df_char_clean['series_id'].astype(int)
+            
+            # Assign unique character IDs using ID Manager
+            logger.info("🔢 Assigning unique character IDs...")
+            df_char_clean['waifu_id'] = df_char_clean.apply(
+                lambda row: self.id_manager.get_or_create_character_id(
+                    row['source_type'],
+                    row['source_id'], 
+                    row['name'],
+                    row['series_id']
+                ), axis=1
+            )
             # Add transformation columns for each character
             logger.info("🛠️ Generating transformation columns for each character...")
             # If these columns exist in the input, use them; otherwise, set to defaults
@@ -292,10 +345,10 @@ class CharacterFinalProcessor:
             # Analyze star system impact
             self.analyze_star_system_impact(df_char_clean)
             # Save both CSVs
-            success = self.save_final_csvs(df_char_clean, df_anime)
+            success = self.save_final_csvs(df_char_clean, df_series)
             if success:
                 logger.info("🎉 Character and series processing completed successfully!")
-                logger.info(f"📤 Outputs: {self.character_output_file}, {self.anime_output_file}")
+                logger.info(f"📤 Outputs: {self.character_output_file}, {self.series_output_file}")
             return success
         except Exception as e:
             logger.error(f"❌ Fatal error during processing: {e}")
@@ -311,7 +364,7 @@ def main():
     print("🌟 CHARACTER FINAL PROCESSOR - NEW STAR SYSTEM")
     print("="*70)
     print("📥 Input:  character_cleaned.xlsx (your manually edited file)")
-    print("📤 Output: data/character_final.csv (ready for upload_to_mysql.py)")
+    print("📤 Output: data/final/characters_final.csv (ready for upload_to_mysql.py)")
     print("")
     print("🎯 New Star System Features:")
     print("  ⭐ 1-3★: Available through direct gacha")
@@ -325,7 +378,7 @@ def main():
     print("="*70)
     
     if success:
-        print("✅ SUCCESS: character_final.csv is ready!")
+        print("✅ SUCCESS: characters_final.csv is ready!")
         print("🚀 Next step: Run upload_to_mysql.py to import to database")
     else:
         print("❌ FAILED: Check the logs above for errors")

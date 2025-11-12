@@ -23,9 +23,9 @@ class CharacterRegistry:
         self.characters: Dict[int, Character] = {}
         self.characters_by_series: Dict[int, List[Character]] = {}
     
-    def load_characters(self, filename: str = "character_final.csv") -> bool:
+    def load_characters(self, filename: str = "final/characters_final.csv") -> bool:
         """
-        Load characters from CSV file, using anime_final.csv for anime_genres.
+        Load characters from CSV file, using series_final.csv for anime_genres.
         """
         file_path = self.data_directory / filename
         anime_file_path = self.data_directory / "anime_final.csv"

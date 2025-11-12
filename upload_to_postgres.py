@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Script to upload character data from data/character_final.csv to PostgreSQL database."""
+"""Script to upload character data from data/final/characters_final.csv to PostgreSQL database."""
 
 import asyncio
 import csv
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class PostgresUploader:
     def load_series(self) -> List[Dict[str, Any]]:
-        """Load series from anime_final.csv."""
+        """Load series from series_final.csv."""
         series = []
         try:
             with open(self.series_file, 'r', encoding='utf-8', newline='') as f:
@@ -34,7 +34,7 @@ class PostgresUploader:
             logger.info(f"Loaded {len(series)} series from {self.series_file}")
         except FileNotFoundError:
             logger.error(f"Input file {self.series_file} not found!")
-            logger.error("Please run process_character_final.py first to generate data/anime_final.csv")
+            logger.error("Please run process_character_final.py first to generate data/final/series_final.csv")
             return []
         except Exception as e:
             logger.error(f"Error loading series: {e}")
@@ -46,8 +46,8 @@ class PostgresUploader:
         self.config = config
         self.db_service = None
         self.waifu_service = None
-        self.character_file = os.path.join("data", "character_final.csv")
-        self.series_file = os.path.join("data", "anime_final.csv")
+        self.character_file = os.path.join("data", "final", "characters_final.csv")
+        self.series_file = os.path.join("data", "final", "series_final.csv")
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -67,7 +67,7 @@ class PostgresUploader:
             await self.db_service.close()
 
     def load_characters(self) -> List[Dict[str, Any]]:
-        """Load characters from character_final.csv with new waifu fields."""
+        """Load characters from characters_final.csv with new waifu fields."""
         characters = []
         try:
             with open(self.character_file, 'r', encoding='utf-8', newline='') as f:
@@ -84,7 +84,7 @@ class PostgresUploader:
             logger.info(f"Loaded {len(characters)} characters from {self.character_file}")
         except FileNotFoundError:
             logger.error(f"Input file {self.character_file} not found!")
-            logger.error("Please run process_character_final.py first to generate data/character_final.csv")
+            logger.error("Please run process_character_final.py first to generate data/final/characters_final.csv")
             return []
         except Exception as e:
             logger.error(f"Error loading characters: {e}")

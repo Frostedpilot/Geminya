@@ -10,7 +10,7 @@ This document explains how game data is loaded, managed, and accessed in the Wan
   - `load_raw_json(filename)`: Loads raw JSON data for custom use.
 
 ## CharacterRegistry
-- Loads character data from `character_final.csv` in the `data/` directory.
+- Loads character data from `characters_final.csv` in the `data/final/` directory.
 - Provides lookup and search for characters by ID, series, name, archetype, or elemental type.
 - Methods:
   - `load_characters(filename)`: Loads and indexes all characters.
@@ -26,7 +26,7 @@ This document explains how game data is loaded, managed, and accessed in the Wan
 ## Data File Structure
 - `data/expeditions/base_expeditions.json`: Expedition templates
 - `data/expeditions/encounters.json`: Encounter definitions
-- `data/character_final.csv`: Character data
+- `data/final/characters_final.csv`: Character data
 
 ---
 

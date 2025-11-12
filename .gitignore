@@ -213,8 +213,10 @@ secrets.json
 
 mcp_servers/
 
-data/
-
+*.csv
+*.xlsx
+data/*.json
+data/expeditions/*
 .github
 
 # objects from librespot
