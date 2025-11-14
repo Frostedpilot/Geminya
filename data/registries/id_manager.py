@@ -12,8 +12,6 @@ import logging
 import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
-from pathlib import Path
-import shutil
 import time
 
 # Platform-specific imports
@@ -43,11 +41,9 @@ class IDManager:
     def __init__(self):
         self.series_registry_file = "data/registries/series_id_registry.csv"
         self.character_registry_file = "data/registries/character_id_registry.csv"
-        self.backup_dir = "data/backups"
         
         # Ensure directories exist
         os.makedirs("data/registries", exist_ok=True)
-        os.makedirs(self.backup_dir, exist_ok=True)
         
         # Initialize registries if they don't exist
         self._ensure_registries_exist()
@@ -72,18 +68,7 @@ class IDManager:
                 writer.writerow(character_headers)
             logger.info("Created character registry file: %s", self.character_registry_file)
 
-    def _create_backup(self, file_path: str) -> str:
-        """Create a timestamped backup of a registry file."""
-        if not os.path.exists(file_path):
-            return ""
-            
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_name = Path(file_path).stem
-        backup_path = os.path.join(self.backup_dir, f"{file_name}_backup_{timestamp}.csv")
-        
-        shutil.copy2(file_path, backup_path)
-        logger.info("Created backup: %s → %s", file_path, backup_path)
-        return backup_path
+
 
     def _with_file_lock(self, file_path: str, operation_func, *args, **kwargs):
         """Execute operation with exclusive file lock for thread safety."""
@@ -147,8 +132,10 @@ class IDManager:
         """Find existing series ID for (source_type, source_id) couple."""
         try:
             df = pd.read_csv(self.series_registry_file)
+            # Ensure source_id is string for comparison
+            source_id_str = str(source_id)
             matches = df[(df['source_type'] == source_type) & 
-                        (df['source_id'] == source_id)]
+                        (df['source_id'] == source_id_str)]
             
             if not matches.empty:
                 return int(matches.iloc[0]['unique_series_id'])
@@ -164,8 +151,10 @@ class IDManager:
         """Find existing character ID for (source_type, source_id) couple."""
         try:
             df = pd.read_csv(self.character_registry_file)
+            # Ensure source_id is string for comparison
+            source_id_str = str(source_id)
             matches = df[(df['source_type'] == source_type) & 
-                        (df['source_id'] == source_id)]
+                        (df['source_id'] == source_id_str)]
             
             if not matches.empty:
                 return int(matches.iloc[0]['unique_waifu_id'])
@@ -182,7 +171,7 @@ class IDManager:
         """Add entry to series registry."""
         entry = {
             'source_type': source_type,
-            'source_id': source_id,
+            'source_id': str(source_id),  # Ensure source_id is stored as string
             'unique_series_id': unique_id,
             'name': name,
             'created_at': datetime.now().isoformat()
@@ -202,7 +191,7 @@ class IDManager:
         """Add entry to character registry."""
         entry = {
             'source_type': source_type,
-            'source_id': source_id,
+            'source_id': str(source_id),  # Ensure source_id is stored as string
             'unique_waifu_id': unique_id,
             'name': name,
             'series_unique_id': series_id,
@@ -234,9 +223,6 @@ class IDManager:
             logger.debug("Found existing series ID: (%s, %s) → %d", 
                         source_type, source_id, existing_id)
             return existing_id
-        
-        # Create backup before modification
-        self._create_backup(self.series_registry_file)
         
         # Get new ID and add entry with file lock and double-check
         def create_new_entry(file_path: str):
@@ -273,9 +259,6 @@ class IDManager:
             logger.debug("Found existing character ID: (%s, %s) → %d", 
                         source_type, source_id, existing_id)
             return existing_id
-        
-        # Create backup before modification
-        self._create_backup(self.character_registry_file)
         
         # Get new ID and add entry with file lock and double-check
         def create_new_entry(file_path: str):
@@ -318,10 +301,6 @@ class IDManager:
             existing_characters: List of existing characters from database
         """
         logger.info("Starting migration of existing data to ID registries...")
-        
-        # Create backups
-        self._create_backup(self.series_registry_file)
-        self._create_backup(self.character_registry_file)
         
         # Migrate series data
         logger.info("Migrating %d existing series...", len(existing_series))

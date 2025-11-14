@@ -6,7 +6,7 @@
     "start_time": "2025-08-26 00:00:00",
     "end_time": "2025-09-01 23:59:59",
     "description": "Initial rate-up banner with increased drop rates for select series!",
-    "is_active": true,
+    "is_active": false,
     "cost": 10,
     "currency_type": "sakura_crystals",
     "waifu_ids": [],
@@ -19,11 +19,11 @@
     "start_time": "2025-09-10 00:00:00",
     "end_time": "2025-09-20 23:59:59",
     "description": "Anniversary celebration! Exclusive waifus available for a limited time.",
-    "is_active": false,
-    "cost": 10,
-    "currency_type": "sakura_crystals",
+    "is_active": true,
+    "cost": 20,
+    "currency_type": "quartzs",
     "waifu_ids": [],
-    "series_ids": [2, 3]
+    "series_ids": [237]
   },
   {
     "id": 3,
@@ -32,38 +32,14 @@
     "start_time": "2025-08-26 00:00:00",
     "end_time": "2025-09-01 23:59:59",
     "description": "Have fun getting all Sunshine characters before finding others!",
-    "is_active": false,
-    "cost": 15,
+    "is_active": true,
+    "cost": 10,
     "currency_type": "sakura_crystals",
     "waifu_ids": [],
-    "series_ids": [75,76,77,74]
+    "series_ids": [73,76,77,74]
   },
   {
     "id": 4,
-    "name": "Loli Enjoyers",
-    "type": "rate-up",
-    "start_time": "2025-08-26 00:00:00",
-    "end_time": "2025-09-01 23:59:59",
-    "description": "You are a lolicon",
-    "cost": 10,
-    "currency_type": "sakura_crystals",
-    "is_active": false,
-    "waifu_ids": [94941,82525,136728,54151,105177,142987,46163,155554,164022,24515,144048,4628],
-    "series_ids": []
-  },
-  {
-    "id": 5,
-    "name": "Nam Cuong",
-    "type": "rate-up",
-    "start_time": "2025-08-26 00:00:00",
-    "end_time": "2025-09-01 23:59:59",
-    "description": "Nam Cuong",
-    "is_active": false,
-    "waifu_ids": [],
-    "series_ids": [49,53,112,132,8,17,50,109,125,143]
-  },
-  {
-    "id": 6,
     "name": "Hashire Hashire",
     "type": "limited",
     "start_time": "2025-08-26 00:00:00",
@@ -76,18 +52,18 @@
     "series_ids": [138]
   },
   {
-    "id": 7,
+    "id": 5,
     "name": "Lazy af",
     "type": "rate-up",
     "start_time": "2025-08-26 00:00:00",
     "end_time": "2025-09-01 23:59:59",
     "description": "yes lazy af",
-    "is_active": true,
+    "is_active": false,
     "waifu_ids": [],
     "series_ids": [41,139,152,9,214,5,156,157]
   },
   {
-    "id": 8,
+    "id": 6,
     "name": "Premium Elite Banner",
     "type": "premium",
     "start_time": "2025-11-01 00:00:00",
@@ -97,6 +73,6 @@
     "cost": 100,
     "currency_type": "quartzs",
     "waifu_ids": [],
-    "series_ids": [1, 31, 74]
+    "series_ids": [237]
   }
 ]

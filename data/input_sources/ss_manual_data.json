@@ -1,0 +1,21 @@
+{
+  "_description": "Manual character data for Stella Sora processor. This file is optional and can contain additional characters or override wiki data.",
+  "_format": "Characters in this file will be merged with wiki data. Manual data takes precedence for characters with matching names.",
+  
+  "characters": [
+    {
+      "name": "Tyrant",
+      "birthday": "01/15", 
+      "profile_image_link": "https://static.wikitide.net/stellasorawiki/thumb/a/a3/Tyrant-female3.png/800px-Tyrant-female3.png",
+      "profile": "Become a loli yourself.",
+      "url": "manual_entry"
+    },
+    {
+      "name": "Tyrant Swimsuit",
+      "birthday": "01/15", 
+      "profile_image_link": "https://scontent.fhan19-1.fna.fbcdn.net/v/t39.30808-6/577122474_122196542672487642_8066269850473805259_n.jpg?_nc_cat=104&ccb=1-7&_nc_sid=127cfc&_nc_eui2=AeG7k7n5U0jQG72pdVVuQ92lFM87W1fv2qMUzztbV-_ao-g-yUHZ-qRTJPSKUiz59wG1VJQUzQbxN4tF8Xxw-vzT&_nc_ohc=3Le3buvE-K0Q7kNvwFieG4a&_nc_oc=Adk10cmdbuU2Uj3t87QY3ISjG4DtMGnnKXFHreW0Y0flCni7jKNqn1md9b0pSOwXsyw&_nc_zt=23&_nc_ht=scontent.fhan19-1.fna&_nc_gid=RpADwrCuc6Bjw54VWU7MMw&oh=00_Afh2PQOaTueIszsU3K-i7pObOyuRLVA1qLGOtPevCIpE-g&oe=691C7D54",
+      "profile": "Become a loli yourself, with swimsuit.",
+      "url": "manual_entry"
+    }
+  ]
+}

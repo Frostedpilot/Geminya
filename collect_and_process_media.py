@@ -24,6 +24,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 # Import processors
 from data.processors.base_processor import BaseProcessor
 from data.processors.anime_processor import AnimeProcessor
+from data.processors.manga_processor import MangaProcessor
+from data.processors.vndb_processor import VNDBProcessor
 
 # Setup logging
 logging.basicConfig(
@@ -74,10 +76,10 @@ class MediaCollectionOrchestrator:
         
         # Manually registered processors (for now)
         available_processors = [
-            AnimeProcessor,
-            # VisualNovelProcessor,  # Future
+            # AnimeProcessor,
+            # MangaProcessor,
+            # VNDBProcessor,
             # GameProcessor,         # Future
-            # MangaProcessor,        # Future
         ]
         
         for processor_class in available_processors:
@@ -103,8 +105,14 @@ class MediaCollectionOrchestrator:
         
         for processor_class in processor_classes:
             try:
-                # Create processor instance
-                processor = processor_class(self.config.get(processor_class.__name__.lower(), {}))
+                # Create processor instance based on processor type
+                if processor_class.__name__ == 'VNDBProcessor':
+                    # VNDB processor uses config file initialization
+                    processor = VNDBProcessor.from_config_file()
+                else:
+                    # Other processors use app config
+                    processor = processor_class(self.config.get(processor_class.__name__.lower(), {}))
+                
                 source_type = processor.get_source_type()
                 
                 # Check if processor is configured
@@ -141,6 +149,14 @@ class MediaCollectionOrchestrator:
             'stats': {},
             'errors': []
         }
+        
+        # Initialize processor (create sessions, etc.)
+        try:
+            await processor.__aenter__()
+        except Exception as init_error:
+            logger.error("Failed to initialize processor %s: %s", source_type, init_error)
+            result['errors'].append(f"Initialization failed: {init_error}")
+            return result
         
         try:
             logger.info("🚀 Starting processor: %s", source_type)
@@ -180,6 +196,13 @@ class MediaCollectionOrchestrator:
             result['errors'].append(error_msg)
             logger.error("❌ %s", error_msg)
             logger.debug("Processor error details:", exc_info=True)
+        
+        finally:
+            # Ensure proper cleanup of processor resources (close sessions, etc.)
+            try:
+                await processor.__aexit__(None, None, None)
+            except Exception as cleanup_error:
+                logger.warning("Error during processor cleanup: %s", cleanup_error)
             
         return result
 
@@ -374,10 +397,6 @@ class MediaCollectionOrchestrator:
             tasks = []
             
             for source_type, processor in self.processors.items():
-                # Handle async context manager for processors that need it
-                if hasattr(processor, '__aenter__'):
-                    await processor.__aenter__()
-                
                 task = self._run_processor(source_type, processor)
                 tasks.append(task)
             
@@ -401,10 +420,6 @@ class MediaCollectionOrchestrator:
                     }
                 else:
                     self.results[source_type] = result
-                
-                # Clean up async context managers
-                if hasattr(processor, '__aexit__'):
-                    await processor.__aexit__(None, None, None)
             
             # Step 3: Combine all data
             logger.info("🔗 Combining data from all sources...")

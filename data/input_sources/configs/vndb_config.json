@@ -1,0 +1,10 @@
+{
+  "vndb_series_ids": [
+    "v2153",
+    "v24",
+    "v97",
+    "v21905"
+  ],
+  "description": "Configuration for VNDB processor - add VNDB series IDs to crawl",
+  "usage": "Each ID should be a VNDB visual novel ID (e.g., 'v17' for Fate/stay night)"
+}

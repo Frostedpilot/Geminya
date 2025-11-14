@@ -17,6 +17,9 @@
 - **Couple-based ID management**: `(source_type, source_id)` → `unique_id`
 - **Continuous ID ranges**: No gaps, sequential assignment
 - **Backward compatibility**: Existing anime data preserved
+- **Async-first architecture**: All processors use async `pull_raw_data()` for API calls
+- **Character naming convention**: Non-anime characters include media type suffix (e.g., "Saber (Visual Novel)")
+- **Formal media type display**: Genre field contains formal display names ("Visual Novel", "Manga", etc.)
 
 ### **Key Requirements**
 1. Modular data collection system
@@ -24,6 +27,36 @@
 3. Unified pull+process workflow
 4. Complete backward compatibility
 5. Migration plan for existing database
+
+### **🔧 Key Implementation Updates**
+
+#### **1. Async-First Architecture**
+All processors now implement `async def pull_raw_data()` for better API handling:
+- **Base Processor**: `async def pull_raw_data()` and `async def pull_and_process()`
+- **Anime Processor**: Uses MAL OAuth + async HTTP calls
+- **Manga Processor**: Uses MAL OAuth + async Jikan API calls  
+- **VNDB Processor**: Uses async VNDB API calls with configuration
+- **Game Processors**: Each game uses async patterns for API/scraping
+
+#### **2. Character Naming Convention**
+Characters from non-anime sources MUST include media type suffix:
+```python
+# Correct naming patterns:
+"Mikasa Ackerman"           # Anime (no suffix)
+"Asuna Yuuki (Manga)"       # Manga version  
+"Saber (VN)"                # Visual Novel (short suffix)
+"Amber (GI)"                # Game-specific (short suffix)
+```
+
+#### **3. Formal Media Type Display**
+The `genre` field contains formal display names for UI:
+```python
+# Genre field values (formal display names):
+"Anime"           # for anime characters
+"Manga"           # for manga characters  
+"Visual Novel"    # for visual novel characters
+"Genshin Impact"  # for game characters (use game name)
+```
 
 ---
 
@@ -104,11 +137,11 @@ Root Directory:
 │   │   └── id_manager.py
 │   ├── processors/                       # NEW: Modular processors
 │   │   ├── __init__.py
-│   │   ├── base_processor.py
-│   │   ├── anime_processor.py
-│   │   ├── visual_novel_processor.py
-│   │   ├── game_processor.py
-│   │   └── manga_processor.py
+│   │   ├── base_processor.py             # Abstract base with async pull_raw_data()
+│   │   ├── anime_processor.py            # MAL anime (no config needed)
+│   │   ├── manga_processor.py            # MAL manga (no config needed)
+│   │   ├── vndb_processor.py             # VNDB visual novels (requires config)
+│   │   └── [game]_processor.py           # Each game has dedicated processor
 │   ├── utils/                           # NEW: Helper utilities
 │   │   ├── __init__.py
 │   │   ├── data_standardizer.py
@@ -213,6 +246,7 @@ class IDManager:
 # File: data/processors/base_processor.py
 from abc import ABC, abstractmethod
 from typing import List, Dict, Tuple, Optional
+import asyncio
 
 class BaseProcessor(ABC):
     """Abstract base class for all media processors"""
@@ -232,7 +266,7 @@ class BaseProcessor(ABC):
         pass
         
     @abstractmethod
-    def pull_raw_data(self) -> Tuple[List[Dict], List[Dict]]:
+    async def pull_raw_data(self) -> Tuple[List[Dict], List[Dict]]:
         """Pull raw data from source. Returns (series_list, characters_list)"""
         pass
     
@@ -246,14 +280,15 @@ class BaseProcessor(ABC):
         """Process and standardize character data"""  
         # Common processing logic (from character_edit.py)
         # Filter males, assign rarities, etc.
-        # Assign unique IDs using id_manager
+        # Add media type suffix to character names (except anime)
+        # Set formal genre display names
         
-    def pull_and_process(self) -> Tuple[List[Dict], List[Dict]]:
+    async def pull_and_process(self) -> Tuple[List[Dict], List[Dict]]:
         """Main entry point: pull and process data"""
         if not self.is_configured():
             return [], []
             
-        raw_series, raw_chars = self.pull_raw_data()
+        raw_series, raw_chars = await self.pull_raw_data()  # ASYNC CALL
         processed_series = self.process_series(raw_series)
         processed_chars = self.process_characters(raw_chars)
         
@@ -261,10 +296,12 @@ class BaseProcessor(ABC):
 
 # IMPLEMENTATION REQUIREMENTS:
 # - Extract common logic from existing character_edit.py
-# - Implement standardized data format
+# - Implement standardized data format with proper naming
+# - Add media type suffixes to non-anime character names
+# - Use formal display names in genre field
+# - Use async/await pattern for all API calls
 # - Use id_manager for all ID assignments
-# - Comprehensive logging
-# - Error handling and validation
+# - Comprehensive logging and error handling
 ```
 
 #### **Step 1.3: Create Data Standardizer**
@@ -299,15 +336,27 @@ class DataStandardizer:
         # {
         #     'source_type': str,
         #     'source_id': str,
-        #     'name': str,
+        #     'name': str,               # MUST include media suffix for non-anime
         #     'series': str,
         #     'series_source_id': str,
-        #     'genre': str,  # Will become media_type
+        #     'genre': str,              # FORMAL display name (e.g., "Visual Novel")
         #     'rarity': int,
         #     'image_url': str,
         #     'about': str,
         #     'favorites': int
         # }
+        
+        # NAMING CONVENTION REQUIREMENTS:
+        # - Anime characters: "Character Name" (no suffix)
+        # - Manga characters: "Character Name (Manga)" 
+        # - Visual Novel characters: "Character Name (VN)"
+        # - Game characters: "Character Name (ShortGameCode)" e.g. "(GI)", "(HSR)"
+        #
+        # GENRE FIELD REQUIREMENTS (formal display names):
+        # - "Anime" for anime characters
+        # - "Manga" for manga characters  
+        # - "Visual Novel" for VN characters
+        # - Specific game names for game characters
 
 # IMPLEMENTATION REQUIREMENTS:
 # - Handle missing fields gracefully
@@ -316,7 +365,37 @@ class DataStandardizer:
 # - Convert creator information to JSON format
 ```
 
-### **Phase 2: Anime Processor Migration**
+---
+
+## **🎯 Processor Configuration Strategies**
+
+### **Configuration-Free Processors (MAL-based)**
+- **Anime Processor**: Uses MAL OAuth credentials from app config, pulls user's anime list
+- **Manga Processor**: Uses MAL OAuth credentials from app config, pulls user's manga list
+- **Advantage**: No additional setup needed if MAL is configured
+- **Data Source**: User's personal MAL lists + Jikan API for details
+
+### **Configuration-Required Processors (API-based)**  
+- **VNDB Processor**: Requires `vndb_config.json` with specific VN IDs to process
+- **Config Format**:
+```json
+{
+  "vndb_series_ids": ["v17", "v11", "v24", "v4", "v36"],
+  "description": "VNDB series IDs to crawl"
+}
+```
+- **Advantage**: Precise control over what data to collect
+- **Data Source**: Public VNDB API
+
+### **Manual Data Processors (File-based)**
+- **Game Processors**: Each game gets its own processor for manual CSV files
+- **Examples**: `genshin_processor.py`, `honkai_processor.py`, `azur_lane_processor.py`
+- **Data Source**: Manual CSV files in `data/input_sources/manual_data/`
+- **Advantage**: Can handle any data format, no API dependencies
+
+---
+
+### **Phase 2: Processor Implementation**
 
 #### **Step 2.1: Create Anime Processor**
 ```python
@@ -781,5 +860,26 @@ python process_character_final.py
 # Step 5: Database upload (existing script)
 python upload_to_postgres.py
 ```
+
+---
+
+## **📋 Implementation Summary**
+
+### **✅ Completed Changes**
+1. **Async Architecture**: Updated all processors to use `async def pull_raw_data()` pattern
+2. **Character Naming**: Non-anime characters use short suffixes - "(Manga)", "(VN)", "(GI)", etc.
+3. **Formal Genre Display**: Genre field contains formal names ("Manga", "Visual Novel", etc.)
+
+### **🎯 Key Architectural Decisions**
+- **MAL Processors**: No configuration needed (anime, manga) - uses user's MAL lists
+- **VNDB Processor**: Requires configuration file with specific VN IDs to process
+- **Game Processors**: Each game gets dedicated processor for maximum flexibility
+- **Manual Data**: Supports CSV file processing for any custom data sources
+
+### **🔄 Migration Path**
+1. All existing anime data preserved with backward compatibility
+2. New processors add multi-media support without breaking existing workflows
+3. Character naming conventions ensure no conflicts between media types
+4. Database schema supports new media types through existing `media_type` field
 
 This comprehensive plan provides everything needed to implement the multi-media integration system while maintaining full backward compatibility and data integrity.

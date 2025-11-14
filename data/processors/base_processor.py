@@ -66,7 +66,7 @@ class BaseProcessor(ABC):
         pass
         
     @abstractmethod
-    def pull_raw_data(self) -> Tuple[List[Dict], List[Dict]]:
+    async def pull_raw_data(self) -> Tuple[List[Dict], List[Dict]]:
         """Pull raw data from source.
         
         Returns:
@@ -218,10 +218,12 @@ class BaseProcessor(ABC):
         return processed_series
         
     def process_characters(self, raw_characters: List[Dict]) -> List[Dict]:
-        """Process and standardize character data with filtering and ID assignment.
+        """Process and standardize character data with ID assignment.
         
         This method uses the abstract standardize_character_data() method that each
-        subclass must implement, combined with gender filtering and rarity assignment.
+        subclass must implement, combined with rarity assignment.
+        
+        Note: Gender filtering is now only applied in AnimeProcessor, not in base class.
         
         Args:
             raw_characters: List of raw character dictionaries from source
@@ -234,25 +236,11 @@ class BaseProcessor(ABC):
         
         logger.info("Processing %d raw characters from %s", len(raw_characters), source_type)
         
-        # Step 1: Gender filtering (extracted from character_edit.py)
-        filtered_characters = []
-        male_count = 0
-        
-        for character in raw_characters:
-            character_name = character.get("name", "")
-            if self.is_female_character(character_name):
-                filtered_characters.append(character)
-            else:
-                male_count += 1
-                logger.debug("Filtered out male character: %s", character_name)
-        
-        logger.info("🚺 Gender filtering: %d female/unknown characters kept, %d male characters removed", 
-                   len(filtered_characters), male_count)
-        
-        # Step 2: Process each filtered character
-        for i, character in enumerate(filtered_characters, 1):
+        # Process each character (no gender filtering in base class)
+        characters_to_process = raw_characters
+        for i, character in enumerate(characters_to_process, 1):
             character_name = character.get("name", "Unknown")
-            logger.debug("Processing character %d/%d: %s", i, len(filtered_characters), character_name)
+            logger.debug("Processing character %d/%d: %s", i, len(characters_to_process), character_name)
             
             try:
                 # Standardize using subclass implementation
@@ -275,12 +263,12 @@ class BaseProcessor(ABC):
                 logger.error("Error processing character %s: %s", character_name, e)
                 continue
         
-        logger.info("Successfully processed %d/%d characters", len(processed_characters), len(filtered_characters))
+        logger.info("Successfully processed %d/%d characters", len(processed_characters), len(characters_to_process))
         return processed_characters
 
     # ===== MAIN PROCESSING WORKFLOW =====
     
-    def pull_and_process(self) -> Tuple[List[Dict], List[Dict]]:
+    async def pull_and_process(self) -> Tuple[List[Dict], List[Dict]]:
         """Main entry point: pull raw data and process it.
         
         Returns:
@@ -293,12 +281,12 @@ class BaseProcessor(ABC):
         try:
             logger.info("🚀 Starting %s data collection and processing...", self.get_source_type().upper())
             
-            # Pull raw data from source
-            raw_series, raw_chars = self.pull_raw_data()
+            # Pull raw data from source (async)
+            raw_series, raw_chars = await self.pull_raw_data()
             logger.info("Pulled %d series and %d characters from %s", 
                        len(raw_series), len(raw_chars), self.get_source_type())
             
-            # Process the data
+            # Process the data (sync)
             processed_series = self.process_series(raw_series)
             processed_chars = self.process_characters(raw_chars)
             
@@ -369,6 +357,20 @@ class BaseProcessor(ABC):
             'id_manager_status': 'initialized'
         }
 
+    # ===== ASYNC CONTEXT MANAGER (for proper session cleanup) =====
+    
+    async def __aenter__(self):
+        """Async context manager entry."""
+        return self
+        
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit.
+        
+        Base implementation does nothing - subclasses should override
+        to implement proper cleanup (e.g., closing HTTP sessions).
+        """
+        pass
+
 
 # ===== TESTING =====
 
@@ -415,7 +417,7 @@ class TestProcessor(BaseProcessor):
             'favorites': raw_character.get('favorites', 0)
         }
     
-    def pull_raw_data(self) -> Tuple[List[Dict], List[Dict]]:
+    async def pull_raw_data(self) -> Tuple[List[Dict], List[Dict]]:
         # Test data mimicking MAL format with proper source IDs
         test_series = [{
             "mal_id": 999,
@@ -444,10 +446,8 @@ class TestProcessor(BaseProcessor):
         return test_series, test_characters
 
 
-if __name__ == "__main__":
-    # Test the base processor
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
-    
+async def test_base_processor():
+    """Test the base processor functionality."""
     print("Testing Base Processor...")
     
     # Create test processor
@@ -458,7 +458,7 @@ if __name__ == "__main__":
     print(f"Processor stats: {stats}")
     
     # Test processing
-    characters, series = processor.pull_and_process()
+    characters, series = await processor.pull_and_process()
     print(f"Processed: {len(characters)} characters, {len(series)} series")
     
     if characters:
@@ -475,3 +475,11 @@ if __name__ == "__main__":
     processor.save_debug_output(characters, series)
     
     print("✅ Base Processor test completed!")
+
+
+if __name__ == "__main__":
+    # Test the base processor
+    import asyncio
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+    
+    asyncio.run(test_base_processor())
