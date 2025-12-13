@@ -24,6 +24,7 @@ class DataManager:
         
         self._expedition_templates = []
         self._encounters = []
+        self._affinity_pools = None
         self._loaded = False
     
     def load_all_data(self) -> bool:
@@ -52,6 +53,15 @@ class DataManager:
             print("Failed to load encounters")
             success = False
         
+        # Load affinity pools
+        try:
+            from src.wanderer_game.utils.equipment_utils import load_affinity_pools
+            self._affinity_pools = load_affinity_pools()
+            print(f"Loaded affinity pools: {len(self._affinity_pools)} categories")
+        except Exception as e:
+            print(f"Failed to load affinity pools: {e}")
+            success = False
+        
         self._loaded = success
         
         if success:
@@ -59,6 +69,7 @@ class DataManager:
             print(f"  - {self.character_registry.get_character_count()} characters")
             print(f"  - {len(self._expedition_templates)} expedition templates")
             print(f"  - {len(self._encounters)} encounters")
+            print(f"  - {len(self._affinity_pools)} affinity categories")
         
         return success
     
@@ -66,6 +77,10 @@ class DataManager:
         """Check if all data has been loaded"""
         return self._loaded
     
+    def get_character(self, waifu_id: int):
+        """Get a character by their waifu_id"""
+        return self.character_registry.get_character(waifu_id)
+
     def get_character_registry(self) -> CharacterRegistry:
         """Get the character registry"""
         return self.character_registry
@@ -120,3 +135,11 @@ class DataManager:
     def get_loot_generator(self) -> LootGenerator:
         """Get the loot generator"""
         return self.loot_generator
+    
+    def get_affinity_pools(self):
+        """Get the affinity pools (series_id, archetype, elemental, genre)"""
+        return self._affinity_pools if self._affinity_pools else {}
+    
+    def get_series_name(self, series_id: int):
+        """Get the name of a series by its ID"""
+        return self.character_registry.get_series_name(series_id)

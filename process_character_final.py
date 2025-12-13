@@ -145,10 +145,8 @@ class CharacterFinalProcessor:
 
         # Remove rows with missing essential data
         df_clean = df_clean.dropna(subset=['source_id', 'name', 'rarity'])
-        # Ensure source_id is converted properly
-        df_clean['source_id'] = pd.to_numeric(df_clean['source_id'], errors='coerce')
-        df_clean = df_clean.dropna(subset=['source_id'])
-        df_clean['source_id'] = df_clean['source_id'].astype(int)
+        # Keep source_id as string - it can be integers OR strings (vndb: "c1340", ss: "ss_tyrant")
+        df_clean['source_id'] = df_clean['source_id'].astype(str)
         # Ensure rarity is integer and within valid range (1-3 for new system)
         df_clean['rarity'] = pd.to_numeric(df_clean['rarity'], errors='coerce')
         df_clean = df_clean.dropna(subset=['rarity'])

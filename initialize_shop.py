@@ -150,16 +150,20 @@ async def initialize_shop():
     pool = await asyncpg.create_pool(**pg_config)
     logger.info("Initializing shop with default items...")
     async with pool.acquire() as conn:
-        # Remove all existing items from shop
-        existing_count = await conn.fetchval("SELECT COUNT(*) FROM shop_items")
-        if existing_count > 0:
-            logger.info(f"Removing {existing_count} existing shop items...")
-            await conn.execute("DELETE FROM shop_items")
-            await conn.execute("ALTER SEQUENCE shop_items_id_seq RESTART WITH 1")
-            logger.info("All existing shop items removed.")
-        # Add all default items
+        # Get existing item names
+        existing_items = await conn.fetch("SELECT name FROM shop_items")
+        existing_names = {row['name'] for row in existing_items}
+        logger.info(f"Found {len(existing_names)} existing shop items.")
+        
+        # Add only new items
         added_count = 0
+        skipped_count = 0
         for item in DEFAULT_SHOP_ITEMS:
+            if item['name'] in existing_names:
+                logger.info(f"Skipped (already exists): {item['name']}")
+                skipped_count += 1
+                continue
+            
             try:
                 await conn.execute(
                     """
@@ -180,7 +184,7 @@ async def initialize_shop():
                 logger.info(f"Added item: {item['name']}")
             except Exception as e:
                 logger.error(f"Error adding item {item['name']}: {e}")
-        logger.info(f"Shop initialization complete! Added {added_count} items.")
+        logger.info(f"Shop initialization complete! Added {added_count} new items, skipped {skipped_count} existing items.")
     await pool.close()
 
 

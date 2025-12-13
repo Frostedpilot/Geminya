@@ -750,8 +750,13 @@ class WaifuService:
             one_star_indices = [i for i, (_, rarity) in enumerate(waifu_rarity_pairs) if rarity == 1]
             if one_star_indices:
                 idx_to_upgrade = random.choice(one_star_indices)
+                # Prefer banner-specific 2★ waifus when a banner is used (limited/premium/etc.)
                 if banner_id is not None:
-                    two_star_waifus = waifus_by_rarity[2]
+                    # Restrict to waifus that are both 2★ and present in the banner pool
+                    two_star_waifus = [w for w in self._waifu_list if w.get("rarity") == 2 and w["waifu_id"] in waifu_ids]
+                    # If none are available in the banner, fallback to the global 2★ pool
+                    if not two_star_waifus:
+                        two_star_waifus = waifus_by_rarity[2]
                 else:
                     two_star_waifus = waifus_by_rarity[2]
                 if two_star_waifus:

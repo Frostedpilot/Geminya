@@ -28,7 +28,7 @@ class CharacterRegistry:
         Load characters from CSV file, using series_final.csv for anime_genres.
         """
         file_path = self.data_directory / filename
-        anime_file_path = self.data_directory / "anime_final.csv"
+        anime_file_path = self.data_directory / "final/series_final.csv"
         anime_genres_map = {}
         # Build anime_genres_map: {series_id: [genres]}
         try:
@@ -77,6 +77,13 @@ class CharacterRegistry:
     def get_characters_by_series(self, series_id: int) -> List[Character]:
         """Get all characters from a specific series"""
         return self.characters_by_series.get(series_id, [])
+    
+    def get_series_name(self, series_id: int) -> Optional[str]:
+        """Get the series name for a given series_id"""
+        characters = self.get_characters_by_series(series_id)
+        if characters:
+            return characters[0].series
+        return None
     
     def get_all_characters(self) -> List[Character]:
         """Get all loaded characters"""

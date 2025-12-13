@@ -657,7 +657,6 @@ class ShopCog(BaseCommand):
 
             # Original single-item logic continues here...
             if num_item == 1 and result['success']:
-                await self.db.use_inventory_item(user_id, item_to_use['id'], 1)
                 # Handle multi-result (10x summon) case
                 if result.get('multi_result'):
                     # --- Full multi-summon style display ---

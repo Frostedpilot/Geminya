@@ -796,6 +796,80 @@ class DatabaseService:
             await self.connection_pool.close()
             self.logger.info("PostgreSQL database connections closed")
 
+    # === WORLD THREAT METHODS ===
+
+    async def get_world_threat_boss(self) -> Optional[Dict[str, Any]]:
+        """Get the current world threat boss."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM world_threat_boss WHERE id = 1")
+            return dict(row) if row else None
+
+    async def get_world_threat_player_status(self, discord_id: str) -> Optional[Dict[str, Any]]:
+        """Get world threat status for a player."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self.connection_pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT * FROM world_threat_player_status WHERE discord_id = $1", discord_id)
+            return dict(row) if row else None
+
+    async def create_world_threat_player_status(self, discord_id: str, cumulative_points: int, 
+                                              last_action_timestamp: Optional[datetime], research_stacks: int,
+                                              claimed_personal_checkpoints: str, claimed_server_checkpoints: str):
+        """Create a new world threat player status record."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self.connection_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO world_threat_player_status (
+                    discord_id, cumulative_points, last_action_timestamp, research_stacks, 
+                    claimed_personal_checkpoints, claimed_server_checkpoints
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+                """,
+                discord_id, cumulative_points, last_action_timestamp, research_stacks,
+                claimed_personal_checkpoints, claimed_server_checkpoints
+            )
+
+    async def update_world_threat_boss(self, boss_name: str, dominant_stats: str, cursed_stat: str, 
+                                     buffs: str, curses: str, buff_cap: int, curse_cap: int, 
+                                     server_total_points: int, total_research_actions: int, 
+                                     adaptation_level: int):
+        """Update the world threat boss record."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self.connection_pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE world_threat_boss SET 
+                    boss_name = $1, dominant_stats = $2, cursed_stat = $3, buffs = $4, curses = $5, 
+                    buff_cap = $6, curse_cap = $7, server_total_points = $8, total_research_actions = $9, 
+                    adaptation_level = $10
+                WHERE id = 1
+                """,
+                boss_name, dominant_stats, cursed_stat, buffs, curses, 
+                buff_cap, curse_cap, server_total_points, total_research_actions, adaptation_level
+            )
+
+    async def update_world_threat_player_status(self, discord_id: str, cumulative_points: int, 
+                                              last_action_timestamp: Optional[datetime], research_stacks: int,
+                                              claimed_personal_checkpoints: str, claimed_server_checkpoints: str):
+        """Update world threat player status."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self.connection_pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE world_threat_player_status SET 
+                    cumulative_points = $1, last_action_timestamp = $2, research_stacks = $3, 
+                    claimed_personal_checkpoints = $4, claimed_server_checkpoints = $5
+                WHERE discord_id = $6
+                """,
+                cumulative_points, last_action_timestamp, research_stacks,
+                claimed_personal_checkpoints, claimed_server_checkpoints, discord_id
+            )
+
 
     async def _create_tables_postgres(self, conn):
         # Equipment system tables
@@ -866,6 +940,34 @@ class DatabaseService:
             """
         )
 
+        # World Threat Boss Table
+        await conn.execute('''
+            CREATE TABLE IF NOT EXISTS world_threat_boss (
+                id INT PRIMARY KEY DEFAULT 1,
+                boss_name TEXT NOT NULL,
+                dominant_stats TEXT NOT NULL,
+                cursed_stat TEXT NOT NULL,
+                buffs TEXT NOT NULL,
+                curses TEXT NOT NULL,
+                buff_cap INT NOT NULL DEFAULT 3,
+                curse_cap INT NOT NULL DEFAULT 3,
+                server_total_points BIGINT NOT NULL DEFAULT 0,
+                total_research_actions INT NOT NULL DEFAULT 0,
+                adaptation_level INT NOT NULL DEFAULT 0
+            );
+        ''')
+
+        # World Threat Player Status Table
+        await conn.execute('''
+            CREATE TABLE IF NOT EXISTS world_threat_player_status (
+                discord_id TEXT PRIMARY KEY,
+                cumulative_points BIGINT NOT NULL DEFAULT 0,
+                last_action_timestamp TIMESTAMPTZ,
+                research_stacks INT NOT NULL DEFAULT 0,
+                claimed_personal_checkpoints TEXT DEFAULT '',
+                claimed_server_checkpoints TEXT DEFAULT ''
+            );
+        ''')
         # Waifus table (waifu_id is now the primary key, series_id is a foreign key, series is denormalized string)
         await conn.execute(
             """
@@ -2269,7 +2371,7 @@ class DatabaseService:
             return waifus
 
     async def get_user_waifus_minimal(self, discord_id: str) -> List[Dict[str, Any]]:
-        """Get user's waifus with minimal data (no joins) - optimized for expeditions. Now includes is_awakened."""
+        """Get user's waifus with minimal data - optimized for expeditions. Now includes is_awakened and rarity."""
         if not self.connection_pool:
             raise RuntimeError("Database connection pool is not initialized. Call 'await initialize()' first.")
         
@@ -2281,10 +2383,11 @@ class DatabaseService:
             
             rows = await conn.fetch(
                 """
-                SELECT id as user_waifu_id, waifu_id, current_star_level, bond_level, is_awakened
-                FROM user_waifus
-                WHERE user_id = $1
-                ORDER BY waifu_id ASC
+                SELECT uw.id as user_waifu_id, uw.waifu_id, uw.current_star_level, uw.bond_level, uw.is_awakened, w.rarity
+                FROM user_waifus uw
+                JOIN waifus w ON uw.waifu_id = w.waifu_id
+                WHERE uw.user_id = $1
+                ORDER BY uw.waifu_id ASC
                 """,
                 user_id
             )

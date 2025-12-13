@@ -16,6 +16,7 @@ from services.mcp import MCPClientManager
 from services.database import DatabaseService
 from services.waifu_service import WaifuService
 from services.expedition_service import ExpeditionService
+from services.world_threat_service import WorldThreatService
 from services.command_queue import CommandQueueService
 from services.spotify_service import SpotifyService
 from services.music_service import MusicService
@@ -67,6 +68,7 @@ class ServiceContainer:
         self.database = DatabaseService(config)
         self.waifu_service = WaifuService(self.database)
         self.expedition_service = ExpeditionService(self.database)
+        self.world_threat_service = WorldThreatService(self.database)
         self.command_queue = CommandQueueService()
 
         # Initialize music services
