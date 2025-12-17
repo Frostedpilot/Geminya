@@ -208,12 +208,24 @@ class WaifuSummonCog(BaseCommand):
     )
     @discord.app_commands.describe(
         user="(Optional) View another user's collection",
-        series_id="(Optional) Only show waifus from this series ID"
+        series_id="(Optional) Only show waifus from this series ID",
+        base_star_level="(Optional) Filter by base star level (1-3)"
     )
-    async def nwnl_collection_list(self, ctx, user: Optional[discord.Member] = None, series_id: Optional[int] = None):
-        """Display the user's waifu collection as a paginated list with navigation buttons. Optionally filter by series_id."""
+    async def nwnl_collection_list(self, ctx, user: Optional[discord.Member] = None, series_id: Optional[int] = None, base_star_level: Optional[int] = None):
+        """Display the user's waifu collection as a paginated list with navigation buttons. Optionally filter by series_id and base_star_level."""
         await ctx.defer()
         target_user = user if user is not None else ctx.author
+        
+        # Validate base_star_level parameter
+        if base_star_level is not None and (base_star_level < 1 or base_star_level > 3):
+            embed = discord.Embed(
+                title="❌ Invalid Star Level",
+                description="Base star level must be between 1 and 3.",
+                color=0xFF6B6B,
+            )
+            await ctx.send(embed=embed)
+            return
+        
         try:
             # Get user's collection with star and shard info
             collection = await self.services.waifu_service.get_user_collection_with_stars(str(target_user.id))
@@ -230,16 +242,21 @@ class WaifuSummonCog(BaseCommand):
             filtered_collection = collection
             if series_id is not None:
                 filtered_collection = [w for w in collection if w.get("series_id") == series_id]
+            
+            # Filter by base_star_level (rarity) if provided
+            if base_star_level is not None:
+                filtered_collection = [w for w in filtered_collection if w.get("rarity") == base_star_level]
             # Sort by star level, then name
             sorted_collection = sorted(filtered_collection, key=lambda w: (-w.get("current_star_level", w["rarity"]), -w["character_shards"], w["name"]))
 
             class CollectionPaginator(discord.ui.View):
-                def __init__(self, ctx, waifus, user, series_id):
+                def __init__(self, ctx, waifus, user, series_id, base_star_level):
                     super().__init__(timeout=180)
                     self.ctx = ctx
                     self.waifus = waifus
                     self.user = user
                     self.series_id = series_id
+                    self.base_star_level = base_star_level
                     self.page_idx = 0
                     self.page_size = 10
                     self.page_count = max(1, (len(waifus) + self.page_size - 1) // self.page_size)
@@ -251,6 +268,8 @@ class WaifuSummonCog(BaseCommand):
                     title = f"🏫 {self.user.display_name}'s Waifu Collection"
                     if self.series_id is not None:
                         title += f" (Series ID: {self.series_id})"
+                    if self.base_star_level is not None:
+                        title += f" (Base ⭐: {self.base_star_level})"
                     embed = discord.Embed(
                         title=title,
                         description=f"Page {self.page_idx+1}/{self.page_count} • Total: {len(self.waifus)} waifus",
@@ -287,7 +306,7 @@ class WaifuSummonCog(BaseCommand):
                     self.page_idx = (self.page_idx + 1) % self.page_count
                     await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
-            view = CollectionPaginator(ctx, sorted_collection, target_user, series_id)
+            view = CollectionPaginator(ctx, sorted_collection, target_user, series_id, base_star_level)
             await ctx.send(embed=view.get_embed(), view=view)
         except Exception as e:
             self.logger.error(f"Error displaying collection list: {e}")
