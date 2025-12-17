@@ -744,6 +744,15 @@ class ExpeditionService:
             else:
                 outcome_string = "failure"
 
+            # Store participant data for repeat functionality (before releasing participants)
+            participant_data_for_repeat = [
+                {
+                    "user_waifu_id": p["user_waifu_id"],
+                    "star_level": p["star_level_used"]
+                }
+                for p in expedition["participants"]
+            ]
+            
             final_results = {
                 "expedition_success": expedition_success,
                 "encounters_completed": len(expedition_result.encounter_results),
@@ -759,7 +768,8 @@ class ExpeditionService:
                     "total_items": len(expedition_result.loot_pool.items) if expedition_result.loot_pool.items else 0,
                     "total_value": expedition_result.loot_pool.get_total_value() if expedition_result.loot_pool else 0
                 },
-                "daphine_rewarded": daphine_rewarded
+                "daphine_rewarded": daphine_rewarded,
+                "participants": participant_data_for_repeat  # Store for repeat functionality
             }
             
             # Step 7: Update expedition status in database and mark rewards as claimed
@@ -1156,3 +1166,69 @@ class ExpeditionService:
         except Exception as e:
             self.logger.error(f"[MOCK_EXPEDITION] Error simulating expedition: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
+    
+    def check_expedition_available(self, expedition_id: str) -> bool:
+        """Check if an expedition template is still in the allowed list."""
+        import os
+        
+        allowed_path = os.path.join('data', 'expeditions', 'selected_expedition_ids.json')
+        try:
+            with open(allowed_path, 'r', encoding='utf-8') as f:
+                allowed_ids = json.load(f)
+                return expedition_id in allowed_ids
+        except Exception:
+            return False  # If file doesn't exist, consider unavailable
+    
+    async def get_expedition_participants_for_repeat(self, expedition_db_id: int) -> List[Dict]:
+        """Retrieve participant data for repeating a completed expedition from final_results."""
+        if not self.db.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        
+        async with self.db.connection_pool.acquire() as conn:
+            # Get the expedition's final_results which contains participant data
+            row = await conn.fetchrow(
+                """
+                SELECT final_results
+                FROM user_expeditions
+                WHERE id = $1
+                """,
+                expedition_db_id
+            )
+            
+            if not row or not row['final_results']:
+                return []
+            
+            # Parse final_results JSON
+            final_results = row['final_results']
+            if isinstance(final_results, str):
+                import json
+                final_results = json.loads(final_results)
+            
+            # Extract participants from final_results
+            participants = final_results.get('participants', [])
+            
+            return participants
+    
+    async def check_equipment_availability(self, discord_id: str, equipment_id: Optional[int]) -> Dict:
+        """Check if equipment is still available and not in use."""
+        if equipment_id is None:
+            return {"available": True}
+        
+        # Check if equipment still exists and belongs to the user
+        equipment = await self.db.get_equipment_by_id(equipment_id)
+        if not equipment or equipment.get('discord_id') != discord_id:
+            return {
+                "available": False,
+                "reason": "Equipment no longer exists in your inventory"
+            }
+        
+        # Check if equipment is currently equipped on an active expedition
+        active_expeditions = await self.get_user_expeditions(discord_id, status='in_progress')
+        for exp in active_expeditions:
+            if exp.get('equipped_equipment_id') == equipment_id:
+                return {
+                    "available": False,
+                    "reason": "Equipment is currently equipped on another expedition"
+                }
+        
+        return {"available": True}

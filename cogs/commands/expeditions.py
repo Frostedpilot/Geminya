@@ -1939,10 +1939,11 @@ class ExpeditionResultsView(discord.ui.View):
             self.item_lookup = {}
     """View for displaying detailed expedition results with pagination."""
     
-    def __init__(self, completed_expeditions: List[Dict], user_id: int):
+    def __init__(self, completed_expeditions: List[Dict], user_id: int, expedition_service=None):
         super().__init__(timeout=300.0)
         self.completed_expeditions = completed_expeditions
         self.user_id = user_id
+        self.expedition_service = expedition_service
         self.current_expedition_idx = 0
         self.current_page_type = "summary"  # "summary", "encounters", "rewards"
         self.encounter_page = 0
@@ -1998,6 +1999,16 @@ class ExpeditionResultsView(discord.ui.View):
         )
         rewards_button.callback = self.show_rewards
         self.add_item(rewards_button)
+        
+        # Repeat expedition button (only show if expedition_service is available)
+        if self.expedition_service:
+            repeat_button = discord.ui.Button(
+                label="🔄 Repeat Expedition",
+                style=discord.ButtonStyle.success,
+                row=2
+            )
+            repeat_button.callback = self.repeat_expedition
+            self.add_item(repeat_button)
         
         # Encounter pagination (only show when on encounters page)
         if self.current_page_type == "encounters":
@@ -2584,6 +2595,192 @@ class ExpeditionResultsView(discord.ui.View):
         self._setup_buttons()
         embed = self.get_current_embed()
         await interaction.response.edit_message(embed=embed, view=self)
+    
+    async def repeat_expedition(self, interaction: discord.Interaction):
+        """Repeat ALL expeditions in the completed batch with their original teams and equipment."""
+        await interaction.response.defer()
+        
+        try:
+            discord_id = str(interaction.user.id)
+            
+            successful_starts = []
+            failed_starts = []
+            
+            # Process each completed expedition
+            for expedition in self.completed_expeditions:
+                try:
+                    # Extract expedition template ID
+                    expedition_data = expedition.get('expedition_data', {})
+                    template_data = expedition_data.get('template_data', {})
+                    expedition_id = template_data.get('expedition_id')
+                    expedition_name = expedition.get('expedition_name', 'Unknown')
+                    
+                    if not expedition_id:
+                        failed_starts.append({
+                            'name': expedition_name,
+                            'reason': 'Could not find expedition template ID'
+                        })
+                        continue
+                    
+                    # Check if expedition is still available
+                    if not self.expedition_service.check_expedition_available(expedition_id):
+                        failed_starts.append({
+                            'name': expedition_name,
+                            'reason': 'No longer in active expedition list'
+                        })
+                        continue
+                    
+                    # Get original participants
+                    original_exp_id = expedition.get('id')
+                    participants = await self.expedition_service.get_expedition_participants_for_repeat(original_exp_id)
+                    
+                    if not participants:
+                        failed_starts.append({
+                            'name': expedition_name,
+                            'reason': 'Could not retrieve team data'
+                        })
+                        continue
+                    
+                    # Check for character conflicts
+                    participant_ids = [p["user_waifu_id"] for p in participants]
+                    conflicts = await self.expedition_service.db.check_expedition_conflicts(discord_id, participant_ids)
+                    
+                    if conflicts:
+                        failed_starts.append({
+                            'name': expedition_name,
+                            'reason': f'Characters unavailable (IDs: {", ".join(map(str, conflicts))})'
+                        })
+                        continue
+                    
+                    # Check equipment availability
+                    equipped_equipment_id = expedition.get('equipped_equipment_id')
+                    if equipped_equipment_id:
+                        equipment_check = await self.expedition_service.check_equipment_availability(discord_id, equipped_equipment_id)
+                        if not equipment_check.get('available'):
+                            failed_starts.append({
+                                'name': expedition_name,
+                                'reason': equipment_check.get('reason', 'Equipment unavailable')
+                            })
+                            continue
+                    
+                    # Get awakened count
+                    awakened_count = expedition.get('awakened_count', 0)
+                    
+                    # Start the expedition
+                    result = await self.expedition_service.start_expedition(
+                        discord_id, 
+                        expedition_id, 
+                        participants, 
+                        equipped_equipment_id, 
+                        awakened_count
+                    )
+                    
+                    if result.get('success'):
+                        # Get completion time for this expedition
+                        actual_expedition_id = result.get('expedition_id')
+                        try:
+                            created_expedition = await self.expedition_service.db.get_expedition_with_participants(actual_expedition_id)
+                            if created_expedition:
+                                actual_start_time = created_expedition.get('started_at')
+                                duration_hours = result.get('duration_hours', 4)
+                                
+                                if actual_start_time:
+                                    if actual_start_time.tzinfo is None:
+                                        actual_start_time = actual_start_time.replace(tzinfo=timezone.utc)
+                                    completion_time = actual_start_time + timedelta(hours=duration_hours)
+                                else:
+                                    completion_time = datetime.now(timezone.utc) + timedelta(hours=duration_hours)
+                            else:
+                                completion_time = datetime.now(timezone.utc) + timedelta(hours=result.get('duration_hours', 4))
+                        except Exception:
+                            completion_time = datetime.now(timezone.utc) + timedelta(hours=result.get('duration_hours', 4))
+                        
+                        successful_starts.append({
+                            'name': expedition_name,
+                            'expedition_id': actual_expedition_id,
+                            'duration_hours': result.get('duration_hours', 4),
+                            'completion_time': completion_time,
+                            'estimated_encounters': result.get('estimated_encounters', '?')
+                        })
+                    else:
+                        failed_starts.append({
+                            'name': expedition_name,
+                            'reason': result.get('error', 'Unknown error')
+                        })
+                
+                except Exception as e:
+                    failed_starts.append({
+                        'name': expedition.get('expedition_name', 'Unknown'),
+                        'reason': f'Error: {str(e)}'
+                    })
+            
+            # Create summary embed
+            if successful_starts:
+                embed = discord.Embed(
+                    title="🔄 Expeditions Repeated!",
+                    description=f"Successfully started **{len(successful_starts)}** expedition(s)!",
+                    color=0x2ECC71
+                )
+                
+                # Add each successful expedition as a field
+                for exp in successful_starts:
+                    value = (
+                        f"⏱️ Duration: {exp['duration_hours']} hours\n"
+                        f"🏁 Completes: <t:{int(exp['completion_time'].timestamp())}:R>\n"
+                        f"🎯 ID: `{exp['expedition_id']}`"
+                    )
+                    embed.add_field(
+                        name=f"🚀 {exp['name']}",
+                        value=value,
+                        inline=False
+                    )
+                
+                if failed_starts:
+                    failed_text = "\n".join([f"❌ **{f['name']}**: {f['reason']}" for f in failed_starts])
+                    embed.add_field(
+                        name=f"⚠️ Failed to Start ({len(failed_starts)})",
+                        value=failed_text[:1024],  # Discord field limit
+                        inline=False
+                    )
+                
+                embed.add_field(
+                    name="💡 Tip",
+                    value="Use `/nwnl_expeditions_status` to check your expedition progress!",
+                    inline=False
+                )
+            else:
+                # All failed
+                embed = discord.Embed(
+                    title="❌ Failed to Repeat Expeditions",
+                    description=f"Could not start any of the {len(failed_starts)} expedition(s).",
+                    color=0xFF0000
+                )
+                
+                failed_text = "\n".join([f"❌ **{f['name']}**: {f['reason']}" for f in failed_starts])
+                embed.add_field(
+                    name="Errors",
+                    value=failed_text[:1024],  # Discord field limit
+                    inline=False
+                )
+            
+            # Disable all buttons in the view
+            for item in self.children:
+                if isinstance(item, discord.ui.Button):
+                    item.disabled = True
+            
+            # Update the original message with disabled buttons
+            await interaction.edit_original_response(view=self)
+            
+            # Send the result embed as a follow-up
+            await interaction.followup.send(embed=embed)
+            
+        except Exception as e:
+            embed = discord.Embed(
+                title="❌ Error",
+                description=f"An error occurred while trying to repeat expeditions: {str(e)}",
+                color=0xFF0000
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 # --- MOCK TEST ONLY: Consistent summary rendering for mock test results ---
@@ -4097,7 +4294,7 @@ class ExpeditionsCog(BaseCommand):
                 return
             
             # Create detailed expedition results view with pagination
-            view = ExpeditionResultsView(completed_expeditions, interaction.user.id)
+            view = ExpeditionResultsView(completed_expeditions, interaction.user.id, self.expedition_service)
             await view.setup_item_lookup(self.expedition_service)
             embed = view.get_current_embed()
             await interaction.followup.send(embed=embed, view=view)
