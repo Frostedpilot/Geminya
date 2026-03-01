@@ -42,8 +42,8 @@ export default function Sidebar() {
             <Link
                 to="/"
                 className={`w-full h-12 rounded-xl flex items-center gap-3 px-3 mb-8 transition-all ${location.pathname === '/'
-                        ? 'bg-gradient-to-br from-anime-primary to-anime-secondary shadow-lg'
-                        : 'hover:bg-white/10'
+                    ? 'bg-gradient-to-br from-anime-primary to-anime-secondary shadow-lg'
+                    : 'hover:bg-white/10'
                     }`}
             >
                 <span className="text-2xl">🎮</span>
@@ -57,8 +57,8 @@ export default function Sidebar() {
                         key={game.id}
                         to={game.path}
                         className={`w-full h-12 rounded-xl flex items-center gap-3 px-3 transition-all ${location.pathname === game.path
-                                ? 'bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg'
-                                : 'hover:bg-white/10'
+                            ? 'bg-gradient-to-br from-purple-500 to-pink-500 shadow-lg'
+                            : 'hover:bg-white/10'
                             }`}
                     >
                         <span className="text-2xl">{game.emoji}</span>
@@ -70,10 +70,20 @@ export default function Sidebar() {
             {/* Discord User (if available) */}
             {window.discordUser && (
                 <div className="w-full h-12 rounded-full bg-discord-blurple flex items-center gap-2 px-3 border-2 border-white/20">
-                    <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold flex-shrink-0">
-                        {window.discordUser.username?.[0]?.toUpperCase() || '?'}
-                    </div>
-                    <span className="text-xs font-medium truncate">{window.discordUser.username}</span>
+                    {window.discordUser.avatar ? (
+                        <img
+                            src={window.discordUser.avatar}
+                            alt={window.discordUser.username}
+                            className="w-8 h-8 rounded-full flex-shrink-0 object-cover"
+                        />
+                    ) : (
+                        <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold flex-shrink-0">
+                            {window.discordUser.username?.[0]?.toUpperCase() || '?'}
+                        </div>
+                    )}
+                    <span className="text-xs font-medium truncate">
+                        {(window.discordUser as any).global_name || window.discordUser.username}
+                    </span>
                 </div>
             )}
         </div>
