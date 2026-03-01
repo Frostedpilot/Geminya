@@ -63,27 +63,25 @@ class ExpeditionService:
         success, _ = await self.db.unlock_subslot_by_consuming_equipment(target_equipment_id, consumed_equipment_id, effect_json)
         return success
 
-    def __init__(self, database_service: DatabaseService):
+    def __init__(self, database_service: DatabaseService, data_manager: DataManager = None, waifu_service: WaifuService = None):
         self.db = database_service
         self.logger = logging.getLogger(__name__)
-        # Initialize wanderer game data manager
-        self.data_manager = DataManager()
-        # Initialize WaifuService for daphine handling
-        self.waifu_service = WaifuService(database_service)
-        # Load expedition templates and encounters
-        try:
-            success = self.data_manager.load_all_data()
-            if success:
-                self.logger.info("Loaded expedition and encounter data successfully")
-                # Initialize expedition resolver with loaded data
-                encounters_data = self.data_manager.get_encounters_as_dict()
-                self.expedition_resolver = ExpeditionResolver(encounters_data, self.data_manager.get_loot_generator())
-            else:
-                self.logger.error("Failed to load expedition/encounter data")
+
+        # Use shared DataManager or create own (backward compat)
+        if data_manager is not None:
+            self.data_manager = data_manager
+        else:
+            self.data_manager = DataManager()
+            if not self.data_manager.load_all_data():
                 raise RuntimeError("Failed to load expedition/encounter data")
-        except Exception as e:
-            self.logger.error("Failed to load expedition/encounter data: %s", e)
-            raise
+
+        # Use shared WaifuService or create own (backward compat)
+        self.waifu_service = waifu_service if waifu_service is not None else WaifuService(database_service)
+
+        # Initialize expedition resolver with loaded data
+        encounters_data = self.data_manager.get_encounters_as_dict()
+        self.expedition_resolver = ExpeditionResolver(encounters_data, self.data_manager.get_loot_generator())
+        self.logger.info("ExpeditionService initialized (shared data_manager: %s)", data_manager is not None)
 
     def _get_multiplier_value(self, multiplier_name: str) -> float:
         """Convert final multiplier name to numeric value."""
@@ -1167,17 +1165,13 @@ class ExpeditionService:
             self.logger.error(f"[MOCK_EXPEDITION] Error simulating expedition: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
     
-    def check_expedition_available(self, expedition_id: str) -> bool:
-        """Check if an expedition template is still in the allowed list."""
-        import os
-        
-        allowed_path = os.path.join('data', 'expeditions', 'selected_expedition_ids.json')
+    async def check_expedition_available(self, expedition_id: str) -> bool:
+        """Check if an expedition template is still in the allowed list (from DB)."""
         try:
-            with open(allowed_path, 'r', encoding='utf-8') as f:
-                allowed_ids = json.load(f)
-                return expedition_id in allowed_ids
+            allowed_ids = await self.db.get_selected_expedition_ids()
+            return str(expedition_id) in allowed_ids
         except Exception:
-            return False  # If file doesn't exist, consider unavailable
+            return False
     
     async def get_expedition_participants_for_repeat(self, expedition_db_id: int) -> List[Dict]:
         """Retrieve participant data for repeating a completed expedition from final_results."""

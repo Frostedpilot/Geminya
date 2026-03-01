@@ -55,7 +55,7 @@ const games = [
 
 export default function Home() {
     return (
-        <div className="min-h-screen flex flex-col items-center justify-center p-6 relative overflow-hidden">
+        <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
             {/* Background decoration */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-20 left-10 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl"></div>
@@ -66,17 +66,17 @@ export default function Home() {
             {/* Content */}
             <div className="relative z-10 w-full max-w-2xl">
                 {/* Header */}
-                <div className="text-center mb-12 animate-fade-in">
-                    <div className="text-6xl mb-4">🎮</div>
-                    <h1 className="text-5xl sm:text-6xl font-bold mb-4 bg-gradient-to-r from-anime-primary via-anime-secondary to-anime-accent bg-clip-text text-transparent">
+                <div className="text-center mb-8 animate-fade-in">
+                    <div className="text-4xl mb-3">🎮</div>
+                    <h1 className="text-4xl lg:text-5xl font-bold mb-3 bg-gradient-to-r from-anime-primary via-anime-secondary to-anime-accent bg-clip-text text-transparent">
                         Geminya Games
                     </h1>
-                    <p className="text-xl text-gray-300 mb-2">Test your anime knowledge!</p>
+                    <p className="text-lg text-gray-300 mb-1">Test your anime knowledge!</p>
                     <p className="text-gray-500 text-sm">Choose a game to get started</p>
                 </div>
 
                 {/* Game Selection - Vertical Bars */}
-                <div className="flex flex-col gap-4 mb-8">
+                <div className="flex flex-col gap-3 mb-6">
                     {games.map((game, index) => (
                         <Link
                             key={game.id}
@@ -84,7 +84,7 @@ export default function Home() {
                             className="group animate-slide-up"
                             style={{ animationDelay: `${index * 100}ms` }}
                         >
-                            <div className="card card-hover p-6 flex items-center gap-6 relative overflow-hidden">
+                            <div className="card card-hover p-4 flex items-center gap-4 relative overflow-hidden">
                                 {/* Gradient overlay on hover */}
                                 <div
                                     className={`absolute inset-0 bg-gradient-to-r ${game.color} opacity-0 group-hover:opacity-10 transition-opacity duration-300`}
@@ -92,27 +92,27 @@ export default function Home() {
 
                                 {/* Icon */}
                                 <div
-                                    className={`w-16 h-16 flex-shrink-0 rounded-xl bg-gradient-to-br ${game.color} flex items-center justify-center text-3xl group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 shadow-lg`}
+                                    className={`w-12 h-12 flex-shrink-0 rounded-lg bg-gradient-to-br ${game.color} flex items-center justify-center text-2xl group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 shadow-lg`}
                                 >
                                     {game.emoji}
                                 </div>
 
                                 {/* Content */}
                                 <div className="flex-grow">
-                                    <h2 className="text-2xl font-bold mb-1 group-hover:text-anime-primary transition-colors">
+                                    <h2 className="text-xl font-bold mb-1 group-hover:text-anime-primary transition-colors">
                                         {game.name}
                                     </h2>
-                                    <p className="text-gray-400 text-sm mb-2">{game.description}</p>
+                                    <p className="text-gray-400 text-xs mb-2">{game.description}</p>
                                     <div className="flex items-center gap-2">
                                         <span className="px-2 py-1 bg-white/10 rounded text-xs text-gray-300">
                                             {game.tries}
                                         </span>
                                         <span
                                             className={`px-2 py-1 rounded text-xs ${game.difficulty === 'Easy'
-                                                    ? 'bg-green-500/20 text-green-300'
-                                                    : game.difficulty === 'Medium'
-                                                        ? 'bg-yellow-500/20 text-yellow-300'
-                                                        : 'bg-red-500/20 text-red-300'
+                                                ? 'bg-green-500/20 text-green-300'
+                                                : game.difficulty === 'Medium'
+                                                    ? 'bg-yellow-500/20 text-yellow-300'
+                                                    : 'bg-red-500/20 text-red-300'
                                                 }`}
                                         >
                                             {game.difficulty}
@@ -121,7 +121,7 @@ export default function Home() {
                                 </div>
 
                                 {/* Arrow */}
-                                <div className="flex-shrink-0 text-anime-primary opacity-0 group-hover:opacity-100 transition-all transform group-hover:translate-x-2 text-2xl">
+                                <div className="flex-shrink-0 text-anime-primary opacity-0 group-hover:opacity-100 transition-all transform group-hover:translate-x-2 text-xl">
                                     →
                                 </div>
                             </div>

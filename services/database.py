@@ -1261,6 +1261,26 @@ class DatabaseService:
             """
         )
 
+        # Expedition selection management (replaces local JSON files)
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS expedition_selected_ids (
+                id SERIAL PRIMARY KEY,
+                expedition_id TEXT NOT NULL UNIQUE,
+                selected_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            """
+        )
+
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS expedition_selection_history (
+                id SERIAL PRIMARY KEY,
+                selected_ids JSONB NOT NULL,
+                selected_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            """
+        )
     # User-related methods
     async def get_or_create_user(self, discord_id: str) -> Dict[str, Any]:
         """Get user from database or create if doesn't exist (PostgreSQL)."""
@@ -2714,3 +2734,59 @@ class DatabaseService:
                     expedition['expedition_data'] = {}
             
             return expedition
+
+    # === EXPEDITION SELECTION MANAGEMENT ===
+
+    async def get_selected_expedition_ids(self) -> List[str]:
+        """Get currently active expedition IDs from DB (replaces selected_expedition_ids.json)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch("SELECT expedition_id FROM expedition_selected_ids")
+            return [row['expedition_id'] for row in rows]
+
+    async def set_selected_expedition_ids(self, ids: List[str]) -> None:
+        """Replace the current set of selected expedition IDs."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self.connection_pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("DELETE FROM expedition_selected_ids")
+                for eid in ids:
+                    await conn.execute(
+                        "INSERT INTO expedition_selected_ids (expedition_id) VALUES ($1)",
+                        str(eid)
+                    )
+
+    async def get_expedition_selection_history(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Get past expedition selections (replaces expedition_history.json)."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self.connection_pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT selected_ids, selected_at FROM expedition_selection_history ORDER BY selected_at DESC LIMIT $1",
+                limit
+            )
+            return [{"selected_ids": row['selected_ids'], "timestamp": row['selected_at'].isoformat()} for row in rows]
+
+    async def add_expedition_selection_history(self, selected_ids: List[str], history_limit: int = 5) -> None:
+        """Record a new expedition selection and prune old entries."""
+        if not self.connection_pool:
+            raise RuntimeError("Database connection pool is not initialized.")
+        async with self.connection_pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "INSERT INTO expedition_selection_history (selected_ids) VALUES ($1)",
+                    json.dumps(selected_ids)
+                )
+                # Keep only the last N entries
+                await conn.execute(
+                    """
+                    DELETE FROM expedition_selection_history
+                    WHERE id NOT IN (
+                        SELECT id FROM expedition_selection_history
+                        ORDER BY selected_at DESC LIMIT $1
+                    )
+                    """,
+                    history_limit
+                )

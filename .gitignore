@@ -213,11 +213,6 @@ secrets.json
 
 mcp_servers/
 
-*.csv
-*.xlsx
-data/*.json
-data/expeditions/*
-data/anime-lists/
 .github
 
 # objects from librespot

@@ -1,0 +1,1361 @@
+{
+  "archetypes": [
+    {
+      "name": "Mage",
+      "description": "Focuses on magic attack and intelligence. (Specialist profile: high mag/int, high Mage potency, low elsewhere)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Mage": "S",
+        "Attacker": "D",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "D",
+        "Defender": "D",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Physical Attacker",
+      "description": "Excels at physical damage and speed. (High Stat, Low Potency profile: high atk/spd, but Attacker potency only C, others D/F)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "spd": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "C",
+        "Mage": "F",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Healer",
+      "description": "Specializes in healing and support. (Low Stat, High Potency profile: low stats, but Healer/Buffer S, others D/C)",
+      "stat_focus": {
+        "spr": { "min": 90, "max": 110 },
+        "int": { "min": 90, "max": 110 },
+        "vit": { "min": 60, "max": 80 },
+        "atk": { "min": 60, "max": 80 },
+        "mag": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Healer": "S",
+        "Buffer": "S",
+        "Defender": "D",
+        "Mage": "D",
+        "Attacker": "D",
+        "Debuffer": "C",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Defender",
+      "description": "Takes hits and protects allies. (Balanced profile: all stats and potencies medium)",
+      "stat_focus": {
+        "vit": { "min": 90, "max": 110 },
+        "hp": { "min": 90, "max": 110 },
+        "atk": { "min": 90, "max": 110 },
+        "mag": { "min": 90, "max": 110 },
+        "spr": { "min": 90, "max": 110 },
+        "int": { "min": 90, "max": 110 },
+        "lck": { "min": 90, "max": 110 },
+        "spd": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Defender": "B",
+        "Attacker": "C",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Berserker",
+      "description": "Unleashes wild, uncontrollable power. (High Stat, Low Potency: high atk/vit/hp, but Attacker only C, others D/F)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "vit": { "min": 120, "max": 140 },
+        "spd": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 120, "max": 140 }
+      },
+      "role_potency": {
+        "Attacker": "C",
+        "Defender": "D",
+        "Mage": "F",
+        "Healer": "F",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Trickster",
+      "description": "Relies on luck and debuffs. (High lck/spd, S Debuffer, C everywhere else)",
+      "stat_focus": {
+        "lck": { "min": 120, "max": 140 },
+        "spd": { "min": 120, "max": 140 },
+        "atk": { "min": 90, "max": 110 },
+        "mag": { "min": 90, "max": 110 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Debuffer": "S",
+        "Attacker": "C",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Defender": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Paladin",
+      "description": "Balanced defense and healing. (High vit/spr, B Defender, B Healer, C everywhere else)",
+      "stat_focus": {
+        "vit": { "min": 120, "max": 140 },
+        "spr": { "min": 120, "max": 140 },
+        "hp": { "min": 90, "max": 110 },
+        "atk": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "int": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Defender": "B",
+        "Healer": "B",
+        "Attacker": "C",
+        "Mage": "C",
+        "Buffer": "C",
+        "Debuffer": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Ninja",
+      "description": "Fast and evasive. (High spd/lck, S Specialist, D everywhere else)",
+      "stat_focus": {
+        "spd": { "min": 120, "max": 140 },
+        "lck": { "min": 120, "max": 140 },
+        "atk": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Specialist": "S",
+        "Attacker": "D",
+        "Mage": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Defender": "D"
+      }
+    },
+    {
+      "name": "Alchemist",
+      "description": "Versatile support. (High int/spr, S Buffer, C everywhere else)",
+      "stat_focus": {
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 120, "max": 140 },
+        "mag": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Buffer": "S",
+        "Healer": "C",
+        "Attacker": "C",
+        "Mage": "C",
+        "Debuffer": "C",
+        "Defender": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Samurai",
+      "description": "Disciplined and precise. (High atk/spd, B Attacker, C everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "spd": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "B",
+        "Defender": "C",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Summoner",
+      "description": "Commands magical creatures. (High mag/int, S Mage, D everywhere else)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Mage": "S",
+        "Attacker": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Priest",
+      "description": "Holy healer and buffer. (High spr/int, S Healer, S Buffer, D everywhere else)",
+      "stat_focus": {
+        "spr": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "mag": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Healer": "S",
+        "Buffer": "S",
+        "Defender": "D",
+        "Mage": "D",
+        "Attacker": "D",
+        "Debuffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Assassin",
+      "description": "Deadly and precise. (High atk/spd/lck, S Specialist, D everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "spd": { "min": 120, "max": 140 },
+        "lck": { "min": 120, "max": 140 },
+        "vit": { "min": 60, "max": 80 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Specialist": "S",
+        "Attacker": "D",
+        "Mage": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Defender": "D"
+      }
+    },
+    {
+      "name": "Druid",
+      "description": "Nature-based healer and buffer. (High spr/int, S Healer, S Buffer, D everywhere else)",
+      "stat_focus": {
+        "spr": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "mag": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Healer": "S",
+        "Buffer": "S",
+        "Defender": "D",
+        "Mage": "D",
+        "Attacker": "D",
+        "Debuffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Warlock",
+      "description": "Dark magic specialist. (High mag/int, S Debuffer, D everywhere else)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Debuffer": "S",
+        "Mage": "C",
+        "Attacker": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Monk",
+      "description": "Balanced fighter and healer. (High atk/spr, B Attacker, B Healer, C everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "spr": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "int": { "min": 90, "max": 110 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "B",
+        "Healer": "B",
+        "Defender": "C",
+        "Mage": "C",
+        "Buffer": "C",
+        "Debuffer": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Gunslinger",
+      "description": "Ranged attacker. (High atk/spd/lck, B Attacker, C everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "spd": { "min": 120, "max": 140 },
+        "lck": { "min": 120, "max": 140 },
+        "vit": { "min": 60, "max": 80 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Attacker": "B",
+        "Specialist": "C",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "C",
+        "Defender": "C"
+      }
+    },
+    {
+      "name": "Bard",
+      "description": "Musical buffer and debuffer. (High spr/int, S Buffer, S Debuffer, D everywhere else)",
+      "stat_focus": {
+        "spr": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "mag": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Buffer": "S",
+        "Debuffer": "S",
+        "Healer": "C",
+        "Attacker": "D",
+        "Mage": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Knight",
+      "description": "Stalwart defender. (High vit/hp, S Defender, D everywhere else)",
+      "stat_focus": {
+        "vit": { "min": 120, "max": 140 },
+        "hp": { "min": 120, "max": 140 },
+        "atk": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Defender": "S",
+        "Attacker": "D",
+        "Mage": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Elementalist",
+      "description": "Master of elemental magic. (High mag/spd, S Mage, D everywhere else)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "spd": { "min": 120, "max": 140 },
+        "int": { "min": 90, "max": 110 },
+        "spr": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Mage": "S",
+        "Attacker": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Sage",
+      "description": "Wise and versatile. (High int/spr, B Mage, B Healer, C everywhere else)",
+      "stat_focus": {
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 120, "max": 140 },
+        "mag": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Mage": "B",
+        "Healer": "B",
+        "Attacker": "C",
+        "Buffer": "C",
+        "Debuffer": "C",
+        "Defender": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Vampire",
+      "description": "Life-draining attacker. (High atk/mag, S Specialist, D everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "mag": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Specialist": "S",
+        "Attacker": "D",
+        "Mage": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Defender": "D"
+      }
+    },
+    {
+      "name": "Shaman",
+      "description": "Spiritual healer and debuffer. (High spr/int, S Healer, S Debuffer, D everywhere else)",
+      "stat_focus": {
+        "spr": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "mag": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Healer": "S",
+        "Debuffer": "S",
+        "Defender": "D",
+        "Mage": "D",
+        "Attacker": "D",
+        "Buffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Beastmaster",
+      "description": "Commands beasts. (High vit/atk, B Attacker, B Defender, C everywhere else)",
+      "stat_focus": {
+        "vit": { "min": 120, "max": 140 },
+        "atk": { "min": 120, "max": 140 },
+        "hp": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "spd": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "B",
+        "Defender": "B",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Necromancer",
+      "description": "Commands the dead. (High mag/int, S Debuffer, D everywhere else)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Debuffer": "S",
+        "Mage": "C",
+        "Attacker": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Templar",
+      "description": "Holy defender. (High vit/spr, S Defender, B Healer, D everywhere else)",
+      "stat_focus": {
+        "vit": { "min": 120, "max": 140 },
+        "spr": { "min": 120, "max": 140 },
+        "hp": { "min": 90, "max": 110 },
+        "atk": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "int": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Defender": "S",
+        "Healer": "B",
+        "Attacker": "D",
+        "Mage": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Illusionist",
+      "description": "Manipulates perception. (High int/spd, S Debuffer, C everywhere else)",
+      "stat_focus": {
+        "int": { "min": 120, "max": 140 },
+        "spd": { "min": 120, "max": 140 },
+        "mag": { "min": 90, "max": 110 },
+        "spr": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Debuffer": "S",
+        "Mage": "C",
+        "Attacker": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Defender": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Witch",
+      "description": "Curses and hexes. (High mag/int, S Debuffer, D everywhere else)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Debuffer": "S",
+        "Mage": "C",
+        "Attacker": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Oracle",
+      "description": "Sees the future. (High int/lck, S Buffer, S Specialist, D everywhere else)",
+      "stat_focus": {
+        "int": { "min": 120, "max": 140 },
+        "lck": { "min": 120, "max": 140 },
+        "spr": { "min": 90, "max": 110 },
+        "mag": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Buffer": "S",
+        "Specialist": "S",
+        "Mage": "D",
+        "Attacker": "D",
+        "Healer": "D",
+        "Debuffer": "D",
+        "Defender": "D"
+      }
+    },
+    {
+      "name": "Pirate",
+      "description": "Swashbuckling attacker. (High atk/lck, B Attacker, C everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "lck": { "min": 120, "max": 140 },
+        "spd": { "min": 90, "max": 110 },
+        "vit": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "B",
+        "Specialist": "C",
+        "Defender": "C",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "C"
+      }
+    },
+    {
+      "name": "Engineer",
+      "description": "Inventive buffer. (High int/spr, S Buffer, C everywhere else)",
+      "stat_focus": {
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 120, "max": 140 },
+        "mag": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Buffer": "S",
+        "Healer": "C",
+        "Attacker": "C",
+        "Mage": "C",
+        "Debuffer": "C",
+        "Defender": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Hunter",
+      "description": "Expert tracker and attacker. (High atk/spd, B Attacker, C everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "spd": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "B",
+        "Specialist": "C",
+        "Defender": "C",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "C"
+      }
+    },
+    {
+      "name": "Swordsman",
+      "description": "Balanced melee attacker. (High atk/vit, B Attacker, C everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "vit": { "min": 120, "max": 140 },
+        "spd": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "B",
+        "Defender": "C",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Enchanter",
+      "description": "Magical buffer. (High mag/spr, S Buffer, D everywhere else)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "spr": { "min": 120, "max": 140 },
+        "int": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Buffer": "S",
+        "Mage": "C",
+        "Attacker": "D",
+        "Healer": "D",
+        "Debuffer": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Gladiator",
+      "description": "Arena fighter. (High atk/vit, B Attacker, B Defender, C everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "vit": { "min": 120, "max": 140 },
+        "hp": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "spd": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "B",
+        "Defender": "B",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Dancer",
+      "description": "Graceful buffer and debuffer. (High spd/lck, S Buffer, S Debuffer, D everywhere else)",
+      "stat_focus": {
+        "spd": { "min": 120, "max": 140 },
+        "lck": { "min": 120, "max": 140 },
+        "atk": { "min": 90, "max": 110 },
+        "mag": { "min": 90, "max": 110 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Buffer": "S",
+        "Debuffer": "S",
+        "Healer": "D",
+        "Attacker": "D",
+        "Mage": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Archer",
+      "description": "Long-range attacker. (High atk/spd, B Attacker, C everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "spd": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "B",
+        "Specialist": "C",
+        "Defender": "C",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "C"
+      }
+    },
+    {
+      "name": "Mystic",
+      "description": "Enigmatic mage. (High mag/int, S Mage, D everywhere else)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Mage": "S",
+        "Attacker": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Sage of Light",
+      "description": "Radiant healer and buffer. (High spr/int, S Healer, S Buffer, D everywhere else)",
+      "stat_focus": {
+        "spr": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "mag": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Healer": "S",
+        "Buffer": "S",
+        "Defender": "D",
+        "Mage": "D",
+        "Attacker": "D",
+        "Debuffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Shadowblade",
+      "description": "Stealthy attacker. (High spd/lck, S Specialist, D everywhere else)",
+      "stat_focus": {
+        "spd": { "min": 120, "max": 140 },
+        "lck": { "min": 120, "max": 140 },
+        "atk": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Specialist": "S",
+        "Attacker": "D",
+        "Mage": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Defender": "D"
+      }
+    },
+    {
+      "name": "Geomancer",
+      "description": "Earth magic specialist. (High mag/vit, S Mage, B Defender, D everywhere else)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "vit": { "min": 120, "max": 140 },
+        "hp": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "spr": { "min": 90, "max": 110 },
+        "int": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Mage": "S",
+        "Defender": "B",
+        "Attacker": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Warden",
+      "description": "Guardian of nature. (High vit/spr, S Defender, S Buffer, D everywhere else)",
+      "stat_focus": {
+        "vit": { "min": 120, "max": 140 },
+        "spr": { "min": 120, "max": 140 },
+        "hp": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "mag": { "min": 60, "max": 80 },
+        "int": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Defender": "S",
+        "Buffer": "S",
+        "Attacker": "D",
+        "Mage": "D",
+        "Healer": "D",
+        "Debuffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Reaper",
+      "description": "Bringer of death. (High atk/mag, S Debuffer, S Specialist, D everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "mag": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Debuffer": "S",
+        "Specialist": "S",
+        "Attacker": "D",
+        "Mage": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Defender": "D"
+      }
+    },
+    {
+      "name": "Ally",
+      "description": "All-around support. (Balanced stats, B Buffer, B Healer, C everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 90, "max": 110 },
+        "mag": { "min": 90, "max": 110 },
+        "spr": { "min": 90, "max": 110 },
+        "int": { "min": 90, "max": 110 },
+        "vit": { "min": 90, "max": 110 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 90, "max": 110 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Buffer": "B",
+        "Healer": "B",
+        "Attacker": "C",
+        "Mage": "C",
+        "Defender": "C",
+        "Debuffer": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Champion",
+      "description": "Heroic all-rounder. (Balanced stats, B Attacker, B Defender, C everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 90, "max": 110 },
+        "mag": { "min": 90, "max": 110 },
+        "spr": { "min": 90, "max": 110 },
+        "int": { "min": 90, "max": 110 },
+        "vit": { "min": 90, "max": 110 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 90, "max": 110 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "B",
+        "Defender": "B",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Warlord",
+      "description": "Commanding leader. (High atk/vit, S Attacker, S Defender, D everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "vit": { "min": 120, "max": 140 },
+        "hp": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "spd": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "S",
+        "Defender": "S",
+        "Mage": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Sorcerer",
+      "description": "Arcane magic user. (High mag/int, S Mage, D everywhere else)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Mage": "S",
+        "Attacker": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Crusader",
+      "description": "Holy warrior. (High vit/atk, S Defender, S Attacker, D everywhere else)",
+      "stat_focus": {
+        "vit": { "min": 120, "max": 140 },
+        "atk": { "min": 120, "max": 140 },
+        "hp": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "spd": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Defender": "S",
+        "Attacker": "S",
+        "Mage": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Invoker",
+      "description": "Summons powerful magic. (High mag/int, S Mage, S Specialist, D everywhere else)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Mage": "S",
+        "Specialist": "S",
+        "Attacker": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D",
+        "Defender": "D"
+      }
+    },
+    {
+      "name": "Sentinel",
+      "description": "Unyielding protector. (High vit/hp, S Defender, B Buffer, D everywhere else)",
+      "stat_focus": {
+        "vit": { "min": 120, "max": 140 },
+        "hp": { "min": 120, "max": 140 },
+        "atk": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 90, "max": 110 },
+        "int": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Defender": "S",
+        "Buffer": "B",
+        "Attacker": "D",
+        "Mage": "D",
+        "Healer": "D",
+        "Debuffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Runesmith",
+      "description": "Magical craftsman. (High int/spr, S Buffer, B Mage, D everywhere else)",
+      "stat_focus": {
+        "int": { "min": 120, "max": 140 },
+        "spr": { "min": 120, "max": 140 },
+        "mag": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Buffer": "S",
+        "Mage": "B",
+        "Healer": "D",
+        "Attacker": "D",
+        "Debuffer": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Witch Doctor",
+      "description": "Cures and curses. (High spr/int, S Healer, S Debuffer, D everywhere else)",
+      "stat_focus": {
+        "spr": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "mag": { "min": 60, "max": 80 },
+        "spd": { "min": 60, "max": 80 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Healer": "S",
+        "Debuffer": "S",
+        "Defender": "D",
+        "Mage": "D",
+        "Attacker": "D",
+        "Buffer": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Dragoon",
+      "description": "Aerial attacker. (High atk/spd, S Attacker, B Specialist, D everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "spd": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "S",
+        "Specialist": "B",
+        "Defender": "D",
+        "Mage": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D"
+      }
+    },
+    {
+      "name": "Illuminator",
+      "description": "Light magic buffer. (High mag/spr, S Buffer, S Mage, D everywhere else)",
+      "stat_focus": {
+        "mag": { "min": 120, "max": 140 },
+        "spr": { "min": 120, "max": 140 },
+        "int": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Buffer": "S",
+        "Mage": "S",
+        "Healer": "D",
+        "Attacker": "D",
+        "Debuffer": "D",
+        "Defender": "D",
+        "Specialist": "D"
+      }
+    },
+    {
+      "name": "Sellsword",
+      "description": "Mercenary fighter. (High atk/vit, B Attacker, B Defender, C everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "vit": { "min": 120, "max": 140 },
+        "hp": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "spd": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "B",
+        "Defender": "B",
+        "Mage": "C",
+        "Healer": "C",
+        "Buffer": "C",
+        "Debuffer": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Herald",
+      "description": "Messenger and buffer. (High spd/int, S Buffer, C everywhere else)",
+      "stat_focus": {
+        "spd": { "min": 120, "max": 140 },
+        "int": { "min": 120, "max": 140 },
+        "mag": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spr": { "min": 90, "max": 110 },
+        "lck": { "min": 60, "max": 80 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Buffer": "S",
+        "Healer": "C",
+        "Attacker": "C",
+        "Mage": "C",
+        "Debuffer": "C",
+        "Defender": "C",
+        "Specialist": "C"
+      }
+    },
+    {
+      "name": "Witch Hunter",
+      "description": "Anti-mage specialist. (High atk/spd, S Specialist, B Attacker, D everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "spd": { "min": 120, "max": 140 },
+        "vit": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "lck": { "min": 90, "max": 110 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Specialist": "S",
+        "Attacker": "B",
+        "Defender": "D",
+        "Mage": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D"
+      }
+    },
+    {
+      "name": "Prophet",
+      "description": "Sees and shapes fate. (High int/lck, S Buffer, S Specialist, D everywhere else)",
+      "stat_focus": {
+        "int": { "min": 120, "max": 140 },
+        "lck": { "min": 120, "max": 140 },
+        "spr": { "min": 90, "max": 110 },
+        "mag": { "min": 90, "max": 110 },
+        "atk": { "min": 60, "max": 80 },
+        "vit": { "min": 60, "max": 80 },
+        "spd": { "min": 90, "max": 110 },
+        "hp": { "min": 60, "max": 80 }
+      },
+      "role_potency": {
+        "Buffer": "S",
+        "Specialist": "S",
+        "Mage": "D",
+        "Attacker": "D",
+        "Healer": "D",
+        "Debuffer": "D",
+        "Defender": "D"
+      }
+    },
+    {
+      "name": "Champion of Chaos",
+      "description": "Unpredictable powerhouse. (High atk/lck, S Attacker, S Specialist, D everywhere else)",
+      "stat_focus": {
+        "atk": { "min": 120, "max": 140 },
+        "lck": { "min": 120, "max": 140 },
+        "spd": { "min": 90, "max": 110 },
+        "vit": { "min": 90, "max": 110 },
+        "mag": { "min": 60, "max": 80 },
+        "spr": { "min": 60, "max": 80 },
+        "int": { "min": 60, "max": 80 },
+        "hp": { "min": 90, "max": 110 }
+      },
+      "role_potency": {
+        "Attacker": "S",
+        "Specialist": "S",
+        "Defender": "D",
+        "Mage": "D",
+        "Healer": "D",
+        "Buffer": "D",
+        "Debuffer": "D"
+      }
+    }
+  ]
+}

@@ -24,12 +24,16 @@ function App() {
         async function init() {
             try {
                 const isInDiscord = window.location.search.includes('frame_id')
+                console.log('Initializing Discord Activity...', { isInDiscord })
 
                 if (isInDiscord) {
+                    console.log('Running inside Discord iframe')
                     const user = await setupDiscord()
+                    console.log('Discord user authenticated:', user)
                     setDiscordUser(user)
                     window.discordUser = user
                 } else {
+                    console.log('Running in dev mode (not in Discord)')
                     const mockUser: DiscordUser = { id: 'dev_user_123', username: 'Developer', discriminator: '0000', avatar: null }
                     setDiscordUser(mockUser)
                     window.discordUser = mockUser
@@ -37,7 +41,7 @@ function App() {
                 setIsReady(true)
             } catch (err) {
                 console.error('Failed to initialize Discord SDK:', err)
-                setError('Failed to connect to Discord.')
+                setError(`Failed to connect to Discord: ${err instanceof Error ? err.message : String(err)}`)
             }
         }
         init()
@@ -70,7 +74,7 @@ function App() {
         <BrowserRouter>
             <div className="min-h-screen flex">
                 <Sidebar />
-                <div className="flex-1 ml-48">
+                <div className="flex-1 ml-36">
                     <Routes>
                         <Route path="/" element={<Home />} />
                         <Route path="/anidle" element={<Anidle />} />

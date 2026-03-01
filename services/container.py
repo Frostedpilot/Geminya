@@ -20,6 +20,7 @@ from services.world_threat_service import WorldThreatService
 from services.command_queue import CommandQueueService
 from services.spotify_service import SpotifyService
 from services.music_service import MusicService
+from src.wanderer_game.registries.data_manager import DataManager
 
 
 class ServiceContainer:
@@ -66,9 +67,15 @@ class ServiceContainer:
 
         # Initialize Waifu Academy services
         self.database = DatabaseService(config)
+
+        # Create shared DataManager (loaded once, shared across services)
+        self.data_manager = DataManager()
+        if not self.data_manager.load_all_data():
+            raise RuntimeError("Failed to load game data")
+
         self.waifu_service = WaifuService(self.database)
-        self.expedition_service = ExpeditionService(self.database)
-        self.world_threat_service = WorldThreatService(self.database)
+        self.expedition_service = ExpeditionService(self.database, self.data_manager, self.waifu_service)
+        self.world_threat_service = WorldThreatService(self.database, self.data_manager, self.waifu_service)
         self.command_queue = CommandQueueService()
 
         # Initialize music services

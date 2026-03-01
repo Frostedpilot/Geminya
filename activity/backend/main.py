@@ -5,10 +5,12 @@ import json
 import logging
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+import aiohttp
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from routers import anidle, guess_anime, guess_character, guess_theme
+from routers import anidle, guess_anime, guess_character, guess_theme, media_proxy
 from services.ids_service import ids_service
 
 # Configure logging
@@ -37,6 +39,14 @@ async def lifespan(app: FastAPI):
     
     # Load secrets
     secrets = load_secrets()
+    
+    # Initialize Discord credentials
+    app.state.discord_client_id = secrets.get("DISCORD_APP_ID", os.environ.get("DISCORD_APP_ID", ""))
+    app.state.discord_client_secret = secrets.get("DISCORD_CLIENT_SECRET", os.environ.get("DISCORD_CLIENT_SECRET", ""))
+    if app.state.discord_client_secret:
+        logger.info("✅ Discord OAuth2 configured")
+    else:
+        logger.warning("⚠️ DISCORD_CLIENT_SECRET not found in secrets.json - user avatar will not work")
     
     # Initialize IDs.moe
     ids_api_key = secrets.get("IDS_MOE_API_KEY", os.environ.get("IDS_MOE_API_KEY", ""))
@@ -71,11 +81,46 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(anidle.router, prefix="/api/anidle", tags=["anidle"])
-app.include_router(guess_anime.router, prefix="/api/guess-anime", tags=["guess-anime"])
-app.include_router(guess_character.router, prefix="/api/guess-character", tags=["guess-character"])
-app.include_router(guess_theme.router, prefix="/api/guess-theme", tags=["guess-theme"])
+# Include routers (no /api prefix - Discord handles routing)
+app.include_router(anidle.router, prefix="/anidle", tags=["anidle"])
+app.include_router(guess_anime.router, prefix="/guess-anime", tags=["guess-anime"])
+app.include_router(guess_character.router, prefix="/guess-character", tags=["guess-character"])
+app.include_router(guess_theme.router, prefix="/guess-theme", tags=["guess-theme"])
+app.include_router(media_proxy.router, prefix="/media", tags=["media"])
+
+
+class TokenRequest(BaseModel):
+    code: str
+
+
+@app.post("/token")
+async def exchange_token(request: TokenRequest):
+    """Exchange Discord OAuth2 code for access token."""
+    client_id = app.state.discord_client_id
+    client_secret = app.state.discord_client_secret
+    
+    logger.info(f"Token exchange: client_id={client_id}, secret_len={len(client_secret) if client_secret else 0}")
+    
+    if not client_secret:
+        raise HTTPException(status_code=500, detail="Discord client secret not configured")
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://discord.com/api/oauth2/token",
+            data={
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "grant_type": "authorization_code",
+                "code": request.code,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        ) as resp:
+            if resp.status != 200:
+                error = await resp.text()
+                logger.error(f"Discord token exchange failed: {error}")
+                raise HTTPException(status_code=resp.status, detail="Token exchange failed")
+            data = await resp.json()
+            return {"access_token": data["access_token"]}
 
 
 @app.get("/")

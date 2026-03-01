@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { guessEdApi } from '../api/client'
 import DifficultySelector from '../components/common/DifficultySelector'
 import SearchInput from '../components/common/SearchInput'
+import { proxyMediaUrl } from '../utils/mediaProxy'
 
 interface GameState {
     gameId: string
@@ -43,6 +44,7 @@ export default function GuessEnding() {
     const [gameState, setGameState] = useState<GameState | null>(null)
     const [animeName, setAnimeName] = useState('')
     const [error, setError] = useState<string | null>(null)
+    const actionInProgress = useRef(false)
 
     const startGame = async () => {
         setIsLoading(true)
@@ -70,7 +72,8 @@ export default function GuessEnding() {
     }
 
     const makeGuess = async () => {
-        if (!gameState || !animeName.trim()) return
+        if (!gameState || !animeName.trim() || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         setError(null)
@@ -88,11 +91,13 @@ export default function GuessEnding() {
             setError(err.response?.data?.detail || 'Failed to submit guess')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
     const revealHint = async () => {
-        if (!gameState) return
+        if (!gameState || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         try {
@@ -105,11 +110,13 @@ export default function GuessEnding() {
             setError(err.response?.data?.detail || 'Failed to reveal hint')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
     const giveUp = async () => {
-        if (!gameState) return
+        if (!gameState || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         try {
@@ -126,6 +133,7 @@ export default function GuessEnding() {
             setError(err.response?.data?.detail || 'Failed to give up')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
@@ -145,16 +153,16 @@ export default function GuessEnding() {
     // Start screen
     if (!gameState) {
         return (
-            <div className="min-h-screen flex flex-col items-center justify-center p-6">
-                <div className="text-center mb-8 animate-fade-in">
-                    <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+            <div className="min-h-screen flex flex-col items-center justify-center p-4">
+                <div className="text-center mb-6 animate-fade-in">
+                    <h1 className="text-3xl lg:text-4xl font-bold mb-3 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
                         🎶 Guess the Ending
                     </h1>
-                    <p className="text-xl text-gray-300 mb-2">Listen to the ending and guess the anime!</p>
-                    <p className="text-gray-400">Stage 1: Audio only → Stage 2: Full video</p>
+                    <p className="text-base text-gray-300 mb-1">Listen to the ending and guess the anime!</p>
+                    <p className="text-gray-400 text-sm">Stage 1: Audio only → Stage 2: Full video</p>
                 </div>
 
-                <div className="card p-8 max-w-lg w-full animate-slide-up">
+                <div className="card p-6 max-w-lg w-full animate-slide-up">
                     <h2 className="text-lg font-semibold mb-4 text-center">Select Difficulty</h2>
                     <DifficultySelector value={difficulty} onChange={setDifficulty} />
 
@@ -187,23 +195,23 @@ export default function GuessEnding() {
         const diff = difficultyInfo[gameState.difficulty as keyof typeof difficultyInfo] || difficultyInfo.normal
 
         return (
-            <div className="min-h-screen flex flex-col items-center justify-center p-6">
-                <div className="card p-8 max-w-2xl w-full text-center animate-fade-in">
-                    <div className="text-7xl mb-4 animate-bounce">{gameState.isWon ? '🎉' : '💀'}</div>
-                    <h1 className="text-4xl font-bold mb-2">{gameState.isWon ? 'Correct!' : 'Wrong!'}</h1>
-                    <div className="inline-block px-4 py-2 bg-white/10 rounded-full text-sm mb-6">
+            <div className="min-h-screen flex flex-col items-center justify-center p-4">
+                <div className="card p-6 max-w-2xl w-full text-center animate-fade-in">
+                    <div className="text-5xl mb-3 animate-bounce">{gameState.isWon ? '🎉' : '💀'}</div>
+                    <h1 className="text-2xl font-bold mb-2">{gameState.isWon ? 'Correct!' : 'Wrong!'}</h1>
+                    <div className="inline-block px-3 py-1.5 bg-white/10 rounded-full text-sm mb-4">
                         {diff.emoji} {diff.label}
                     </div>
 
                     {gameState.target.image && (
                         <img
-                            src={gameState.target.image}
+                            src={proxyMediaUrl(gameState.target.image)}
                             alt={gameState.target.title}
-                            className="w-48 h-auto mx-auto rounded-lg shadow-xl my-4"
+                            className="w-36 h-auto mx-auto rounded-lg shadow-xl my-3"
                         />
                     )}
 
-                    <h2 className="text-2xl font-bold text-anime-secondary mb-2">{gameState.target.title}</h2>
+                    <h2 className="text-xl font-bold text-anime-secondary mb-1">{gameState.target.title}</h2>
                     {gameState.target.title_english && gameState.target.title_english !== gameState.target.title && (
                         <p className="text-gray-300 mb-2">{gameState.target.title_english}</p>
                     )}
@@ -251,10 +259,10 @@ export default function GuessEnding() {
     const diff = difficultyInfo[gameState.difficulty as keyof typeof difficultyInfo] || difficultyInfo.normal
 
     return (
-        <div className="min-h-screen p-4 pb-8">
+        <div className="min-h-screen p-3 pb-6">
             {/* Header */}
-            <div className="text-center pt-12 mb-6">
-                <h1 className="text-3xl font-bold mb-2">🎶 Guess the Ending</h1>
+            <div className="text-center pt-4 mb-4">
+                <h1 className="text-2xl font-bold mb-2">🎶 Guess the Ending</h1>
                 <div className="flex items-center justify-center gap-4 text-sm">
                     <span className="px-3 py-1 bg-white/10 rounded-full">
                         {diff.emoji} {diff.label}
@@ -282,7 +290,7 @@ export default function GuessEnding() {
                                 controls
                                 autoPlay
                                 className="w-full"
-                                src={gameState.themeUrl}
+                                src={proxyMediaUrl(gameState.themeUrl)}
                             >
                                 Your browser does not support the audio element.
                             </audio>
@@ -293,7 +301,7 @@ export default function GuessEnding() {
                             controls
                             autoPlay
                             className="w-full rounded-lg"
-                            src={gameState.themeUrl}
+                            src={proxyMediaUrl(gameState.themeUrl)}
                         >
                             Your browser does not support the video element.
                         </video>

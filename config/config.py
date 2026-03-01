@@ -114,12 +114,6 @@ class Config:
     # Server restrictions (empty tuple means no restrictions)
     active_servers: tuple = ()
 
-    # Anidle game configuration
-    anidle: Dict[str, Any] = field(default_factory=dict)
-
-    # Character guessing game configuration
-    guess_character: Dict[str, Any] = field(default_factory=dict)
-
     # LLM Providers specific configs
     available_providers: List[str] = field(
         default_factory=lambda: ["openrouter", "aistudio"]
@@ -154,7 +148,7 @@ class Config:
             #     "blacklist": [],  # No tools blacklisted for duckduckgo
             # },
             "anilist": {
-                "command": "npx.cmd",
+                "command": "npx.cmd" if os.name == "nt" else "npx",
                 "args": ["-y", "anilist-mcp"],
                 "env": None,
                 "blacklist": [
@@ -177,11 +171,11 @@ class Config:
                 ],
             },
             "sequential-thinking": {
-                "command": "npx.cmd",
+                "command": "npx.cmd" if os.name == "nt" else "npx",
                 "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
             },
             "tavily-remote-mcp": {
-                "command": "npx.cmd",
+                "command": "npx.cmd" if os.name == "nt" else "npx",
                 "args": [
                     "-y",
                     "mcp-remote",
@@ -192,7 +186,7 @@ class Config:
             "google-search": {
                 "command": "node",
                 "args": [
-                    "C:\\python\\personal\\Geminya\\mcp_servers\\mcp-google-custom-search-server\\build\\index.js"
+                    "mcp_servers/mcp-google-custom-search-server/build/index.js"
                 ],
                 "env": {
                     "GOOGLE_API_KEY": "",  # Will be set in __post_init__
@@ -462,8 +456,6 @@ class Config:
             ),
             max_response_length=config_data.get("max_response_length", 1999),
             active_servers=active_servers,
-            anidle=config_data.get("anidle", {}),
-            guess_character=config_data.get("guess_character", {}),
             postgres_host=postgres_host,
             postgres_port=postgres_port,
             postgres_user=postgres_user,

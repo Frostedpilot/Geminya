@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { guessAnimeApi } from '../api/client'
 import DifficultySelector from '../components/common/DifficultySelector'
 import SearchInput from '../components/common/SearchInput'
+import { proxyMediaUrl } from '../utils/mediaProxy'
 
 interface GameState {
     gameId: string
@@ -52,6 +53,7 @@ export default function GuessAnime() {
     const [searchValue, setSearchValue] = useState('')
     const [error, setError] = useState<string | null>(null)
     const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState(0)
+    const actionInProgress = useRef(false)
 
     const startGame = async () => {
         setIsLoading(true)
@@ -81,7 +83,8 @@ export default function GuessAnime() {
     }
 
     const makeGuess = async () => {
-        if (!gameState || !searchValue.trim()) return
+        if (!gameState || !searchValue.trim() || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         setError(null)
@@ -108,11 +111,13 @@ export default function GuessAnime() {
             setError(err.response?.data?.detail || 'Failed to submit guess')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
     const handleStageClick = async (stage: number) => {
-        if (!gameState || gameState.isComplete) return
+        if (!gameState || gameState.isComplete || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         setError(null)
@@ -142,6 +147,7 @@ export default function GuessAnime() {
             setError(err.response?.data?.detail || 'Failed to change stage')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
@@ -186,16 +192,16 @@ export default function GuessAnime() {
     // Start screen
     if (!gameState) {
         return (
-            <div className="min-h-screen flex flex-col items-center justify-center p-6">
-                <div className="text-center mb-8 animate-fade-in">
-                    <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
+            <div className="min-h-screen flex flex-col items-center justify-center p-4">
+                <div className="text-center mb-6 animate-fade-in">
+                    <h1 className="text-3xl lg:text-4xl font-bold mb-3 bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
                         📸 Guess Anime
                     </h1>
-                    <p className="text-xl text-gray-300 mb-2">Identify the anime from screenshots!</p>
-                    <p className="text-gray-400">4 screenshots, 4 attempts. Can you guess it?</p>
+                    <p className="text-base text-gray-300 mb-1">Identify the anime from screenshots!</p>
+                    <p className="text-gray-400 text-sm">4 screenshots, 4 attempts. Can you guess it?</p>
                 </div>
 
-                <div className="card p-8 max-w-lg w-full animate-slide-up">
+                <div className="card p-6 max-w-lg w-full animate-slide-up">
                     <h2 className="text-lg font-semibold mb-4 text-center">Select Difficulty</h2>
                     <DifficultySelector value={difficulty} onChange={setDifficulty} />
 
@@ -249,27 +255,27 @@ export default function GuessAnime() {
         const diff = difficultyInfo[gameState.difficulty as keyof typeof difficultyInfo] || difficultyInfo.normal
 
         return (
-            <div className="min-h-screen flex flex-col items-center justify-center p-6">
-                <div className="card p-8 max-w-4xl w-full text-center animate-fade-in">
-                    <div className="text-7xl mb-4 animate-bounce">{gameState.isWon ? '🎉' : '💀'}</div>
-                    <h1 className="text-4xl font-bold mb-2">{gameState.isWon ? 'Correct!' : 'Game Over'}</h1>
+            <div className="min-h-screen flex flex-col items-center justify-center p-4">
+                <div className="card p-6 max-w-4xl w-full text-center animate-fade-in">
+                    <div className="text-5xl mb-3 animate-bounce">{gameState.isWon ? '🎉' : '💀'}</div>
+                    <h1 className="text-2xl font-bold mb-2">{gameState.isWon ? 'Correct!' : 'Game Over'}</h1>
 
                     {/* Difficulty Badge */}
-                    <div className="inline-block px-4 py-2 bg-white/10 rounded-full text-sm mb-6">
+                    <div className="inline-block px-3 py-1.5 bg-white/10 rounded-full text-sm mb-4">
                         {diff.emoji} {diff.label}
                     </div>
 
                     {/* Anime Info with Poster */}
-                    <div className="flex flex-col md:flex-row gap-6 items-center md:items-start text-left mb-6">
+                    <div className="flex flex-col md:flex-row gap-4 items-center md:items-start text-left mb-4">
                         {gameState.target.image && (
                             <img
-                                src={gameState.target.image}
+                                src={proxyMediaUrl(gameState.target.image)}
                                 alt={gameState.target.title}
-                                className="w-48 h-auto rounded-lg shadow-xl flex-shrink-0"
+                                className="w-36 h-auto rounded-lg shadow-xl flex-shrink-0"
                             />
                         )}
                         <div className="flex-grow text-center md:text-left">
-                            <h2 className="text-2xl font-bold text-anime-accent mb-2">{gameState.target.title}</h2>
+                            <h2 className="text-xl font-bold text-anime-accent mb-1">{gameState.target.title}</h2>
                             {gameState.target.title_english && gameState.target.title_english !== gameState.target.title && (
                                 <p className="text-gray-400 mb-4">{gameState.target.title_english}</p>
                             )}
@@ -306,14 +312,14 @@ export default function GuessAnime() {
                                         className={`flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${selectedScreenshotIndex === index ? 'border-anime-accent scale-105' : 'border-transparent opacity-70 hover:opacity-100'
                                             }`}
                                     >
-                                        <img src={ss} alt={`Screenshot ${index + 1}`} className="w-20 h-14 object-cover" />
+                                        <img src={proxyMediaUrl(ss)} alt={`Screenshot ${index + 1}`} className="w-20 h-14 object-cover" />
                                     </button>
                                 ))}
                             </div>
                             {/* Large preview of selected screenshot */}
                             <div className="mt-4 rounded-xl overflow-hidden shadow-xl max-w-2xl mx-auto">
                                 <img
-                                    src={gameState.allScreenshots[selectedScreenshotIndex]}
+                                    src={proxyMediaUrl(gameState.allScreenshots[selectedScreenshotIndex])}
                                     alt="Selected screenshot"
                                     className="w-full h-auto"
                                 />
@@ -350,10 +356,10 @@ export default function GuessAnime() {
     const diff = difficultyInfo[gameState.difficulty as keyof typeof difficultyInfo] || difficultyInfo.normal
 
     return (
-        <div className="min-h-screen p-4 pb-8">
+        <div className="min-h-screen p-3 pb-6">
             {/* Header */}
-            <div className="text-center pt-12 mb-6">
-                <h1 className="text-3xl font-bold mb-2">📸 Guess Anime</h1>
+            <div className="text-center pt-4 mb-4">
+                <h1 className="text-2xl font-bold mb-2">📸 Guess Anime</h1>
                 <div className="flex items-center justify-center gap-4 text-sm">
                     <span className="px-3 py-1 bg-white/10 rounded-full">
                         {diff.emoji} {diff.label}
@@ -372,45 +378,45 @@ export default function GuessAnime() {
 
             {/* Screenshot Display - Always visible */}
             <div className="max-w-3xl mx-auto mb-6">
-                    <div className="relative rounded-xl overflow-hidden shadow-2xl bg-black/20">
-                        {isLoading && (
-                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
-                                <div className="animate-spin text-4xl">⏳</div>
-                            </div>
-                        )}
-                        <img
-                            src={gameState.currentScreenshot}
-                            alt="Anime screenshot"
-                            className="w-full h-auto animate-fade-in"
-                            key={gameState.currentStage}
-                        />
-                        <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full text-white font-medium">
-                            📸 Stage {gameState.currentStage}
-                        </div>
-                    </div>
-
-                    {/* Name Hint Display - Shows alongside current image */}
-                    {gameState.nameHintRevealed && gameState.nameHint && (
-                        <div className="card p-4 mt-4 bg-yellow-500/10 border-2 border-yellow-500/30">
-                            <h3 className="text-sm font-bold mb-3 text-yellow-300 flex items-center gap-2">
-                                <span>💡</span> Name Hint
-                            </h3>
-                            <div className="space-y-2 text-sm">
-                                {gameState.nameHint.title_english && (
-                                    <div>
-                                        <span className="text-gray-400">English:</span>{' '}
-                                        <span className="font-mono text-lg text-cyan-400">{gameState.nameHint.title_english}</span>
-                                    </div>
-                                )}
-                                {gameState.nameHint.title && (
-                                    <div>
-                                        <span className="text-gray-400">Romaji:</span>{' '}
-                                        <span className="font-mono text-lg text-cyan-400">{gameState.nameHint.title}</span>
-                                    </div>
-                                )}
-                            </div>
+                <div className="relative rounded-xl overflow-hidden shadow-2xl bg-black/20">
+                    {isLoading && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+                            <div className="animate-spin text-4xl">⏳</div>
                         </div>
                     )}
+                    <img
+                        src={proxyMediaUrl(gameState.currentScreenshot)}
+                        alt="Anime screenshot"
+                        className="w-full h-auto animate-fade-in"
+                        key={gameState.currentStage}
+                    />
+                    <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full text-white font-medium">
+                        📸 Stage {gameState.currentStage}
+                    </div>
+                </div>
+
+                {/* Name Hint Display - Shows alongside current image */}
+                {gameState.nameHintRevealed && gameState.nameHint && (
+                    <div className="card p-4 mt-4 bg-yellow-500/10 border-2 border-yellow-500/30">
+                        <h3 className="text-sm font-bold mb-3 text-yellow-300 flex items-center gap-2">
+                            <span>💡</span> Name Hint
+                        </h3>
+                        <div className="space-y-2 text-sm">
+                            {gameState.nameHint.title_english && (
+                                <div>
+                                    <span className="text-gray-400">English:</span>{' '}
+                                    <span className="font-mono text-lg text-cyan-400">{gameState.nameHint.title_english}</span>
+                                </div>
+                            )}
+                            {gameState.nameHint.title && (
+                                <div>
+                                    <span className="text-gray-400">Romaji:</span>{' '}
+                                    <span className="font-mono text-lg text-cyan-400">{gameState.nameHint.title}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Stage Navigation Boxes - Wide buttons with labels inside */}
@@ -434,17 +440,15 @@ export default function GuessAnime() {
                                 key={stage}
                                 onClick={() => isClickable && !isNameHintRevealed && handleStageClick(stage)}
                                 disabled={!isClickable || isLoading || isNameHintRevealed}
-                                className={`flex-1 h-10 rounded-lg font-semibold text-sm flex items-center justify-center gap-1 transition-all transform hover:scale-105 ${
-                                    isNameHintRevealed && isNameHint ? 'cursor-not-allowed opacity-50' : ''
-                                } ${
-                                    isCurrent && !isNameHintRevealed
+                                className={`flex-1 h-10 rounded-lg font-semibold text-sm flex items-center justify-center gap-1 transition-all transform hover:scale-105 ${isNameHintRevealed && isNameHint ? 'cursor-not-allowed opacity-50' : ''
+                                    } ${isCurrent && !isNameHintRevealed
                                         ? 'bg-gradient-to-br from-cyan-500 to-blue-500 shadow-lg border-2 border-white'
                                         : isRevealed && !isNameHintRevealed
-                                        ? 'bg-white/20 hover:bg-white/30 border-2 border-white/30'
-                                        : isClickable && !isNameHintRevealed
-                                        ? 'bg-white/10 hover:bg-white/20 border-2 border-white/20 animate-pulse'
-                                        : 'bg-black/30 border-2 border-white/10 opacity-50 cursor-not-allowed'
-                                }`}
+                                            ? 'bg-white/20 hover:bg-white/30 border-2 border-white/30'
+                                            : isClickable && !isNameHintRevealed
+                                                ? 'bg-white/10 hover:bg-white/20 border-2 border-white/20 animate-pulse'
+                                                : 'bg-black/30 border-2 border-white/10 opacity-50 cursor-not-allowed'
+                                    }`}
                             >
                                 <span>{isNameHint ? '💡' : stage}</span>
                                 <span>{label}</span>

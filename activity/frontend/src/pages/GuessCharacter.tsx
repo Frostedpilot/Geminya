@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { guessCharacterApi } from '../api/client'
 import DifficultySelector from '../components/common/DifficultySelector'
 import SearchInput from '../components/common/SearchInput'
+import { proxyMediaUrl } from '../utils/mediaProxy'
 
 interface CharacterCard {
     gameId: string
@@ -43,6 +44,7 @@ export default function GuessCharacter() {
     const [isLoading, setIsLoading] = useState(false)
     const [gameState, setGameState] = useState<GameState | null>(null)
     const [error, setError] = useState<string | null>(null)
+    const actionInProgress = useRef(false)
 
     const startGame = async () => {
         setIsLoading(true)
@@ -83,33 +85,60 @@ export default function GuessCharacter() {
     }
 
     const makeGuess = async () => {
-        if (!gameState) return
+        if (!gameState || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         setError(null)
 
         try {
-            let totalWins = 0
             const updatedCharacters = [...gameState.characters]
 
-            // Submit guess for each character
-            for (let i = 0; i < updatedCharacters.length; i++) {
-                const char = updatedCharacters[i]
-                const response = await guessCharacterApi.guess(char.gameId, char.characterName, char.animeName)
-                const data = response.data
+            // Only submit guesses for characters that don't have results yet
+            const pendingIndices = updatedCharacters
+                .map((char, i) => char.result ? -1 : i)
+                .filter(i => i !== -1)
 
-                updatedCharacters[i] = {
-                    ...char,
-                    result: {
-                        characterCorrect: data.character_correct,
-                        animeCorrect: data.anime_correct,
-                        isWon: data.is_won,
-                    },
-                    target: data.target,
+            if (pendingIndices.length === 0) return
+
+            const results = await Promise.allSettled(
+                pendingIndices.map((i) =>
+                    guessCharacterApi.guess(
+                        updatedCharacters[i].gameId,
+                        updatedCharacters[i].characterName,
+                        updatedCharacters[i].animeName
+                    )
+                )
+            )
+
+            let hasError = false
+
+            results.forEach((result, idx) => {
+                const i = pendingIndices[idx]
+                if (result.status === 'fulfilled') {
+                    const data = result.value.data
+                    updatedCharacters[i] = {
+                        ...updatedCharacters[i],
+                        result: {
+                            characterCorrect: data.character_correct,
+                            animeCorrect: data.anime_correct,
+                            isWon: data.is_won,
+                        },
+                        target: data.target,
+                    }
+                } else {
+                    hasError = true
                 }
+            })
 
-                if (data.is_won) totalWins++
+            if (hasError) {
+                setError('Failed to submit some guesses. Please try again.')
+                // Still update what succeeded
+                setGameState({ ...gameState, characters: updatedCharacters })
+                return
             }
+
+            const totalWins = updatedCharacters.filter(c => c.result?.isWon).length
 
             setGameState({
                 ...gameState,
@@ -121,6 +150,7 @@ export default function GuessCharacter() {
             setError(err.response?.data?.detail || 'Failed to submit guesses')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
@@ -153,16 +183,16 @@ export default function GuessCharacter() {
     // Start screen
     if (!gameState) {
         return (
-            <div className="min-h-screen flex flex-col items-center justify-center p-6">
-                <div className="text-center mb-8 animate-fade-in">
-                    <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
+            <div className="min-h-screen flex flex-col items-center justify-center p-4">
+                <div className="text-center mb-6 animate-fade-in">
+                    <h1 className="text-3xl lg:text-4xl font-bold mb-3 bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
                         🎭 Guess Character
                     </h1>
-                    <p className="text-xl text-gray-300 mb-2">Name all 4 characters AND their anime!</p>
-                    <p className="text-gray-400">One chance. Both answers must be correct for each.</p>
+                    <p className="text-base text-gray-300 mb-1">Name all 4 characters AND their anime!</p>
+                    <p className="text-gray-400 text-sm">One chance. Both answers must be correct for each.</p>
                 </div>
 
-                <div className="card p-8 max-w-lg w-full animate-slide-up">
+                <div className="card p-6 max-w-lg w-full animate-slide-up">
                     <h2 className="text-lg font-semibold mb-4 text-center">Select Difficulty</h2>
                     <DifficultySelector value={difficulty} onChange={setDifficulty} />
 
@@ -216,11 +246,11 @@ export default function GuessCharacter() {
         const correctCount = gameState.characters.filter(c => c.result?.isWon).length
 
         return (
-            <div className="min-h-screen p-4 pb-8">
+            <div className="min-h-screen p-3 pb-6">
                 {/* Header */}
-                <div className="text-center pt-12 mb-6">
-                    <div className="text-5xl mb-2">{gameState.isWon ? '🎉' : '💀'}</div>
-                    <h1 className="text-3xl font-bold mb-2">
+                <div className="text-center pt-4 mb-4">
+                    <div className="text-4xl mb-2">{gameState.isWon ? '🎉' : '💀'}</div>
+                    <h1 className="text-2xl font-bold mb-2">
                         {gameState.isWon ? 'Perfect!' : `${correctCount}/4 Correct`}
                     </h1>
                     <div className="flex items-center justify-center gap-4 text-sm">
@@ -231,30 +261,30 @@ export default function GuessCharacter() {
                 </div>
 
                 {/* 4 Card Grid - same as game but with answers */}
-                <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div className="mx-auto grid grid-cols-4 gap-3 mb-4">
                     {gameState.characters.map((char, index) => (
-                        <div key={index} className="card p-4">
+                        <div key={index} className="card p-2">
                             {/* Character Image */}
-                            <div className="relative mb-4">
+                            <div className="relative mb-2">
                                 <img
-                                    src={char.characterImage}
+                                    src={proxyMediaUrl(char.characterImage)}
                                     alt={char.target?.characterName || 'Character'}
-                                    className="w-full aspect-[3/4] object-cover rounded-lg"
+                                    className="w-full aspect-[3/4] object-cover rounded-lg max-h-48"
                                 />
                                 {/* Result indicator overlay */}
-                                <div className={`absolute top-2 right-2 text-2xl ${char.result?.isWon ? '' : ''}`}>
+                                <div className={`absolute top-1 right-1 text-xl ${char.result?.isWon ? '' : ''}`}>
                                     {char.result?.isWon ? '✅' : '❌'}
                                 </div>
                             </div>
 
                             {/* Answer Fields - styled like inputs */}
-                            <div className="space-y-3">
-                                <div className={`px-3 py-2 rounded-lg border ${char.result?.characterCorrect ? 'border-green-500/50 bg-green-500/10' : 'border-red-500/50 bg-red-500/10'}`}>
+                            <div className="space-y-2">
+                                <div className={`px-2 py-1.5 rounded-lg border text-sm ${char.result?.characterCorrect ? 'border-green-500/50 bg-green-500/10' : 'border-red-500/50 bg-red-500/10'}`}>
                                     <span className={char.result?.characterCorrect ? 'text-green-400' : 'text-red-400'}>
                                         {char.target?.characterName}
                                     </span>
                                 </div>
-                                <div className={`px-3 py-2 rounded-lg border ${char.result?.animeCorrect ? 'border-green-500/50 bg-green-500/10' : 'border-red-500/50 bg-red-500/10'}`}>
+                                <div className={`px-2 py-1.5 rounded-lg border text-sm ${char.result?.animeCorrect ? 'border-green-500/50 bg-green-500/10' : 'border-red-500/50 bg-red-500/10'}`}>
                                     <span className={char.result?.animeCorrect ? 'text-green-400' : 'text-red-400'}>
                                         {char.target?.animeTitle}
                                     </span>
@@ -284,10 +314,10 @@ export default function GuessCharacter() {
     const diff = difficultyInfo[gameState.difficulty as keyof typeof difficultyInfo] || difficultyInfo.normal
 
     return (
-        <div className="min-h-screen p-4 pb-8">
+        <div className="min-h-screen p-3 pb-6">
             {/* Header */}
-            <div className="text-center pt-12 mb-6">
-                <h1 className="text-3xl font-bold mb-2">🎭 Guess Character</h1>
+            <div className="text-center pt-4 mb-4">
+                <h1 className="text-2xl font-bold mb-2">🎭 Guess Character</h1>
                 <div className="flex items-center justify-center gap-4 text-sm">
                     <span className="px-3 py-1 bg-white/10 rounded-full">
                         {diff.emoji} {diff.label}
@@ -302,20 +332,20 @@ export default function GuessCharacter() {
             )}
 
             {/* 4 Card Grid */}
-            <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="mx-auto grid grid-cols-4 gap-3 mb-4">
                 {gameState.characters.map((char, index) => (
-                    <div key={index} className="card p-4">
+                    <div key={index} className="card p-2">
                         {/* Character Image */}
-                        <div className="relative mb-4">
+                        <div className="relative mb-2">
                             <img
-                                src={char.characterImage}
+                                src={proxyMediaUrl(char.characterImage)}
                                 alt={`Character ${index + 1}`}
-                                className="w-full aspect-[3/4] object-cover rounded-lg"
+                                className="w-full aspect-[3/4] object-cover rounded-lg max-h-48"
                             />
                         </div>
 
                         {/* Input Fields */}
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                             <div>
                                 <SearchInput
                                     value={char.characterName}
@@ -346,7 +376,7 @@ export default function GuessCharacter() {
                 <button
                     onClick={makeGuess}
                     disabled={isLoading}
-                    className={`btn btn-secondary w-full py-4 text-lg ${isLoading ? 'btn-disabled' : ''}`}
+                    className={`btn btn-secondary w-full py-3 text-base ${isLoading ? 'btn-disabled' : ''}`}
                 >
                     {isLoading ? (
                         <span className="flex items-center justify-center gap-2">

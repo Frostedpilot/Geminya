@@ -17,6 +17,19 @@ class JikanService:
         self.autocomplete_cache: Dict[str, Tuple[List[Dict], float]] = {}
         self.autocomplete_cache_timeout = 300  # 5 minutes
     
+    def _is_hentai(self, anime: Dict[str, Any]) -> bool:
+        """Check if anime has Hentai genre/tag."""
+        genres = anime.get("genres", [])
+        explicit_genres = anime.get("explicit_genres", [])
+        demographics = anime.get("demographics", [])
+        
+        # Check all genre/demographic lists for hentai
+        all_categories = genres + explicit_genres + demographics
+        for category in all_categories:
+            if category.get("name", "").lower() == "hentai":
+                return True
+        return False
+    
     async def _rate_limit_check(self):
         """Ensure we don't exceed Jikan rate limits."""
         current_time = time.time()
@@ -93,10 +106,11 @@ class JikanService:
                 data = await self._query("/anime", params)
                 if data and data.get("data"):
                     anime_list = data["data"]
-                    # Filter by exact popularity rank
+                    # Filter by exact popularity rank and exclude hentai
                     filtered = [
                         a for a in anime_list 
                         if a.get("popularity") and min_rank <= a.get("popularity", 999999) <= max_rank
+                        and not self._is_hentai(a)
                     ]
                     if filtered:
                         selected = random.choice(filtered)
@@ -138,8 +152,10 @@ class JikanService:
         data = await self._query("/anime", params)
         if data and data.get("data"):
             anime_list = data["data"]
-            if anime_list:
-                return random.choice(anime_list)
+            # Filter out hentai from fallback results
+            filtered = [a for a in anime_list if not self._is_hentai(a)]
+            if filtered:
+                return random.choice(filtered)
         
         return None
 

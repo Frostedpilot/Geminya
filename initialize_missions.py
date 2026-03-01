@@ -5,16 +5,6 @@ from services.database import DatabaseService
 
 # Define your daily missions here. Edit/add as needed.
 MISSIONS = [
-    {
-        "name": "Play a Game!",
-        "description": "Play any of the three games (anidle, guess anime, guess character) today.",
-        "type": "play_game",
-        "target_count": 1,
-        "reward_type": "gems",
-        "reward_amount": 200,
-        "difficulty": "easy",
-        "is_active": True
-    },
     # Add more missions here as needed
 ]
 
