@@ -26,8 +26,13 @@ RUN git clone https://github.com/Frostedpilot/mcp-google-custom-search-server.gi
     && npm install \
     && npm run build
 
-# Create logs directory
-RUN mkdir -p logs
+# Create logs directory and make app writable for non-root user
+RUN mkdir -p logs \
+    && useradd -m -u 1000 appuser \
+    && chown -R appuser:appuser /app
+
+# HF Spaces runs containers as uid 1000
+USER appuser
 
 # HF Spaces expects port 7860
 EXPOSE 7860

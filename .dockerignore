@@ -44,7 +44,7 @@ LICENSE
 Thumbs.db
 
 # Activity frontend (not needed for bot)
-activity/frontend/node_modules/
+activity/
 
 # Data processing scripts (not needed at runtime)
 data/*.ipynb
