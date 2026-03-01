@@ -221,3 +221,5 @@ data/expeditions/*
 
 # objects from librespot
 credentials.json
+
+web/node_modules/
