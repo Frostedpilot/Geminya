@@ -8,12 +8,14 @@ A Discord Embedded Activity containing anime mini-games: Anidle, Guess Anime, Gu
 activity/
 ├── backend/                 # FastAPI Python backend
 │   ├── main.py              # FastAPI entry point
+│   ├── config.yml           # Game difficulty & selection config
 │   ├── requirements.txt     # Python dependencies
 │   ├── routers/             # API route handlers
 │   │   ├── anidle.py        # Anidle game API
 │   │   ├── guess_anime.py   # Guess Anime API
 │   │   ├── guess_character.py # Guess Character API
-│   │   └── guess_theme.py   # Guess OP/ED theme API
+│   │   ├── guess_theme.py   # Guess OP/ED theme API
+│   │   └── media_proxy.py   # Media proxy for Discord CSP
 │   ├── services/            # External API services
 │   │   ├── jikan_service.py # Jikan (MAL) API wrapper
 │   │   ├── shikimori_service.py # Shikimori API wrapper
@@ -24,79 +26,128 @@ activity/
 │       ├── anime.py         # Anime/Character models
 │       └── game.py          # Game state models
 │
-└── frontend/                # React TypeScript frontend
-    ├── package.json
-    ├── vite.config.ts
-    ├── tailwind.config.js
-    └── src/
-        ├── main.tsx         # React entry
-        ├── App.tsx          # Main app with routing
-        ├── discord.ts       # Discord SDK setup
-        ├── api/client.ts    # API client
-        ├── pages/           # Game pages
-        │   ├── Home.tsx     # Game selection
-        │   ├── Anidle.tsx   # Wordle-style anime guessing
-        │   ├── GuessAnime.tsx # Screenshot guessing
-        │   ├── GuessCharacter.tsx # Character identification
-        │   ├── GuessOpening.tsx # Opening theme guessing
-        │   └── GuessEnding.tsx # Ending theme guessing
-        └── components/      # Shared components
-            └── common/
-                ├── DifficultySelector.tsx
-                └── SearchInput.tsx
+├── frontend/                # React TypeScript frontend (hosted on Vercel)
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tailwind.config.js
+│   └── src/
+│       ├── main.tsx         # React entry
+│       ├── App.tsx          # Main app with routing
+│       ├── discord.ts       # Discord SDK + OAuth2 setup
+│       ├── api/client.ts    # API client
+│       ├── pages/           # Game pages
+│       │   ├── Home.tsx     # Game selection
+│       │   ├── Anidle.tsx   # Wordle-style anime guessing
+│       │   ├── GuessAnime.tsx # Screenshot guessing
+│       │   ├── GuessCharacter.tsx # Character identification
+│       │   ├── GuessOpening.tsx # Opening theme guessing
+│       │   └── GuessEnding.tsx # Ending theme guessing
+│       └── components/      # Shared components
+│           └── common/
+│               ├── DifficultySelector.tsx
+│               ├── SearchInput.tsx
+│               └── Sidebar.tsx
+│
+└── startgame.bat            # Local dev launcher (backend + tunnel)
 ```
 
-## Quick Start
+## Secrets & Configuration
 
-### Backend
+The backend loads secrets in this priority order:
+1. `secrets.json` (at repo root — used for local dev)
+2. Environment variables (used on Koyeb)
+
+| Secret | Required | Purpose |
+|--------|----------|---------|
+| `DISCORD_APP_ID` | ✅ | Discord OAuth2 token exchange |
+| `DISCORD_CLIENT_SECRET` | ✅ | Discord OAuth2 token exchange |
+| `IDS_MOE_API_KEY` | ✅ | Anime ID conversion (Guess Anime needs this) |
+| `TMDB_API_KEY` | Optional | TMDB integration |
+
+---
+
+## Deployment Options
+
+### Option A: Koyeb (Production — 24/7)
+
+The backend runs on [Koyeb](https://app.koyeb.com/) free tier. Frontend stays on Vercel.
+
+```
+Discord Activity → Vercel (Frontend) → Koyeb (Backend API)
+```
+
+**Koyeb Service Config:**
+
+| Setting | Value |
+|---------|-------|
+| Working directory | `activity/backend` |
+| Build command | `pip install -r requirements.txt` |
+| Run command | `uvicorn main:app --host 0.0.0.0 --port 8000` |
+| Instance | Free ($0.00/mo) |
+
+Set all secrets as **Environment Variables** in Koyeb (no `secrets.json` needed).
+
+**Discord Developer Portal → Activities → URL Mappings:**
+
+| Prefix | Target |
+|--------|--------|
+| `/api` | `https://your-service.koyeb.app` |
+
+> ⚠️ Free tier sleeps after ~1 hour of inactivity. First request after sleep takes 3–5 seconds.
+
+---
+
+### Option B: Local Dev (Testing)
+
+Run the backend on your PC and expose it via Cloudflare Tunnel.
+
+```
+Discord Activity → Vercel (Frontend) → Cloudflare Tunnel → localhost:8080
+```
+
+#### Backend
 
 ```bash
 cd activity/backend
-
-# Create virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
+venv\Scripts\activate        # Windows
 pip install -r requirements.txt
-
-# Run the server
 uvicorn main:app --reload --port 8080
 ```
 
-### Frontend
+#### Frontend (only needed if developing UI)
 
 ```bash
 cd activity/frontend
-
-# Install dependencies
 npm install
-
-# Copy environment file and configure
-cp .env.example .env
-# Edit .env and add your Discord Client ID
-
-# Run development server
+cp .env.example .env         # Set VITE_DISCORD_CLIENT_ID
 npm run dev
 ```
 
-### Discord Developer Portal Setup
-
-1. Go to https://discord.com/developers/applications
-2. Select your application (or create one)
-3. Enable **Activities** in the app settings
-4. Add URL mappings:
-   - `/.proxy/api` → `http://localhost:8080`
-   - `/` → `http://localhost:5173`
-
-### Local Testing with Discord
-
-For local development with Discord's Activity iframe, you need to expose your local servers:
+#### Expose via Tunnel
 
 ```bash
-# Install cloudflared or use Discord's recommended tunnel
-npx @anthropic/discord-activity-tunnel
+cloudflared tunnel run geminya
 ```
+
+Or use the launcher script:
+```bash
+startgame.bat                # Starts both backend + tunnel
+```
+
+**Discord Developer Portal → Activities → URL Mappings:**
+
+| Prefix | Target |
+|--------|--------|
+| `/api` | `https://api.geminya.me` (or your tunnel URL) |
+
+#### Switching Between Local and Koyeb
+
+Just change the URL mapping target in Discord Developer Portal:
+- **Local:** `https://api.geminya.me` (tunnel)
+- **Production:** `https://your-service.koyeb.app` (Koyeb)
+
+---
 
 ## API Endpoints
 
@@ -129,46 +180,33 @@ npx @anthropic/discord-activity-tunnel
 | `/api/guess-character/search-character` | GET | Character autocomplete |
 | `/api/guess-character/search-anime` | GET | Anime autocomplete |
 
-### Guess Opening
+### Guess OP/ED
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/guess-theme/op/start` | POST | Start new opening game |
+| `/api/guess-theme/op/start` | POST | Start opening game |
+| `/api/guess-theme/ed/start` | POST | Start ending game |
 | `/api/guess-theme/{game_id}/guess` | POST | Submit anime guess |
-| `/api/guess-theme/{game_id}/reveal` | POST | Reveal next stage (audio → video) |
-| `/api/guess-theme/{game_id}/giveup` | POST | Give up |
-| `/api/guess-theme/search/anime` | GET | Anime autocomplete |
-
-### Guess Ending
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/guess-theme/ed/start` | POST | Start new ending game |
-| `/api/guess-theme/{game_id}/guess` | POST | Submit anime guess |
-| `/api/guess-theme/{game_id}/reveal` | POST | Reveal next stage (audio → video) |
+| `/api/guess-theme/{game_id}/reveal` | POST | Reveal video hint |
 | `/api/guess-theme/{game_id}/giveup` | POST | Give up |
 | `/api/guess-theme/search/anime` | GET | Anime autocomplete |
 
 ## Games
 
 ### 🎯 Anidle
-Wordle-style anime guessing game. You have 21 attempts to guess the anime based on comparison indicators:
-- ✅ Correct match
-- ⬆️ Target is higher
-- ⬇️ Target is lower
-- ❌ Incorrect
+Wordle-style anime guessing game. You have 21 attempts to guess the anime based on comparison indicators (✅ correct, ⬆️ higher, ⬇️ lower, ❌ wrong).
 
 ### 📸 Guess Anime
 Identify an anime from screenshots. You get 4 screenshots and 4 attempts. Each wrong guess reveals a new screenshot.
 
 ### 🎭 Guess Character
-One-shot challenge! Identify the character AND name their anime correctly. Both must be right to win.
+One-shot challenge! Identify 4 characters AND name their anime correctly.
 
 ### 🎵 Guess Opening
-Listen to an anime opening theme and guess which anime it's from! Start with audio only, then reveal the video as a hint.
+Listen to an anime opening theme and guess which anime it's from. Stage 1: audio only → Stage 2: full video hint.
 
 ### 🎶 Guess Ending
-Listen to an anime ending theme and guess which anime it's from! Start with audio only, then reveal the video as a hint.
+Listen to an anime ending theme and guess which anime it's from. Stage 1: audio only → Stage 2: full video hint.
 
 ## Tech Stack
 
@@ -182,8 +220,6 @@ Listen to an anime ending theme and guess which anime it's from! Start with audi
 - Vite (build tool)
 - Tailwind CSS (styling)
 - Discord Embedded App SDK
-- React Query (data fetching)
-- Zustand (state management)
 
 **External APIs:**
 - Jikan API v4 (MyAnimeList data with popularity ranking)
@@ -197,21 +233,4 @@ This Activity coexists with the existing discord.py bot. Both can be run simulta
 
 - Bot commands still work (`/anidle`, `/guessanime`, etc.)
 - Activity provides a richer, interactive experience
-- No shared database - Activity uses external APIs only
-
-## Production Deployment
-
-For production deployment where other users can play:
-
-**Quick Start:** See [QUICK_DEPLOY.md](QUICK_DEPLOY.md)  
-**Full Guide:** See [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md)  
-**Checklist:** See [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)
-
-**Summary:**
-1. Run backend locally (or deploy to Railway/Heroku)
-2. Expose backend via Cloudflare Tunnel
-3. Deploy frontend to Vercel/Netlify
-4. Configure Discord URL mappings
-5. Test and launch!
-
-The frontend uses `@discord/embedded-app-sdk` for Discord integration (already configured).
+- No shared database — Activity uses external APIs only

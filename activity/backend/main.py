@@ -93,11 +93,13 @@ class TokenRequest(BaseModel):
     code: str
 
 
-@app.post("/api/token")
+@app.post("/token")
 async def exchange_token(request: TokenRequest):
     """Exchange Discord OAuth2 code for access token."""
     client_id = app.state.discord_client_id
     client_secret = app.state.discord_client_secret
+    
+    logger.info(f"Token exchange: client_id={client_id}, secret_len={len(client_secret) if client_secret else 0}")
     
     if not client_secret:
         raise HTTPException(status_code=500, detail="Discord client secret not configured")
