@@ -1,3 +1,8 @@
+---
+title: Geminya
+sdk: docker
+app_port: 7860
+---
 # Geminya Discord Bot
 
 A modern Discord AI chatbot with integrated waifu collection system, powered by OpenRouter and MCP.

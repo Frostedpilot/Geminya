@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[codz]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.github/
+
+# Logs & debug
+logs/
+debug/
+*.log
+
+# Secrets (will come from env vars in container)
+secrets.json
+credentials.json
+.env
+
+# Tests & docs not needed at runtime
+docs/
+*.md
+!README.md
+LICENSE
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Activity frontend (not needed for bot)
+activity/frontend/node_modules/
+
+# Data processing scripts (not needed at runtime)
+data/*.ipynb
+collect_and_process_*.py
+initialize_*.py
+reset_*.py
+upload_to_postgres.py
+process_character_final.py
+test_*.py

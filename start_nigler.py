@@ -25,6 +25,22 @@ def setup_environment():
     logs_dir = current_dir / "logs"
     logs_dir.mkdir(exist_ok=True)
 
+    # Hydrate credentials.json from env var if not present (for containers)
+    creds_file = current_dir / "credentials.json"
+    stored_creds = os.environ.get("SPOTIFY_STORED_CREDENTIALS")
+    if not creds_file.exists() and stored_creds:
+        import base64
+        try:
+            creds_data = base64.b64decode(stored_creds)
+            creds_file.write_bytes(creds_data)
+        except Exception as e:
+            print(f"⚠️ Failed to decode SPOTIFY_STORED_CREDENTIALS: {e}")
+
+    # Start keep-alive server if running in a container (HF Spaces)
+    if os.environ.get("HF_SPACE") or os.environ.get("KEEP_ALIVE"):
+        from keep_alive import start_keep_alive
+        start_keep_alive(port=int(os.environ.get("PORT", "7860")))
+
 
 def check_dependencies():
     """Check if all required dependencies are installed."""
