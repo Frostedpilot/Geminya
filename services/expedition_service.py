@@ -1165,17 +1165,13 @@ class ExpeditionService:
             self.logger.error(f"[MOCK_EXPEDITION] Error simulating expedition: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
     
-    def check_expedition_available(self, expedition_id: str) -> bool:
-        """Check if an expedition template is still in the allowed list."""
-        import os
-        
-        allowed_path = os.path.join('data', 'expeditions', 'selected_expedition_ids.json')
+    async def check_expedition_available(self, expedition_id: str) -> bool:
+        """Check if an expedition template is still in the allowed list (from DB)."""
         try:
-            with open(allowed_path, 'r', encoding='utf-8') as f:
-                allowed_ids = json.load(f)
-                return expedition_id in allowed_ids
+            allowed_ids = await self.db.get_selected_expedition_ids()
+            return str(expedition_id) in allowed_ids
         except Exception:
-            return False  # If file doesn't exist, consider unavailable
+            return False
     
     async def get_expedition_participants_for_repeat(self, expedition_db_id: int) -> List[Dict]:
         """Retrieve participant data for repeating a completed expedition from final_results."""

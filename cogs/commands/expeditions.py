@@ -437,17 +437,8 @@ class ExpeditionSelectView(discord.ui.View):
         self.current_page = 0
         self.items_per_page = 25  # Discord select menu limit
 
-        # Load allowed expedition IDs from file
-        import json, os
-        allowed_path = os.path.join('data', 'expeditions', 'selected_expedition_ids.json')
-        try:
-            with open(allowed_path, 'r', encoding='utf-8') as f:
-                allowed_ids = set(json.load(f))
-        except Exception:
-            allowed_ids = set()
-
-        # Only allow expeditions in the allowed list
-        self.expeditions = [e for e in expeditions if e.get('expedition_id') in allowed_ids]
+        # Filter to only allowed expeditions (allowed_ids pre-fetched by caller)
+        self.expeditions = expeditions  # Caller already filtered
 
         self._setup_ui()
     
@@ -2623,7 +2614,7 @@ class ExpeditionResultsView(discord.ui.View):
                         continue
                     
                     # Check if expedition is still available
-                    if not self.expedition_service.check_expedition_available(expedition_id):
+                    if not await self.expedition_service.check_expedition_available(expedition_id):
                         failed_starts.append({
                             'name': expedition_name,
                             'reason': 'No longer in active expedition list'
@@ -4146,10 +4137,16 @@ class ExpeditionsCog(BaseCommand):
             
             # Create main expedition list embed
             slots_used = len(active_expeditions)
-            
+
             # Create selection view first to get the embed
             self.logger.debug(f"[DISCORD_EXPEDITION_START] Creating selection view for user {discord_id}")
-            view = ExpeditionSelectView(expeditions, interaction.user.id, self.expedition_service)
+            # Pre-filter expeditions by allowed IDs from DB (since __init__ can't be async)
+            try:
+                allowed_ids = set(await self.expedition_service.db.get_selected_expedition_ids())
+                filtered_expeditions = [e for e in expeditions if str(e.get('expedition_id')) in allowed_ids]
+            except Exception:
+                filtered_expeditions = expeditions
+            view = ExpeditionSelectView(filtered_expeditions, interaction.user.id, self.expedition_service)
             embed = await view._create_expedition_list_embed()
             
             # Add expedition slots info at the top
@@ -4329,16 +4326,13 @@ class ExpeditionsCog(BaseCommand):
             self.logger.debug(f"[DISCORD_EXPEDITION_CATALOG] Loading available expeditions")
             expeditions = await self.expedition_service.get_available_expeditions()
 
-            # If available_only, filter by selected_expedition_ids.json
+            # If available_only, filter by selected expedition IDs from DB
             if available_only:
-                import json, os
-                allowed_path = os.path.join('data', 'expeditions', 'selected_expedition_ids.json')
                 try:
-                    with open(allowed_path, 'r', encoding='utf-8') as f:
-                        allowed_ids = set(json.load(f))
+                    allowed_ids = set(await self.expedition_service.db.get_selected_expedition_ids())
                 except Exception:
                     allowed_ids = set()
-                expeditions = [e for e in expeditions if e.get('expedition_id') in allowed_ids]
+                expeditions = [e for e in expeditions if str(e.get('expedition_id')) in allowed_ids]
 
             if not expeditions:
                 self.logger.warning(f"[DISCORD_EXPEDITION_CATALOG] No expeditions available for user {discord_id}")
