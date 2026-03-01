@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { anidleApi } from '../api/client'
 import DifficultySelector from '../components/common/DifficultySelector'
@@ -78,6 +78,7 @@ export default function Anidle() {
     const [searchValue, setSearchValue] = useState('')
     const [error, setError] = useState<string | null>(null)
     const [showHowToPlay, setShowHowToPlay] = useState(false)
+    const actionInProgress = useRef(false)
 
     const startGame = async () => {
         setIsLoading(true)
@@ -101,7 +102,8 @@ export default function Anidle() {
     }
 
     const makeGuess = async () => {
-        if (!gameState || !searchValue.trim()) return
+        if (!gameState || !searchValue.trim() || actionInProgress.current) return
+        actionInProgress.current = true
         setIsLoading(true)
         setError(null)
         try {
@@ -125,11 +127,13 @@ export default function Anidle() {
             setError(err.response?.data?.detail || 'Failed to submit guess')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
     const giveUp = async () => {
-        if (!gameState) return
+        if (!gameState || actionInProgress.current) return
+        actionInProgress.current = true
         setIsLoading(true)
         try {
             const response = await anidleApi.giveUp(gameState.gameId)
@@ -148,6 +152,7 @@ export default function Anidle() {
             setError(err.response?.data?.detail || 'Failed to give up')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 

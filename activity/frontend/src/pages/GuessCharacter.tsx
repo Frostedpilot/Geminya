@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { guessCharacterApi } from '../api/client'
 import DifficultySelector from '../components/common/DifficultySelector'
@@ -44,6 +44,7 @@ export default function GuessCharacter() {
     const [isLoading, setIsLoading] = useState(false)
     const [gameState, setGameState] = useState<GameState | null>(null)
     const [error, setError] = useState<string | null>(null)
+    const actionInProgress = useRef(false)
 
     const startGame = async () => {
         setIsLoading(true)
@@ -84,7 +85,8 @@ export default function GuessCharacter() {
     }
 
     const makeGuess = async () => {
-        if (!gameState) return
+        if (!gameState || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         setError(null)
@@ -122,6 +124,7 @@ export default function GuessCharacter() {
             setError(err.response?.data?.detail || 'Failed to submit guesses')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 

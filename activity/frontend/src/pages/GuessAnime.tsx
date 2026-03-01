@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { guessAnimeApi } from '../api/client'
 import DifficultySelector from '../components/common/DifficultySelector'
@@ -53,6 +53,7 @@ export default function GuessAnime() {
     const [searchValue, setSearchValue] = useState('')
     const [error, setError] = useState<string | null>(null)
     const [selectedScreenshotIndex, setSelectedScreenshotIndex] = useState(0)
+    const actionInProgress = useRef(false)
 
     const startGame = async () => {
         setIsLoading(true)
@@ -82,7 +83,8 @@ export default function GuessAnime() {
     }
 
     const makeGuess = async () => {
-        if (!gameState || !searchValue.trim()) return
+        if (!gameState || !searchValue.trim() || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         setError(null)
@@ -109,11 +111,13 @@ export default function GuessAnime() {
             setError(err.response?.data?.detail || 'Failed to submit guess')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
     const handleStageClick = async (stage: number) => {
-        if (!gameState || gameState.isComplete) return
+        if (!gameState || gameState.isComplete || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         setError(null)
@@ -143,6 +147,7 @@ export default function GuessAnime() {
             setError(err.response?.data?.detail || 'Failed to change stage')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
@@ -373,45 +378,45 @@ export default function GuessAnime() {
 
             {/* Screenshot Display - Always visible */}
             <div className="max-w-3xl mx-auto mb-6">
-                    <div className="relative rounded-xl overflow-hidden shadow-2xl bg-black/20">
-                        {isLoading && (
-                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
-                                <div className="animate-spin text-4xl">⏳</div>
-                            </div>
-                        )}
-                        <img
-                            src={proxyMediaUrl(gameState.currentScreenshot)}
-                            alt="Anime screenshot"
-                            className="w-full h-auto animate-fade-in"
-                            key={gameState.currentStage}
-                        />
-                        <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full text-white font-medium">
-                            📸 Stage {gameState.currentStage}
-                        </div>
-                    </div>
-
-                    {/* Name Hint Display - Shows alongside current image */}
-                    {gameState.nameHintRevealed && gameState.nameHint && (
-                        <div className="card p-4 mt-4 bg-yellow-500/10 border-2 border-yellow-500/30">
-                            <h3 className="text-sm font-bold mb-3 text-yellow-300 flex items-center gap-2">
-                                <span>💡</span> Name Hint
-                            </h3>
-                            <div className="space-y-2 text-sm">
-                                {gameState.nameHint.title_english && (
-                                    <div>
-                                        <span className="text-gray-400">English:</span>{' '}
-                                        <span className="font-mono text-lg text-cyan-400">{gameState.nameHint.title_english}</span>
-                                    </div>
-                                )}
-                                {gameState.nameHint.title && (
-                                    <div>
-                                        <span className="text-gray-400">Romaji:</span>{' '}
-                                        <span className="font-mono text-lg text-cyan-400">{gameState.nameHint.title}</span>
-                                    </div>
-                                )}
-                            </div>
+                <div className="relative rounded-xl overflow-hidden shadow-2xl bg-black/20">
+                    {isLoading && (
+                        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-10">
+                            <div className="animate-spin text-4xl">⏳</div>
                         </div>
                     )}
+                    <img
+                        src={proxyMediaUrl(gameState.currentScreenshot)}
+                        alt="Anime screenshot"
+                        className="w-full h-auto animate-fade-in"
+                        key={gameState.currentStage}
+                    />
+                    <div className="absolute bottom-4 right-4 bg-black/70 backdrop-blur-sm px-4 py-2 rounded-full text-white font-medium">
+                        📸 Stage {gameState.currentStage}
+                    </div>
+                </div>
+
+                {/* Name Hint Display - Shows alongside current image */}
+                {gameState.nameHintRevealed && gameState.nameHint && (
+                    <div className="card p-4 mt-4 bg-yellow-500/10 border-2 border-yellow-500/30">
+                        <h3 className="text-sm font-bold mb-3 text-yellow-300 flex items-center gap-2">
+                            <span>💡</span> Name Hint
+                        </h3>
+                        <div className="space-y-2 text-sm">
+                            {gameState.nameHint.title_english && (
+                                <div>
+                                    <span className="text-gray-400">English:</span>{' '}
+                                    <span className="font-mono text-lg text-cyan-400">{gameState.nameHint.title_english}</span>
+                                </div>
+                            )}
+                            {gameState.nameHint.title && (
+                                <div>
+                                    <span className="text-gray-400">Romaji:</span>{' '}
+                                    <span className="font-mono text-lg text-cyan-400">{gameState.nameHint.title}</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Stage Navigation Boxes - Wide buttons with labels inside */}
@@ -435,17 +440,15 @@ export default function GuessAnime() {
                                 key={stage}
                                 onClick={() => isClickable && !isNameHintRevealed && handleStageClick(stage)}
                                 disabled={!isClickable || isLoading || isNameHintRevealed}
-                                className={`flex-1 h-10 rounded-lg font-semibold text-sm flex items-center justify-center gap-1 transition-all transform hover:scale-105 ${
-                                    isNameHintRevealed && isNameHint ? 'cursor-not-allowed opacity-50' : ''
-                                } ${
-                                    isCurrent && !isNameHintRevealed
+                                className={`flex-1 h-10 rounded-lg font-semibold text-sm flex items-center justify-center gap-1 transition-all transform hover:scale-105 ${isNameHintRevealed && isNameHint ? 'cursor-not-allowed opacity-50' : ''
+                                    } ${isCurrent && !isNameHintRevealed
                                         ? 'bg-gradient-to-br from-cyan-500 to-blue-500 shadow-lg border-2 border-white'
                                         : isRevealed && !isNameHintRevealed
-                                        ? 'bg-white/20 hover:bg-white/30 border-2 border-white/30'
-                                        : isClickable && !isNameHintRevealed
-                                        ? 'bg-white/10 hover:bg-white/20 border-2 border-white/20 animate-pulse'
-                                        : 'bg-black/30 border-2 border-white/10 opacity-50 cursor-not-allowed'
-                                }`}
+                                            ? 'bg-white/20 hover:bg-white/30 border-2 border-white/30'
+                                            : isClickable && !isNameHintRevealed
+                                                ? 'bg-white/10 hover:bg-white/20 border-2 border-white/20 animate-pulse'
+                                                : 'bg-black/30 border-2 border-white/10 opacity-50 cursor-not-allowed'
+                                    }`}
                             >
                                 <span>{isNameHint ? '💡' : stage}</span>
                                 <span>{label}</span>

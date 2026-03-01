@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { guessOpApi } from '../api/client'
 import DifficultySelector from '../components/common/DifficultySelector'
@@ -44,6 +44,7 @@ export default function GuessOpening() {
     const [gameState, setGameState] = useState<GameState | null>(null)
     const [animeName, setAnimeName] = useState('')
     const [error, setError] = useState<string | null>(null)
+    const actionInProgress = useRef(false)
 
     const startGame = async () => {
         setIsLoading(true)
@@ -71,7 +72,8 @@ export default function GuessOpening() {
     }
 
     const makeGuess = async () => {
-        if (!gameState || !animeName.trim()) return
+        if (!gameState || !animeName.trim() || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         setError(null)
@@ -89,11 +91,13 @@ export default function GuessOpening() {
             setError(err.response?.data?.detail || 'Failed to submit guess')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
     const revealHint = async () => {
-        if (!gameState) return
+        if (!gameState || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         try {
@@ -106,11 +110,13 @@ export default function GuessOpening() {
             setError(err.response?.data?.detail || 'Failed to reveal hint')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
     const giveUp = async () => {
-        if (!gameState) return
+        if (!gameState || actionInProgress.current) return
+        actionInProgress.current = true
 
         setIsLoading(true)
         try {
@@ -127,6 +133,7 @@ export default function GuessOpening() {
             setError(err.response?.data?.detail || 'Failed to give up')
         } finally {
             setIsLoading(false)
+            actionInProgress.current = false
         }
     }
 
