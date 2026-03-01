@@ -200,6 +200,8 @@ async def make_guess(game_id: str, request: GuessRequest):
 @router.post("/{game_id}/reveal_stage")
 async def reveal_stage(game_id: str):
     """Reveal the next stage or navigate to an existing stage."""
+    # DEBUG: diagnostic logging for intermittent 404s
+    logger.info(f"🔍 reveal_stage called | game_id='{game_id}' | in_dict={game_id in games} | total_games={len(games)} | keys={list(games.keys())}")
     if game_id not in games:
         raise HTTPException(status_code=404, detail="Game not found")
     
