@@ -217,9 +217,10 @@ mcp_servers/
 *.xlsx
 data/*.json
 data/expeditions/*
+data/anime-lists/
 .github
 
 # objects from librespot
 credentials.json
-
 web/node_modules/
+node_modules/

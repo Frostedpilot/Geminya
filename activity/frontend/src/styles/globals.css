@@ -1,0 +1,286 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --discord-dark: #23272A;
+    --discord-darker: #1E2124;
+    --discord-blurple: #5865F2;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    color: white;
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+#root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+
+@layer components {
+
+    /* Buttons */
+    .btn {
+        @apply px-6 py-3 rounded-lg font-semibold transition-all duration-200 transform active:scale-95;
+    }
+
+    .btn-primary {
+        @apply bg-anime-primary hover:bg-purple-600 text-white shadow-lg hover:shadow-purple-500/30 hover:scale-105;
+    }
+
+    .btn-secondary {
+        @apply bg-anime-secondary hover:bg-pink-600 text-white shadow-lg hover:shadow-pink-500/30 hover:scale-105;
+    }
+
+    .btn-accent {
+        @apply bg-anime-accent hover:bg-cyan-600 text-white shadow-lg hover:shadow-cyan-500/30 hover:scale-105;
+    }
+
+    .btn-success {
+        @apply bg-discord-green hover:bg-green-600 text-white shadow-lg hover:shadow-green-500/30 hover:scale-105;
+    }
+
+    .btn-danger {
+        @apply bg-discord-red hover:bg-red-600 text-white shadow-lg hover:shadow-red-500/30 hover:scale-105;
+    }
+
+    .btn-disabled {
+        @apply opacity-50 cursor-not-allowed transform-none hover:scale-100 active:scale-100;
+    }
+
+    /* Cards */
+    .card {
+        @apply bg-white/5 backdrop-blur-lg rounded-xl border border-white/10 shadow-xl;
+    }
+
+    .card-hover {
+        @apply hover:bg-white/10 hover:border-white/20 transition-all duration-200;
+    }
+
+    /* Inputs */
+    .input {
+        @apply w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-anime-primary focus:border-transparent transition-all duration-200;
+    }
+
+    /* Indicators for Anidle grid */
+    .indicator-correct {
+        @apply bg-green-500/80 text-white border border-green-400/50;
+    }
+
+    .indicator-partial {
+        @apply bg-yellow-500/80 text-white border border-yellow-400/50;
+    }
+
+    .indicator-wrong {
+        @apply bg-red-500/80 text-white border border-red-400/50;
+    }
+}
+
+/* Animations */
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+@keyframes fade-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slide-up {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes bounce-in {
+    0% {
+        transform: scale(0.3);
+        opacity: 0;
+    }
+
+    50% {
+        transform: scale(1.05);
+    }
+
+    70% {
+        transform: scale(0.9);
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+@keyframes pulse-glow {
+
+    0%,
+    100% {
+        box-shadow: 0 0 5px rgba(139, 92, 246, 0.5);
+    }
+
+    50% {
+        box-shadow: 0 0 20px rgba(139, 92, 246, 0.8);
+    }
+}
+
+.animate-fade-in {
+    animation: fade-in 0.3s ease-out;
+}
+
+.animate-slide-up {
+    animation: slide-up 0.3s ease-out;
+}
+
+.animate-bounce-in {
+    animation: bounce-in 0.5s ease-out;
+}
+
+.animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.skeleton {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.1) 25%, rgba(255, 255, 255, 0.2) 50%, rgba(255, 255, 255, 0.1) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+/* Screenshot container */
+.screenshot-container {
+    @apply relative overflow-hidden rounded-xl shadow-2xl;
+}
+
+.screenshot-container img {
+    @apply w-full h-auto object-cover;
+}
+
+/* Guess grid - 7 columns (original) */
+.guess-grid {
+    @apply grid gap-1;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+/* Extended guess grid - 9 columns (for Anidle with all properties) */
+.guess-grid-extended {
+    @apply grid gap-1;
+    grid-template-columns: minmax(100px, 1.5fr) repeat(8, minmax(60px, 1fr));
+}
+
+.guess-cell {
+    @apply p-2 rounded text-center text-xs font-medium truncate flex items-center justify-center gap-0.5;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 640px) {
+    .guess-grid-extended {
+        grid-template-columns: minmax(80px, 1.2fr) repeat(8, minmax(50px, 1fr));
+    }
+
+    .guess-cell {
+        @apply p-1 text-[10px];
+    }
+}
+
+/* Gradient text effect */
+.gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r;
+}
+
+/* Glassmorphism effect */
+.glass {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+}
+
+/* Difficulty badge colors */
+.difficulty-easy {
+    @apply bg-green-500/20 text-green-300 border-green-500/30;
+}
+
+.difficulty-normal {
+    @apply bg-yellow-500/20 text-yellow-300 border-yellow-500/30;
+}
+
+.difficulty-hard {
+    @apply bg-orange-500/20 text-orange-300 border-orange-500/30;
+}
+
+.difficulty-expert {
+    @apply bg-red-500/20 text-red-300 border-red-500/30;
+}
+
+.difficulty-crazy {
+    @apply bg-purple-500/20 text-purple-300 border-purple-500/30;
+}
+
+.difficulty-insanity {
+    @apply bg-gray-800/50 text-gray-300 border-gray-500/30;
+}
+
+/* Win celebration animation */
+.confetti-bg {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60' viewBox='0 0 60 60'%3E%3Cg fill-opacity='0.1'%3E%3Cpath fill='%23f0f' d='M10 10l5 5-5 5-5-5z'/%3E%3Cpath fill='%230ff' d='M40 20l5 5-5 5-5-5z'/%3E%3Cpath fill='%23ff0' d='M25 35l5 5-5 5-5-5z'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Loading spinner */
+.spinner {
+    @apply w-8 h-8 border-4 border-white/20 border-t-anime-primary rounded-full animate-spin;
+}
+
+/* Tooltip */
+[title] {
+    position: relative;
+}
+
+/* Focus ring for accessibility */
+.focus-ring:focus {
+    @apply outline-none ring-2 ring-anime-primary ring-offset-2 ring-offset-discord-dark;
+}

@@ -411,7 +411,7 @@ class GuessCharacterCog(BaseCommand):
             return []
     
     async def _search_multiple_characters_cached(self, search_term: str, limit: int = 25) -> List[Dict[str, str]]:
-        """Search for multiple characters with caching for autocomplete efficiency."""
+        """Search for multiple characters with caching and deduplication for autocomplete efficiency."""
         if not search_term or len(search_term.strip()) < 2:
             return []
         
@@ -444,10 +444,18 @@ class GuessCharacterCog(BaseCommand):
                 return []
             
             choices = []
+            seen_names = set()  # Track seen character names for deduplication
+            
             if data.get('data'):
                 for character in data['data']:
                     # Extract character name
                     char_name = character.get('name', 'Unknown')
+                    
+                    # Deduplicate by normalized character name (case-insensitive)
+                    name_normalized = char_name.lower().strip()
+                    if name_normalized in seen_names:
+                        continue
+                    seen_names.add(name_normalized)
                     
                     # Get anime information if available (first anime)
                     anime_info = ""

@@ -238,14 +238,15 @@ class WorldThreatService:
             return {"can_act": True, "time_remaining": 0}
         
         # Calculate time until next midnight UTC+7
-        # Create as timezone-aware datetime
-        next_midnight_utc7 = datetime.combine(
+        # Create naive datetime for next midnight in UTC+7, then convert to UTC
+        next_midnight_utc7_naive = datetime.combine(
             now_utc7.date() + timedelta(days=1),
-            datetime.min.time(),
-            tzinfo=timezone.utc
-        ) + utc7_offset
+            datetime.min.time()
+        )
+        # Convert back to UTC by subtracting the offset
+        next_midnight_utc = next_midnight_utc7_naive.replace(tzinfo=timezone.utc) - utc7_offset
         
-        time_remaining = int((next_midnight_utc7 - now_utc).total_seconds())
+        time_remaining = int((next_midnight_utc - now_utc).total_seconds())
         
         return {"can_act": False, "time_remaining": time_remaining}
     

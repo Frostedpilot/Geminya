@@ -1,0 +1,124 @@
+# Activity Backend Games Configuration
+# This file provides settings for the mini-games (Anidle, Guess Anime, Guess Character)
+
+# Global settings
+global:
+  # Hard minimum member count - anime below this are excluded from all difficulties
+  min_members: 7500
+  
+  # API settings
+  search_limit: 25  # Default limit for search results
+  
+  # Retry settings
+  max_retries: 5  # Max attempts to find suitable anime/character
+
+# Anime selection configuration (for Anidle, Guess Anime, Guess Character)
+# Now uses MAL popularity ranking (1 = most popular, 8000 = ~7500 members)
+anime_selection:
+  rank_ranges:
+    easy:
+      "1-500": 10      # Top 500 most popular (highest chance)
+      "501-1000": 2    # Top 1000
+
+    normal:
+      "500-1500": 10   # Popular anime (highest chance)
+      "1501-2500": 5   # Moderately popular
+
+    hard:
+      "2000-3500": 10  # Less popular (highest chance)
+      "3501-4500": 5   # Obscure
+
+    expert:
+      "3500-5000": 10  # Obscure (highest chance)
+      "5001-6000": 5   # Very obscure
+
+    crazy:
+      "5000-6500": 10  # Very obscure (highest chance)
+      "6501-7500": 3   # Extremely obscure
+
+    insanity:
+      "6500-7500": 10  # Extremely obscure (highest chance)
+      "7500-8000": 2   # Nearly unknown (~7500 members)
+
+# Anime selection for Guess Theme games (OP/ED)
+# These games need anime with themes in AnimeThemes.moe database
+# Generally favors more popular anime as they're more likely to have theme data
+theme_anime_selection:
+  rank_ranges:
+    easy:
+      "1-500": 10      # Top 500 most popular (highest chance)
+      "501-1000": 2    # Top 1000
+
+    normal:
+      "500-1500": 10   # Popular anime (highest chance)
+      "1501-2000": 5   # Moderately popular
+
+    hard:
+      "1500-2500": 10  # Less popular (highest chance)
+      "2501-3000": 5   # Obscure
+
+    expert:
+      "2500-3500": 10  # Obscure (highest chance)
+      "3501-4500": 5   # Very obscure
+
+    crazy:
+      "3500-4500": 10  # Very obscure (highest chance)
+
+    insanity:
+      "4500-6000": 2   # Nearly unknown (~7500 members)
+
+# Game-specific settings
+games:
+  anidle:
+    max_guesses: 21
+    hint_penalty: 3  # Guesses deducted per hint
+    
+  guess_anime:
+    max_guesses: 1  # Only 1 guess allowed - wrong guess ends game
+    min_screenshots: 4  # 4 images + 1 name hint = 5 stages total
+    
+  guess_character:
+    max_guesses: 1
+
+# Character selection for Guess Character
+# Format: "anime_difficulty:role": weight
+# Weights determine probability of selecting that combination
+character_selection:
+  easy:
+    "easy:main": 70
+    "easy:support": 10
+    "normal:main": 20
+  
+  normal:
+    "easy:main": 10
+    "easy:support": 30
+    "normal:main": 40
+    "normal:support": 15
+    "hard:main": 5
+  
+  hard:
+    "normal:main": 10
+    "normal:support": 30
+    "hard:main": 40
+    "hard:support": 15
+    "expert:main": 5
+  
+  expert:
+    "hard:main": 10
+    "hard:support": 30
+    "expert:main": 40
+    "expert:support": 15
+    "crazy:main": 5
+  
+  crazy:
+    "expert:main": 10
+    "expert:support": 30
+    "crazy:main": 40
+    "crazy:support": 15
+    "insanity:main": 5
+  
+  insanity:
+    "crazy:main": 10
+    "crazy:support": 30
+    "insanity:main": 40
+    "insanity:support": 20
