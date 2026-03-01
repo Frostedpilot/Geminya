@@ -92,27 +92,53 @@ export default function GuessCharacter() {
         setError(null)
 
         try {
-            let totalWins = 0
             const updatedCharacters = [...gameState.characters]
 
-            // Submit guess for each character
-            for (let i = 0; i < updatedCharacters.length; i++) {
-                const char = updatedCharacters[i]
-                const response = await guessCharacterApi.guess(char.gameId, char.characterName, char.animeName)
-                const data = response.data
+            // Only submit guesses for characters that don't have results yet
+            const pendingIndices = updatedCharacters
+                .map((char, i) => char.result ? -1 : i)
+                .filter(i => i !== -1)
 
-                updatedCharacters[i] = {
-                    ...char,
-                    result: {
-                        characterCorrect: data.character_correct,
-                        animeCorrect: data.anime_correct,
-                        isWon: data.is_won,
-                    },
-                    target: data.target,
+            if (pendingIndices.length === 0) return
+
+            const results = await Promise.allSettled(
+                pendingIndices.map((i) =>
+                    guessCharacterApi.guess(
+                        updatedCharacters[i].gameId,
+                        updatedCharacters[i].characterName,
+                        updatedCharacters[i].animeName
+                    )
+                )
+            )
+
+            let hasError = false
+
+            results.forEach((result, idx) => {
+                const i = pendingIndices[idx]
+                if (result.status === 'fulfilled') {
+                    const data = result.value.data
+                    updatedCharacters[i] = {
+                        ...updatedCharacters[i],
+                        result: {
+                            characterCorrect: data.character_correct,
+                            animeCorrect: data.anime_correct,
+                            isWon: data.is_won,
+                        },
+                        target: data.target,
+                    }
+                } else {
+                    hasError = true
                 }
+            })
 
-                if (data.is_won) totalWins++
+            if (hasError) {
+                setError('Failed to submit some guesses. Please try again.')
+                // Still update what succeeded
+                setGameState({ ...gameState, characters: updatedCharacters })
+                return
             }
+
+            const totalWins = updatedCharacters.filter(c => c.result?.isWon).length
 
             setGameState({
                 ...gameState,
