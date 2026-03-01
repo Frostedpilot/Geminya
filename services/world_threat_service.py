@@ -90,34 +90,32 @@ class WorldThreatService:
     # Stat pool for random selection
     ALL_STATS = ["atk","mag","vit","spr","int","spd","lck"]
     
-    def __init__(self, database_service: DatabaseService):
+    def __init__(self, database_service: DatabaseService, data_manager: DataManager = None, waifu_service=None):
         self.db = database_service
         self.logger = logging.getLogger(__name__)
-        
-        # Initialize wanderer game data manager for character data
-        self.data_manager = DataManager()
-        try:
-            success = self.data_manager.load_all_data()
-            if success:
-                self.logger.info("Loaded character and game data successfully")
-            else:
-                self.logger.error("Failed to load character data")
+
+        # Use shared DataManager or create own (backward compat)
+        if data_manager is not None:
+            self.data_manager = data_manager
+        else:
+            self.data_manager = DataManager()
+            if not self.data_manager.load_all_data():
                 raise RuntimeError("Failed to load character data")
-        except Exception as e:
-            self.logger.error(f"Failed to load character data: {e}")
-            raise
-        
-        # Initialize WaifuService for daphine distribution
-        from services.waifu_service import WaifuService
-        self.waifu_service = WaifuService(database_service)
-        
+
+        # Use shared WaifuService or create own (backward compat)
+        if waifu_service is not None:
+            self.waifu_service = waifu_service
+        else:
+            from services.waifu_service import WaifuService
+            self.waifu_service = WaifuService(database_service)
+
         # Get affinity pools from data manager (loaded once at startup)
         self.affinity_pools = self.data_manager.get_affinity_pools()
         if not self.affinity_pools:
             self.logger.error("Failed to load affinity pools")
             raise RuntimeError("Affinity pools not available")
-        
-        self.logger.info(f"Affinity pools loaded: {', '.join(self.affinity_pools.keys())}")
+
+        self.logger.info("WorldThreatService initialized (shared data_manager: %s)", data_manager is not None)
     
     # === DATA ACCESS METHODS ===
     
