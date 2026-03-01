@@ -71,13 +71,32 @@ class GeminyaBot(commands.Bot):
                 except Exception as e:
                     self.logger.error(f"Failed to load event handler {cog_name}: {e}")
 
-            # Sync commands
+            # Sync commands (preserve Activity Entry Point commands)
             self.logger.info("Syncing application commands...")
             if len(self.tree.get_commands()) > 0:
                 self.logger.info(
                     "Command syncing may take a moment due to Discord rate limits"
                 )
-                await self.tree.sync()
+                try:
+                    # Fetch existing commands to find Entry Point commands (type 4)
+                    # that Discord creates for Activities — these must be included
+                    # in bulk sync or Discord rejects the request (error 50240)
+                    existing = await self.http.get_global_commands(self.application_id)
+                    entry_points = [c for c in existing if c.get('type') == 4]
+
+                    if entry_points:
+                        # Build payload manually: bot commands + entry point commands
+                        payload = [cmd.to_dict(self.tree) for cmd in self.tree.get_commands()]
+                        payload.extend(entry_points)
+                        await self.http.bulk_upsert_global_commands(self.application_id, payload)
+                        self.logger.info(f"Synced commands (preserved {len(entry_points)} Entry Point command(s))")
+                    else:
+                        await self.tree.sync()
+                except discord.HTTPException as e:
+                    if e.code == 50240:
+                        self.logger.warning("Command sync skipped: Entry Point conflict. Commands from previous sync are still active.")
+                    else:
+                        raise
 
             self.logger.info(
                 f"Bot setup completed. Loaded {len(self.commands)} commands"
