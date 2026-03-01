@@ -40,7 +40,14 @@ def load_affinity_pools():
         for e in elems:
             pools['elemental'].add(e)
     return {k: sorted(list(v)) for k, v in pools.items()}
-_AFFINITY_POOLS =  load_affinity_pools()
+_AFFINITY_POOLS = None
+
+def get_affinity_pools():
+    global _AFFINITY_POOLS
+    if _AFFINITY_POOLS is None:
+        _AFFINITY_POOLS = load_affinity_pools()
+    return _AFFINITY_POOLS
+
 def format_equipment_compact(equipment) -> str:
     """
     Return a compact, single-line summary of the equipment for use in lists.
@@ -213,8 +220,9 @@ def random_main_stat_modifier():
     stat = None
     if mod_type == ModifierType.AFFINITY_ADD:
         affinity = random.choice(["favored"])
-        category = random.choice(list(_AFFINITY_POOLS.keys()))
-        value = random.choice(_AFFINITY_POOLS[category])
+        pools = get_affinity_pools()
+        category = random.choice(list(pools.keys()))
+        value = random.choice(pools[category])
     elif mod_type == ModifierType.LOOT_POOL_BONUS:
         value = random.randint(10, 20)
     elif mod_type == ModifierType.ENCOUNTER_COUNT_ADD:
