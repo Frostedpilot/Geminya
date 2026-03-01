@@ -74,7 +74,7 @@ function App() {
         <BrowserRouter>
             <div className="min-h-screen flex">
                 <Sidebar />
-                <div className="flex-1 ml-48">
+                <div className="flex-1 ml-36">
                     <Routes>
                         <Route path="/" element={<Home />} />
                         <Route path="/anidle" element={<Anidle />} />

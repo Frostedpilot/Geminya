@@ -204,16 +204,16 @@ export default function Anidle() {
     // Start screen
     if (!gameState) {
         return (
-            <div className="min-h-screen flex flex-col items-center justify-center p-6">
+            <div className="min-h-screen flex flex-col items-center justify-center p-4">
 
-                <div className="text-center mb-8 animate-fade-in">
-                    <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+                <div className="text-center mb-6 animate-fade-in">
+                    <h1 className="text-3xl lg:text-4xl font-bold mb-3 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
                         🎯 Anidle
                     </h1>
-                    <p className="text-xl text-gray-300 mb-2">Guess the anime in 21 tries!</p>
+                    <p className="text-base text-gray-300 mb-1">Guess the anime in 21 tries!</p>
                 </div>
 
-                <div className="card p-8 max-w-lg w-full animate-slide-up">
+                <div className="card p-6 max-w-lg w-full animate-slide-up">
                     <h2 className="text-lg font-semibold mb-4 text-center">Select Difficulty</h2>
                     <DifficultySelector value={difficulty} onChange={setDifficulty} />
 
@@ -273,9 +273,9 @@ export default function Anidle() {
         const diff = difficultyInfo[gameState.difficulty] || difficultyInfo.normal
 
         return (
-            <div className="card p-6 mb-6 animate-fade-in">
+            <div className="card p-4 mb-4 animate-fade-in">
                 <div className="flex items-center gap-4 mb-4">
-                    <div className="text-5xl">{gameState.isWon ? '🎉' : '💀'}</div>
+                    <div className="text-4xl">{gameState.isWon ? '🎉' : '💀'}</div>
                     <div>
                         <h2 className="text-2xl font-bold">
                             {gameState.isWon ? 'Congratulations!' : 'Game Over!'}
@@ -351,10 +351,10 @@ export default function Anidle() {
     const diff = difficultyInfo[gameState.difficulty] || difficultyInfo.normal
 
     return (
-        <div className="min-h-screen p-4 pb-8">
+        <div className="min-h-screen p-3 pb-6">
             {/* Header */}
-            <div className="text-center pt-10 sm:pt-12 mb-4">
-                <h1 className="text-2xl sm:text-3xl font-bold mb-2">🎯 Anidle</h1>
+            <div className="text-center pt-4 mb-3">
+                <h1 className="text-xl sm:text-2xl font-bold mb-2">🎯 Anidle</h1>
                 <div className="flex items-center justify-center gap-3 text-sm flex-wrap">
                     <span className="px-3 py-1 bg-white/10 rounded-full">
                         {diff.emoji} {diff.label}
