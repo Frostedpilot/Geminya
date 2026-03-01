@@ -29,12 +29,10 @@ def setup_environment():
     creds_file = current_dir / "credentials.json"
     stored_creds = os.environ.get("SPOTIFY_STORED_CREDENTIALS")
     if not creds_file.exists() and stored_creds:
-        import base64
         try:
-            creds_data = base64.b64decode(stored_creds)
-            creds_file.write_bytes(creds_data)
+            creds_file.write_text(stored_creds, encoding="utf-8")
         except Exception as e:
-            print(f"⚠️ Failed to decode SPOTIFY_STORED_CREDENTIALS: {e}")
+            print(f"⚠️ Failed to write SPOTIFY_STORED_CREDENTIALS: {e}")
 
     # Start keep-alive server if running in a container (HF Spaces)
     if os.environ.get("HF_SPACE") or os.environ.get("KEEP_ALIVE"):

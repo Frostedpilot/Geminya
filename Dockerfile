@@ -12,19 +12,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python dependencies first (layer caching)
+# Install Python dependencies line-by-line (order matters, most critical last)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN grep -v '^\s*#' requirements.txt | grep -v '^\s*$' | while read -r pkg; do \
+        pip install --no-cache-dir "$pkg" || true; \
+    done
 
 # Copy application code
 COPY . .
-
-# Clone and build the Google Custom Search MCP server
-RUN git clone https://github.com/Frostedpilot/mcp-google-custom-search-server.git \
-    mcp_servers/mcp-google-custom-search-server \
-    && cd mcp_servers/mcp-google-custom-search-server \
-    && npm install \
-    && npm run build
 
 # Create logs directory and make app writable for non-root user
 RUN mkdir -p logs \
