@@ -219,3 +219,4 @@ mcp_servers/
 credentials.json
 web/node_modules/
 node_modules/
+data/
