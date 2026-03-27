@@ -132,7 +132,7 @@ class LazyLoadedSpotifyView(discord.ui.View):
         self, search_type: str, query: str, spotify_service, timeout: int = 60
     ):
         super().__init__(timeout=timeout)
-        self.search_type = search_type  # "tracks" or "playlists"
+        self.search_type = search_type  # "tracks", "playlists", or "albums"
         self.query = query
         self.spotify_service = spotify_service
         self.current_page = 0
@@ -170,7 +170,7 @@ class LazyLoadedSpotifyView(discord.ui.View):
             data = self.spotify_service.search_tracks(
                 self.query, limit=self.items_per_page, offset=offset
             )
-        else:
+        elif self.search_type == "playlists":
             # For playlists, we need to load more and slice
             # (Spotify playlist search doesn't support offset well)
             all_data = self.spotify_service.search_playlists(
@@ -191,6 +191,24 @@ class LazyLoadedSpotifyView(discord.ui.View):
                     except Exception as e:
                         logging.warning(
                             f"Failed to load playlist tracks for {playlist.id}: {e}"
+                        )
+        else:
+            # Albums follow the same paging model as playlists
+            all_data = self.spotify_service.search_albums(
+                self.query, limit=min(30, offset + self.items_per_page)
+            )
+            data = all_data[offset : offset + self.items_per_page]
+
+            # Load track previews for albums
+            for album in data:
+                preview_key = f"album_tracks:{album.id}"
+                if spotify_cache.get(preview_key) is None:
+                    try:
+                        tracks = self.spotify_service.get_album_tracks(album.id)
+                        spotify_cache.set(preview_key, tracks, ttl=600)
+                    except Exception as e:
+                        logging.warning(
+                            f"Failed to load album tracks for {album.id}: {e}"
                         )
 
         # Cache the page data
@@ -328,9 +346,19 @@ class LazyLoadedSpotifyView(discord.ui.View):
 
     async def _create_embed(self):
         """Create embed for current page with lazy loading."""
+        if self.search_type == "tracks":
+            search_label = "Track"
+            results_label = "tracks"
+        elif self.search_type == "playlists":
+            search_label = "Playlist"
+            results_label = "playlists"
+        else:
+            search_label = "Album"
+            results_label = "albums"
+
         # Show loading message first
         embed = discord.Embed(
-            title=f"🔍 Spotify {'Track' if self.search_type == 'tracks' else 'Playlist'} Search Results",
+            title=f"🔍 Spotify {search_label} Search Results",
             description=f"Loading page {self.current_page + 1}...",
             color=0x1DB954,
         )
@@ -340,7 +368,7 @@ class LazyLoadedSpotifyView(discord.ui.View):
             page_data = await self._load_page_data(self.current_page)
 
             if not page_data:
-                embed.description = f"No {'tracks' if self.search_type == 'tracks' else 'playlists'} found on this page."
+                embed.description = f"No {results_label} found on this page."
                 return embed
 
             # Update embed with actual data
@@ -356,7 +384,7 @@ class LazyLoadedSpotifyView(discord.ui.View):
                         value=f"**Artist:** {track.artist}\n**Duration:** {track.duration_formatted}",
                         inline=True,
                     )
-            else:
+            elif self.search_type == "playlists":
                 for i, playlist in enumerate(page_data):
                     global_num = start_idx + i + 1
 
@@ -387,6 +415,36 @@ class LazyLoadedSpotifyView(discord.ui.View):
                     embed.add_field(
                         name=f"{global_num}. {playlist.name}",
                         value=f"**By:** {playlist.owner}\n**Tracks:**\n{track_list}",
+                        inline=False,
+                    )
+            else:
+                for i, album in enumerate(page_data):
+                    global_num = start_idx + i + 1
+
+                    preview_key = f"album_tracks:{album.id}"
+                    preview_data = spotify_cache.get(preview_key)
+
+                    if preview_data and isinstance(preview_data, list):
+                        tracks = preview_data
+                        preview_tracks = tracks[:3]
+                        total_tracks = len(tracks)
+
+                        if preview_tracks:
+                            track_list = "\n".join(
+                                [f"• {track.display_name}" for track in preview_tracks]
+                            )
+                            if total_tracks > 3:
+                                track_list += (
+                                    f"\n... and {total_tracks - 3} more tracks"
+                                )
+                        else:
+                            track_list = "No playable tracks found"
+                    else:
+                        track_list = "Loading track preview..."
+
+                    embed.add_field(
+                        name=f"{global_num}. {album.name}",
+                        value=f"**By:** {album.artists}\n**Tracks:** {album.tracks_total}\n**Preview:**\n{track_list}",
                         inline=False,
                     )
 
@@ -1067,6 +1125,76 @@ class SpotifyMusicCog(BaseCommand):
         else:
             await interaction.followup.send(
                 f"➕ Added **{added_count}** tracks from playlist: **{selected_playlist.name}**"
+            )
+
+    @app_commands.command(
+        name="spotify_album", description="Search and queue a Spotify album"
+    )
+    async def album(self, interaction: discord.Interaction, query: str):
+        """Search and select an album with lazy loading."""
+        if not interaction.user.voice:
+            await interaction.response.send_message(
+                "❌ You need to be in a voice channel!", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+
+        # Create lazy loading view for album selection
+        view = LazyLoadedSpotifyView("albums", query, self.spotify)
+        embed = await view._create_embed()
+        await interaction.followup.send(embed=embed, view=view)
+
+        # Wait for user selection
+        await view.wait()
+
+        if view.selected_item is None:
+            return
+
+        # Get all tracks from selected album (from cache or load fresh)
+        selected_album = view.selected_item
+        cache_key = f"album_tracks:{selected_album.id}"
+        cached_data = spotify_cache.get(cache_key)
+
+        if cached_data and isinstance(cached_data, list):
+            tracks = cached_data
+            self.logger.info(f"Using cached album tracks: {len(tracks)} tracks")
+        else:
+            self.logger.info(f"Loading fresh album tracks for {selected_album.id}")
+            tracks = self.spotify.get_album_tracks(selected_album.id)
+            if tracks:
+                spotify_cache.set(cache_key, tracks, ttl=600)
+
+        if not tracks:
+            await interaction.followup.send(
+                f"❌ Album **{selected_album.name}** has no playable tracks!"
+            )
+            return
+
+        guild_id = interaction.guild_id
+
+        # Auto-join if not connected
+        if guild_id not in self.music._voice_clients:
+            await self.music.join_voice_channel(interaction.user.voice.channel)
+
+        # Add tracks to queue
+        added_count, skipped_count = self.music.add_playlist_to_queue(
+            guild_id, tracks, interaction.user
+        )
+
+        # Start playing if nothing is playing
+        if not self.music.is_playing(guild_id):
+            await self.music.play_next(guild_id)
+
+        # Create response message with skip info
+        if skipped_count > 0:
+            await interaction.followup.send(
+                f"➕ Added **{added_count}** tracks from album: **{selected_album.name}**\n"
+                f"⚠️ Skipped **{skipped_count}** unavailable tracks"
+            )
+        else:
+            await interaction.followup.send(
+                f"➕ Added **{added_count}** tracks from album: **{selected_album.name}**"
             )
 
     @app_commands.command(

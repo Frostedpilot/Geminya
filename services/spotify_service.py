@@ -73,6 +73,18 @@ class SpotifyPlaylist:
     owner: str
 
 
+@dataclass
+class SpotifyAlbum:
+    """Represents a Spotify album with metadata."""
+
+    id: str
+    name: str
+    artists: str
+    tracks_total: int
+    external_url: str
+    release_date: str
+
+
 class LibrespotAudioSource(discord.AudioSource):
     """Discord audio source that streams from librespot via FFmpeg."""
 
@@ -320,24 +332,38 @@ class SpotifyService:
                 # This is the most reliable way to maintain session persistence
                 credentials_path = "credentials.json"
                 if os.path.exists(credentials_path):
-                    self.logger.info(f"Loading Spotify credentials from {credentials_path}")
-                    self._session = Session.Builder().stored_file(credentials_path).create()
-                    self.logger.info("Librespot session created successfully from stored file")
+                    self.logger.info(
+                        f"Loading Spotify credentials from {credentials_path}"
+                    )
+                    self._session = (
+                        Session.Builder().stored_file(credentials_path).create()
+                    )
+                    self.logger.info(
+                        "Librespot session created successfully from stored file"
+                    )
                     return
 
                 # Fallback 1: Use username/password from config
                 if self.username and self.password:
-                    self.logger.info(f"Creating Spotify session for user: {self.username}")
-                    self._session = (
-                        Session.Builder().user_pass(self.username, self.password).create()
+                    self.logger.info(
+                        f"Creating Spotify session for user: {self.username}"
                     )
-                    self.logger.info("Librespot session created successfully using credentials")
+                    self._session = (
+                        Session.Builder()
+                        .user_pass(self.username, self.password)
+                        .create()
+                    )
+                    self.logger.info(
+                        "Librespot session created successfully using credentials"
+                    )
                     return
 
                 # Fallback 2: Use OAuth (None)
                 self.logger.info("Creating Spotify session using fallback OAuth (None)")
                 self._session = Session.Builder().oauth(None).create()
-                self.logger.info("Librespot session created using fallback OAuth (None)")
+                self.logger.info(
+                    "Librespot session created using fallback OAuth (None)"
+                )
 
             except Exception as e:
                 self.logger.error(f"Failed to create librespot session: {e}")
@@ -488,6 +514,92 @@ class SpotifyService:
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return []
 
+    def search_albums(
+        self, query: str, limit: int = 10, offset: int = 0
+    ) -> List[SpotifyAlbum]:
+        """Search for albums on Spotify."""
+        try:
+            self.logger.info(
+                f"Searching for albums with query: '{query}', limit: {limit}, offset: {offset}"
+            )
+            results = self._spotipy.search(
+                q=query, type="album", limit=limit, offset=offset
+            )
+
+            albums = []
+
+            if "albums" not in results or "items" not in results["albums"]:
+                self.logger.error("Invalid album search results structure")
+                return []
+
+            items = results["albums"]["items"]
+            self.logger.info(f"Found {len(items)} album items")
+
+            for i, item in enumerate(items):
+                if item is None:
+                    self.logger.warning(f"Album item {i} is None, skipping")
+                    continue
+
+                if not item.get("id") or not item.get("name"):
+                    self.logger.warning(
+                        f"Album missing required fields, skipping: {item}"
+                    )
+                    continue
+
+                artist_name = (
+                    ", ".join(
+                        artist.get("name", "Unknown")
+                        for artist in item.get("artists", [])
+                    )
+                    or "Unknown"
+                )
+
+                album = SpotifyAlbum(
+                    id=item["id"],
+                    name=item["name"],
+                    artists=artist_name,
+                    tracks_total=item.get(
+                        "total_tracks", item.get("tracks", {}).get("total", 0)
+                    ),
+                    external_url=item.get("external_urls", {}).get("spotify", ""),
+                    release_date=item.get("release_date", ""),
+                )
+                albums.append(album)
+
+            self.logger.info(f"Found {len(albums)} albums")
+            return albums
+
+        except Exception as e:
+            self.logger.error(f"Error searching albums: {e}")
+            import traceback
+
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return []
+
+    def _build_spotify_track(
+        self, item: Dict[str, Any], default_album: str = ""
+    ) -> tuple[Optional[SpotifyTrack], bool]:
+        """Convert a Spotify API track item into a SpotifyTrack."""
+        if not item or item.get("type") != "track":
+            return None, False
+
+        is_playable = item.get("is_playable", True)
+        if not is_playable or not item.get("id"):
+            return None, True
+
+        track = SpotifyTrack(
+            id=item["id"],
+            name=item["name"],
+            artist=", ".join([artist["name"] for artist in item.get("artists", [])]),
+            album=item.get("album", {}).get("name", default_album),
+            duration_ms=item.get("duration_ms", 0),
+            uri=item.get("uri", ""),
+            external_url=item.get("external_urls", {}).get("spotify", ""),
+            preview_url=item.get("preview_url"),
+            is_playable=is_playable,
+        )
+        return track, False
+
     def get_playlist_tracks(self, playlist_id: str) -> List[SpotifyTrack]:
         """Get tracks from a playlist."""
         try:
@@ -546,6 +658,53 @@ class SpotifyService:
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             return []
 
+    def get_album_tracks(self, album_id: str) -> List[SpotifyTrack]:
+        """Get tracks from an album."""
+        try:
+            self.logger.info(f"Getting tracks for album: {album_id}")
+            tracks = []
+            skipped_unavailable = 0
+            offset = 0
+            limit = 50
+
+            while True:
+                results = self._spotipy.album_tracks(
+                    album_id, limit=limit, offset=offset
+                )
+                items = results.get("items", [])
+
+                if not items:
+                    break
+
+                for item in items:
+                    track, skipped = self._build_spotify_track(item)
+                    if skipped:
+                        skipped_unavailable += 1
+                        self.logger.debug(
+                            f"Skipping unavailable album track: {item.get('name', 'Unknown')}"
+                        )
+                        continue
+
+                    if track:
+                        tracks.append(track)
+
+                if not results.get("next"):
+                    break
+
+                offset += len(items)
+
+            self.logger.info(
+                f"Found {len(tracks)} playable tracks in album (skipped {skipped_unavailable} unavailable)"
+            )
+            return tracks
+
+        except Exception as e:
+            self.logger.error(f"Error getting album tracks: {e}")
+            import traceback
+
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            return []
+
     async def create_audio_source(
         self, track: SpotifyTrack
     ) -> Optional[LibrespotAudioSource]:
@@ -563,7 +722,7 @@ class SpotifyService:
             def get_stream():
                 if not self._session:
                     raise RuntimeError("Session is not initialized")
-                
+
                 track_id = TrackId.from_uri(track.uri)
                 quality = VorbisOnlyAudioQuality(self._quality.value)
                 return self._session.content_feeder().load(
@@ -576,7 +735,9 @@ class SpotifyService:
                 track_stream = await loop.run_in_executor(None, get_stream)
             except RuntimeError as re:
                 if "Session is closed" in str(re):
-                    self.logger.warning("Detected closed session in get_stream, retrying once...")
+                    self.logger.warning(
+                        "Detected closed session in get_stream, retrying once..."
+                    )
                     await self._create_session()
                     track_stream = await loop.run_in_executor(None, get_stream)
                 else:

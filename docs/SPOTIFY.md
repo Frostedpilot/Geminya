@@ -74,6 +74,7 @@ Ensure your Discord bot has the following permissions:
 - `/spotify_search <query>` - **Search for tracks with paginated results (up to 50 tracks, 5 per page)**
 - `/spotify_play <query>` - Search and play the first result immediately
 - `/spotify_playlist <query>` - **Search playlists with paginated results and track previews (up to 30 playlists, 3 per page)**
+- `/spotify_album <query>` - **Search albums with paginated results and track previews (up to 30 albums, 3 per page)**
 
 ### Playback Controls
 
@@ -127,6 +128,25 @@ Shows 50 anime opening tracks across 10 pages, with navigation controls.
 ```
 
 Shows multiple "chill vibes" playlists with track previews, letting you pick the perfect one.
+
+### Enhanced Album Search (`/spotify_album`)
+
+**Features:**
+
+- **Up to 30 albums** with the same paginated selector flow
+- **3 albums per page** for easier browsing
+- **Track previews**: See the first 3 tracks from each album
+- **Track counts**: Shows the total album track count
+- **Artist info**: Displays the main album artist(s)
+- **Navigation**: Same page system as track and playlist search
+
+**Example Usage:**
+
+```
+/spotify_album query:lofi beats
+```
+
+Shows matching albums with previews, then queues the selected album's tracks.
 
 ### Enhanced Queue Display (`/spotify_queue`)
 
