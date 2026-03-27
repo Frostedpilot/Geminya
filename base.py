@@ -7,6 +7,7 @@ from discord.ext import commands
 
 # Import new configuration and service systems
 from config import Config, ConfigError
+from config.cogs import get_enabled_cogs
 from services.container import ServiceContainer
 from cogs import COMMANDS, EVENT_HANDLERS
 
@@ -50,17 +51,20 @@ class GeminyaBot(commands.Bot):
             #         "cogs.commands.saucenao",
             #     }
 
-            # Load command cogs, skipping disabled ones
-            for cog in COMMANDS:
-                if cog in skip_cogs:
-                    self.logger.info(f"Skipping disabled command cog: {cog}")
-                    continue
+            # Filter command cogs
+            enabled_commands = get_enabled_cogs(COMMANDS, self.config.mode)
+            for cog in enabled_commands:
                 cog_name = cog.split(".")[-1]
                 try:
                     await self.load_extension(f"{cog}")
                     self.logger.info(f"Loaded command cog: {cog_name}")
                 except Exception as e:
                     self.logger.error(f"Failed to load command cog {cog_name}: {e}")
+            
+            # Log skipped cogs for transparency
+            skipped = set(COMMANDS) - set(enabled_commands)
+            if skipped:
+                self.logger.info(f"Skipped cogs: {', '.join(s.split('.')[-1] for s in skipped)}")
 
             # Load event handler cogs
             for cog in EVENT_HANDLERS:

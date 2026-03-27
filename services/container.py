@@ -15,7 +15,7 @@ from services.error_handler import ErrorHandler
 from services.mcp import MCPClientManager
 from services.database import DatabaseService
 from services.waifu_service import WaifuService
-from services.expedition_service import ExpeditionService
+
 from services.world_threat_service import WorldThreatService
 from services.command_queue import CommandQueueService
 from services.spotify_service import SpotifyService
@@ -65,29 +65,51 @@ class ServiceContainer:
             self.logger_manager.get_ai_logger(),
         )
 
-        # Initialize Waifu Academy services
+        # Initialize Waifu Academy services conditionally
+        # We need to know enabled cogs to decide, but we don't have them here easily without recalculating.
+        # However, ServiceContainer is initialized BEFORE bot setup.
+        # So we should calculate enabled cogs here or make services lazy.
+        # Decision: Calculate here using the same utility.
+        
+        from cogs import COMMANDS
+        from config.cogs import get_enabled_cogs, should_load_service
+        
+        # We need to look at ALL commands to see what's enabled
+        self.enabled_cogs = get_enabled_cogs(COMMANDS, config.mode)
+        
         self.database = DatabaseService(config)
 
         # Create shared DataManager (loaded once, shared across services)
         self.data_manager = DataManager()
         if not self.data_manager.load_all_data():
             raise RuntimeError("Failed to load game data")
-
-        self.waifu_service = WaifuService(self.database)
-        self.expedition_service = ExpeditionService(self.database, self.data_manager, self.waifu_service)
-        self.world_threat_service = WorldThreatService(self.database, self.data_manager, self.waifu_service)
+        
+        self.waifu_service = None
+        if should_load_service("WaifuService", config.mode, self.enabled_cogs):
+             self.waifu_service = WaifuService(self.database)
+             
+        self.expedition_service = None
+        if should_load_service("ExpeditionService", config.mode, self.enabled_cogs):
+            from services.expedition_service import ExpeditionService
+            self.expedition_service = ExpeditionService(self.database)
+            
+        self.world_threat_service = None
+        if should_load_service("WorldThreatService", config.mode, self.enabled_cogs):
+            self.world_threat_service = WorldThreatService(self.database)
+            
         self.command_queue = CommandQueueService()
 
         # Initialize music services
         self.spotify_service: Optional[SpotifyService] = None
         self.music_service: Optional[MusicService] = None
 
-        # Only initialize if credentials are provided
+        # Only initialize if credentials are provided AND enabled
         if (
             config.spotify_username
             and config.spotify_password
             and config.spotify_client_id
             and config.spotify_client_secret
+            and should_load_service("SpotifyService", config.mode, self.enabled_cogs)
         ):
             try:
                 self.spotify_service = SpotifyService(
@@ -101,9 +123,8 @@ class ServiceContainer:
             except Exception as e:
                 self.logger.warning(f"Failed to initialize Spotify services: {e}")
         else:
-            self.logger.info(
-                "Spotify credentials not provided, music features disabled"
-            )
+            reason = "credentials missing" if not (config.spotify_username and config.spotify_password) else "disabled by config"
+            self.logger.info(f"Music features disabled ({reason})")
 
         self.logger.info("Service container created")
 
@@ -115,8 +136,9 @@ class ServiceContainer:
             await self.state_manager.initialize()
             await self.llm_manager.initialize()
 
-            # Initialize Waifu Academy services
-            await self.waifu_service.initialize()
+            # Initialize Waifu Academy services if enabled
+            if self.waifu_service:
+                await self.waifu_service.initialize()
 
             # Initialize music services if available
             if self.spotify_service:
@@ -147,7 +169,7 @@ class ServiceContainer:
                 await self.music_service.close()
             if hasattr(self, "spotify_service") and self.spotify_service:
                 await self.spotify_service.close()
-            if hasattr(self, "waifu_service"):
+            if hasattr(self, "waifu_service") and self.waifu_service:
                 await self.waifu_service.close()
             if hasattr(self, "llm_manager"):
                 await self.llm_manager.cleanup()
