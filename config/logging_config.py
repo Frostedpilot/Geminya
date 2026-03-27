@@ -140,9 +140,9 @@ def setup_logging(debug_mode: bool = False):
     # Log startup
     logger = logging.getLogger(__name__)
     logger.info("="*60)
-    logger.info("🚀 Geminya logging system initialized")
-    logger.info(f"📊 Log level: {logging.getLevelName(log_level)}")
-    logger.info(f"📁 Logs directory: {logs_dir.absolute()}")
+    logger.info("Geminya logging system initialized")
+    logger.info(f"Log level: {logging.getLevelName(log_level)}")
+    logger.info(f"Logs directory: {logs_dir.absolute()}")
     logger.info("="*60)
 
 

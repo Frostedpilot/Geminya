@@ -137,7 +137,7 @@ def main():
 
     args = parser.parse_args()
 
-    print("🐱 Geminya Discord Bot Startup")
+    print("Geminya Discord Bot Startup")
     print("=" * 40)
 
     # Set up environment
@@ -201,7 +201,7 @@ def main():
 
     # Start the bot
     try:
-        print("🚀 Starting bot...")
+        print("Starting bot...")
         asyncio.run(run_bot(config, test_mode=args.test))
     except KeyboardInterrupt:
         print("\n🛑 Shutdown requested by user")

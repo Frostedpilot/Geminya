@@ -94,6 +94,9 @@ class MusicService:
                 on_track_end=self._on_spotify_track_end,
             )
 
+            # Enable debug logging for voice state to troubleshoot 4017 errors
+            logging.getLogger("discord.voice_state").setLevel(logging.DEBUG)
+
             self.logger.info("Music service initialized successfully")
             return True
 
@@ -122,12 +125,50 @@ class MusicService:
         guild_id = channel.guild.id
 
         try:
-            # Disconnect from current channel if connected
+            # If already connected, handle it gracefully
             if guild_id in self._voice_clients:
-                await self.leave_voice_channel(guild_id)
+                existing_client = self._voice_clients[guild_id]
+                if existing_client.channel == channel:
+                    if existing_client.is_connected():
+                        self.logger.info(
+                            f"Already connected to {channel.name}, skipping join"
+                        )
+                        return True
+                    else:
+                        self.logger.info(
+                            f"Existing voice client for {channel.name} is not connected, cleaning up"
+                        )
+                        try:
+                            await existing_client.disconnect(force=True)
+                        except:
+                            pass
+                        del self._voice_clients[guild_id]
+                else:
+                    self.logger.info(
+                        f"Moving from {existing_client.channel.name} to {channel.name}"
+                    )
+                    # We don't manually disconnect here; discord.py handles moving between channels
+                    # in the same guild automatically when channel.connect() is called.
+
+            # Clean up potential zombie voice state before connecting if we have no active client or it's dead
+            try:
+                is_zombie = (
+                    guild_id not in self._voice_clients
+                    or not self._voice_clients[guild_id].is_connected()
+                )
+                if is_zombie and channel.guild.me and channel.guild.me.voice:
+                    self.logger.info("Clearing zombie voice state before connecting...")
+                    await channel.guild.change_voice_state(channel=None)
+                    await asyncio.sleep(2)
+            except Exception as e:
+                self.logger.warning(f"Failed to clear previous voice state: {e}")
 
             # Connect to new channel
-            voice_client = await channel.connect()
+            self.logger.info(
+                f"Connecting to voice channel {channel.name} (timeout=60s)..."
+            )
+            # Discord API 4006 error requires a fresh connect, disable reconnect to avoid resuming invalid session
+            voice_client = await channel.connect(timeout=60.0, reconnect=False)
             self._voice_clients[guild_id] = voice_client
 
             # Cancel any pending disconnect
@@ -140,12 +181,24 @@ class MusicService:
             )
 
             # Auto-resume if there's a queue or current track waiting
-            await self._try_resume_playback_after_reconnect(guild_id)
+            # Use a task and add a small delay to allow the connection to stabilize
+            async def delayed_resume():
+                await asyncio.sleep(5)  # Give the voice connection 5 seconds to settle
+                await self._try_resume_playback_after_reconnect(guild_id)
+
+            asyncio.create_task(delayed_resume())
 
             return True
 
         except Exception as e:
             self.logger.error(f"Failed to join voice channel {channel.name}: {e}")
+            # Ensure we clean up if connection failed partially
+            if guild_id in self._voice_clients:
+                try:
+                    await self._voice_clients[guild_id].disconnect(force=True)
+                except Exception:
+                    pass
+                del self._voice_clients[guild_id]
             return False
 
     async def leave_voice_channel(self, guild_id: int) -> bool:

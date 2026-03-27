@@ -13,6 +13,7 @@ import logging
 import io
 import threading
 import subprocess
+import os
 from typing import Optional, List, Dict, Any, Callable
 from dataclasses import dataclass
 from enum import Enum
@@ -315,17 +316,57 @@ class SpotifyService:
 
         def create_session():
             try:
-                # Use OAuth authentication instead of username/password
-                # This works without requiring explicit credentials
+                # Prioritize using stored credentials file if it exists
+                # This is the most reliable way to maintain session persistence
+                credentials_path = "credentials.json"
+                if os.path.exists(credentials_path):
+                    self.logger.info(f"Loading Spotify credentials from {credentials_path}")
+                    self._session = Session.Builder().stored_file(credentials_path).create()
+                    self.logger.info("Librespot session created successfully from stored file")
+                    return
+
+                # Fallback 1: Use username/password from config
+                if self.username and self.password:
+                    self.logger.info(f"Creating Spotify session for user: {self.username}")
+                    self._session = (
+                        Session.Builder().user_pass(self.username, self.password).create()
+                    )
+                    self.logger.info("Librespot session created successfully using credentials")
+                    return
+
+                # Fallback 2: Use OAuth (None)
+                self.logger.info("Creating Spotify session using fallback OAuth (None)")
                 self._session = Session.Builder().oauth(None).create()
-                self.logger.info("Librespot session created successfully using OAuth")
+                self.logger.info("Librespot session created using fallback OAuth (None)")
+
             except Exception as e:
                 self.logger.error(f"Failed to create librespot session: {e}")
+                self._session = None
                 raise
 
         # Run in thread to avoid blocking async loop
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, create_session)
+
+    async def _ensure_session(self) -> bool:
+        """Ensure librespot session is active and re-create if needed."""
+        if self._session is None:
+            await self._create_session()
+            return self._session is not None
+
+        # Check if session is closed or disconnected
+        # Note: librespot-python Session objects don't always have an is_connected()
+        # but we can try to catch common errors or use a simple check if available.
+        try:
+            # If the session has a closed attribute or similar, check it
+            if hasattr(self._session, "is_closed") and self._session.is_closed():
+                self.logger.warning("Spotify session found closed, reconnecting...")
+                await self._create_session()
+        except Exception:
+            # If check fails, assume it might be broken and try to recreate if next call fails
+            pass
+
+        return self._session is not None
 
     def search_tracks(
         self, query: str, limit: int = 10, offset: int = 0
@@ -514,8 +555,15 @@ class SpotifyService:
             return None
 
         try:
+            # Ensure session is active
+            if not await self._ensure_session():
+                self.logger.error("Failed to ensure Spotify session")
+                return None
 
             def get_stream():
+                if not self._session:
+                    raise RuntimeError("Session is not initialized")
+                
                 track_id = TrackId.from_uri(track.uri)
                 quality = VorbisOnlyAudioQuality(self._quality.value)
                 return self._session.content_feeder().load(
@@ -524,7 +572,15 @@ class SpotifyService:
 
             # Run in thread to avoid blocking
             loop = asyncio.get_event_loop()
-            track_stream = await loop.run_in_executor(None, get_stream)
+            try:
+                track_stream = await loop.run_in_executor(None, get_stream)
+            except RuntimeError as re:
+                if "Session is closed" in str(re):
+                    self.logger.warning("Detected closed session in get_stream, retrying once...")
+                    await self._create_session()
+                    track_stream = await loop.run_in_executor(None, get_stream)
+                else:
+                    raise
 
             # Update current track
             self._current_track = track
@@ -592,6 +648,13 @@ class SpotifyService:
         """Close the Spotify service."""
         self.stop()
         if self._session:
-            # librespot session cleanup if needed
-            pass
+            try:
+                # Attempt to close the librespot session if supported
+                if hasattr(self._session, "close"):
+                    self._session.close()
+                elif hasattr(self._session, "shutdown"):
+                    self._session.shutdown()
+                self._session = None
+            except Exception as e:
+                self.logger.debug(f"Error closing librespot session: {e}")
         self.logger.info("Spotify service closed")

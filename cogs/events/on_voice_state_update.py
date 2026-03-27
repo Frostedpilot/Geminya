@@ -1,6 +1,5 @@
-"""Voice state update event handler."""
-
 import logging
+import asyncio
 
 import discord
 from discord.ext import commands
@@ -31,16 +30,25 @@ class OnVoiceStateUpdate(BaseEventHandler):
         if before.channel and not after.channel:
             guild_id = before.channel.guild.id
             self.logger.info(
-                f"Bot was disconnected from voice channel in guild {guild_id}"
+                f"Bot was disconnected from voice channel in guild {guild_id}, waiting to see if it reconnects..."
             )
 
-            # Get the music service from the container
+            # Wait a moment to see if it's a transient disconnect (e.g. discord.py retrying)
+            await asyncio.sleep(2)
+            
+            # Re-check current voice state
+            guild = self.bot.get_guild(guild_id)
+            if guild:
+                me = guild.get_member(self.bot.user.id)
+                if me and me.voice and me.voice.channel:
+                    self.logger.info(f"Bot reconnected to {me.voice.channel.name} automatically, skipping cleanup")
+                    return
+
+            # Still disconnected, handle forced disconnect
             try:
                 music_service = self.services.music_service
-
-                # Handle graceful disconnect (preserve queue)
-                await music_service.handle_forced_disconnect(guild_id)
-
+                if music_service:
+                    await music_service.handle_forced_disconnect(guild_id)
             except Exception as e:
                 self.logger.error(f"Error handling voice disconnect: {e}")
 
