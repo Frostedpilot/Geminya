@@ -14,6 +14,7 @@ import io
 import threading
 import subprocess
 import os
+import time
 from typing import Optional, List, Dict, Any, Callable
 from dataclasses import dataclass
 from enum import Enum
@@ -45,6 +46,7 @@ class SpotifyTrack:
     duration_ms: int
     uri: str
     external_url: str
+    image_url: Optional[str] = None
     preview_url: Optional[str] = None
     is_playable: bool = True  # Whether the track can be played
 
@@ -71,6 +73,7 @@ class SpotifyPlaylist:
     tracks_total: int
     external_url: str
     owner: str
+    image_url: Optional[str] = None
 
 
 @dataclass
@@ -83,6 +86,7 @@ class SpotifyAlbum:
     tracks_total: int
     external_url: str
     release_date: str
+    image_url: Optional[str] = None
 
 
 class LibrespotAudioSource(discord.AudioSource):
@@ -294,11 +298,13 @@ class SpotifyService:
         self._session: Optional[Session] = None
         self._spotipy: Optional[spotipy.Spotify] = None
         self._quality = SpotifyQuality.HIGH
+        self._market: Optional[str] = None
 
         # Playback state
         self._current_track: Optional[SpotifyTrack] = None
         self._is_playing = False
         self._volume = 0.5
+        self._last_used: float = time.time()
 
         # Event callbacks
         self._on_track_start: Optional[Callable[[SpotifyTrack], None]] = None
@@ -327,6 +333,15 @@ class SpotifyService:
         """Create librespot session in a thread to avoid blocking."""
 
         def create_session():
+            """Clean up old session and create a new one."""
+            if self._session:
+                try:
+                    self.logger.info("Closing old Spotify session before creating a new one")
+                    self._session.close()
+                except Exception as e:
+                    self.logger.debug(f"Error closing old session (safe to ignore): {e}")
+                self._session = None
+
             try:
                 # Prioritize using stored credentials file if it exists
                 # This is the most reliable way to maintain session persistence
@@ -365,6 +380,11 @@ class SpotifyService:
                     "Librespot session created using fallback OAuth (None)"
                 )
 
+                # Store country code for market-specific searching
+                if self._session and hasattr(self._session, "country_code"):
+                    self._market = self._session.country_code
+                    self.logger.info(f"Market set to: {self._market}")
+
             except Exception as e:
                 self.logger.error(f"Failed to create librespot session: {e}")
                 self._session = None
@@ -376,22 +396,31 @@ class SpotifyService:
 
     async def _ensure_session(self) -> bool:
         """Ensure librespot session is active and re-create if needed."""
-        if self._session is None:
+        # 1. Proactive idle timeout check (15 minutes = 900 seconds)
+        idle_time = time.time() - getattr(self, "_last_used", time.time())
+        if self._session is not None and idle_time > 900:
+            self.logger.info(
+                f"Spotify session idle for {idle_time:.1f}s (> 900s). Forcing proactive recreation to prevent dropped socket..."
+            )
             await self._create_session()
+            self._last_used = time.time()
             return self._session is not None
 
-        # Check if session is closed or disconnected
-        # Note: librespot-python Session objects don't always have an is_connected()
-        # but we can try to catch common errors or use a simple check if available.
+        # 2. Check if we have a session at all
+        if self._session is None:
+            await self._create_session()
+            self._last_used = time.time()
+            return self._session is not None
+
+        # 3. Check for explicitly closed sessions
         try:
-            # If the session has a closed attribute or similar, check it
             if hasattr(self._session, "is_closed") and self._session.is_closed():
                 self.logger.warning("Spotify session found closed, reconnecting...")
                 await self._create_session()
         except Exception:
-            # If check fails, assume it might be broken and try to recreate if next call fails
             pass
-
+            
+        self._last_used = time.time()
         return self._session is not None
 
     def search_tracks(
@@ -400,10 +429,10 @@ class SpotifyService:
         """Search for tracks on Spotify with pagination support."""
         try:
             self.logger.info(
-                f"Searching for tracks with query: '{query}', limit: {limit}, offset: {offset}"
+                f"Searching for tracks with query: '{query}', limit: {limit}, offset: {offset}, market: {self._market}"
             )
             results = self._spotipy.search(
-                q=query, type="track", limit=limit, offset=offset
+                q=query, type="track", limit=limit, offset=offset, market=self._market
             )
             tracks = []
 
@@ -433,10 +462,15 @@ class SpotifyService:
                     duration_ms=item["duration_ms"],
                     uri=item["uri"],
                     external_url=item["external_urls"]["spotify"],
+                    image_url=item["album"]["images"][0]["url"] if item["album"].get("images") else None,
                     preview_url=item.get("preview_url"),
                     is_playable=is_playable,
                 )
                 tracks.append(track)
+
+            # Rank results if we have multiple and it's the first page
+            if tracks and offset == 0:
+                tracks = self._rank_results(tracks, query)
 
             self.logger.info(f"Found {len(tracks)} playable tracks (offset: {offset})")
             return tracks
@@ -454,10 +488,10 @@ class SpotifyService:
         """Search for playlists on Spotify."""
         try:
             self.logger.info(
-                f"Searching for playlists with query: '{query}', limit: {limit}, offset: {offset}"
+                f"Searching for playlists with query: '{query}', limit: {limit}, offset: {offset}, market: {self._market}"
             )
             results = self._spotipy.search(
-                q=query, type="playlist", limit=limit, offset=offset
+                q=query, type="playlist", limit=limit, offset=offset, market=self._market
             )
             self.logger.info(f"Raw playlist search results keys: {results.keys()}")
             self.logger.info(
@@ -500,6 +534,7 @@ class SpotifyService:
                     description=item.get("description", ""),
                     tracks_total=item.get("tracks", {}).get("total", 0),
                     external_url=item.get("external_urls", {}).get("spotify", ""),
+                    image_url=item["images"][0]["url"] if item.get("images") else None,
                     owner=owner_name,
                 )
                 playlists.append(playlist)
@@ -520,10 +555,10 @@ class SpotifyService:
         """Search for albums on Spotify."""
         try:
             self.logger.info(
-                f"Searching for albums with query: '{query}', limit: {limit}, offset: {offset}"
+                f"Searching for albums with query: '{query}', limit: {limit}, offset: {offset}, market: {self._market}"
             )
             results = self._spotipy.search(
-                q=query, type="album", limit=limit, offset=offset
+                q=query, type="album", limit=limit, offset=offset, market=self._market
             )
 
             albums = []
@@ -562,6 +597,7 @@ class SpotifyService:
                         "total_tracks", item.get("tracks", {}).get("total", 0)
                     ),
                     external_url=item.get("external_urls", {}).get("spotify", ""),
+                    image_url=item["images"][0]["url"] if item.get("images") else None,
                     release_date=item.get("release_date", ""),
                 )
                 albums.append(album)
@@ -595,6 +631,7 @@ class SpotifyService:
             duration_ms=item.get("duration_ms", 0),
             uri=item.get("uri", ""),
             external_url=item.get("external_urls", {}).get("spotify", ""),
+            image_url=item.get("album", {}).get("images", [{}])[0].get("url") if item.get("album", {}).get("images") else None,
             preview_url=item.get("preview_url"),
             is_playable=is_playable,
         )
@@ -641,6 +678,7 @@ class SpotifyService:
                         duration_ms=track_data["duration_ms"],
                         uri=track_data["uri"],
                         external_url=track_data["external_urls"]["spotify"],
+                        image_url=track_data["album"]["images"][0]["url"] if track_data["album"].get("images") else None,
                         preview_url=track_data.get("preview_url"),
                         is_playable=is_playable,
                     )
@@ -733,19 +771,20 @@ class SpotifyService:
             loop = asyncio.get_event_loop()
             try:
                 track_stream = await loop.run_in_executor(None, get_stream)
-            except RuntimeError as re:
-                if "Session is closed" in str(re):
-                    self.logger.warning(
-                        "Detected closed session in get_stream, retrying once..."
-                    )
-                    await self._create_session()
-                    track_stream = await loop.run_in_executor(None, get_stream)
-                else:
-                    raise
+            except Exception as e:
+                # Catch ANY error (RuntimeError, Timeout, ConnectionError) that occurs 
+                # during stream load. A dropped connection is the most likely culprit.
+                self.logger.warning(
+                    f"Librespot stream load failed ({e}), attempting proactive session recovery..."
+                )
+                await self._create_session()
+                # Try exactly one more time
+                track_stream = await loop.run_in_executor(None, get_stream)
 
-            # Update current track
+            # Update current track and reset idle timer
             self._current_track = track
             self._is_playing = True
+            self._last_used = time.time()
 
             # Trigger callback
             if self._on_track_start:
@@ -797,6 +836,46 @@ class SpotifyService:
     def volume(self) -> float:
         """Get current volume."""
         return self._volume
+
+    def _rank_results(self, tracks: List[SpotifyTrack], query: str) -> List[SpotifyTrack]:
+        """Rank search results based on a blend of popularity and name/artist relevance."""
+        if not tracks:
+            return []
+
+        # Extract name and artist from query for comparison (case-insensitive)
+        query_lower = query.lower()
+        
+        def score_track(track: SpotifyTrack) -> float:
+            score = 0.0
+            
+            # 1. Broad Name Match (even for Romaji/Translated)
+            # We check if significant keywords from query are in track/artist
+            query_words = set(query_lower.split())
+            track_words = set(track.name.lower().split()) | set(track.artist.lower().split())
+            
+            matches = query_words.intersection(track_words)
+            if matches:
+                score += (len(matches) / len(query_words)) * 50.0
+
+            # 2. Artist proximity (Very high signal if they searched the artist)
+            if any(word in track.artist.lower() for word in query_words):
+                score += 20.0
+                
+            # 3. Exact Name Match (Highest signal)
+            if query_lower in track.name.lower():
+                score += 30.0
+
+            # 4. Global Popularity (Internal signal from Spotipy data if available)
+            # Note: Spotify API returns a popularity score (0-100) inside the full search object.
+            # Since our SpotifyTrack doesn't store it, we'd need to update it, 
+            # but for now, we'll favor the first few results returned by Spotify as they are pre-ranked.
+            
+            return score
+
+        # Sort by match score descending
+        # We also keep the original order as a tie-breaker (Spotify's own popularity ranking)
+        ranked = sorted(enumerate(tracks), key=lambda x: (score_track(x[1]), -x[0]), reverse=True)
+        return [item[1] for item in ranked]
 
     def stop(self):
         """Stop current playback."""

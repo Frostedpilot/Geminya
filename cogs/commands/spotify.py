@@ -55,10 +55,14 @@ class SpotifyView(discord.ui.View):
 
         async def callback(interaction: discord.Interaction):
             self.selected_track = self.tracks[index]
-            await interaction.response.edit_message(
-                content=f"✅ Selected: **{self.selected_track.display_name}**",
-                view=None,
+            embed = discord.Embed(
+                title="✅ Track Selected",
+                description=f"Selected: **{self.selected_track.display_name}**",
+                color=0x1DB954,
             )
+            if self.selected_track.image_url:
+                embed.set_thumbnail(url=self.selected_track.image_url)
+            await interaction.response.edit_message(content=None, embed=embed, view=None)
             self.stop()
 
         return callback
@@ -109,10 +113,14 @@ class SpotifyPlaylistView(discord.ui.View):
 
         async def callback(interaction: discord.Interaction):
             self.selected_playlist = self.playlists[index]
-            await interaction.response.edit_message(
-                content=f"✅ Selected: **{self.selected_playlist.name}** by {self.selected_playlist.owner}",
-                view=None,
+            embed = discord.Embed(
+                title="✅ Playlist Selected",
+                description=f"Selected: **{self.selected_playlist.name}** by {self.selected_playlist.owner}",
+                color=0x1DB954,
             )
+            if self.selected_playlist.image_url:
+                embed.set_thumbnail(url=self.selected_playlist.image_url)
+            await interaction.response.edit_message(content=None, embed=embed, view=None)
             self.stop()
 
         return callback
@@ -166,10 +174,24 @@ class LazyLoadedSpotifyView(discord.ui.View):
 
         # Load data from Spotify API
         if self.search_type == "tracks":
-            # For tracks, we can use offset parameter
-            data = self.spotify_service.search_tracks(
-                self.query, limit=self.items_per_page, offset=offset
-            )
+            # For tracks, fetch 20 when offset is 0 to get a large pool for the Smart Ranker
+            if offset == 0:
+                all_data = self.spotify_service.search_tracks(
+                    self.query, limit=20, offset=0
+                )
+                # Distribute the 20 results across 4 pages in the cache
+                for p_idx in range(4):
+                    chunk = all_data[p_idx * self.items_per_page : (p_idx + 1) * self.items_per_page]
+                    if chunk:
+                        p_cache_key = self._get_cache_key(p_idx)
+                        spotify_cache.set(p_cache_key, chunk, ttl=300)
+                
+                # Get the chunk for the requested page (which is 0)
+                data = all_data[:self.items_per_page]
+            else:
+                data = self.spotify_service.search_tracks(
+                    self.query, limit=self.items_per_page, offset=offset
+                )
         elif self.search_type == "playlists":
             # For playlists, we need to load more and slice
             # (Spotify playlist search doesn't support offset well)
@@ -303,8 +325,24 @@ class LazyLoadedSpotifyView(discord.ui.View):
                 item_name = getattr(
                     self.selected_item, "display_name", None
                 ) or getattr(self.selected_item, "name", "Unknown")
+
+                title = "✅ Selection Confirmed"
+                if self.search_type == "tracks":
+                    title = "✅ Track Selected"
+                elif self.search_type == "playlists":
+                    title = "✅ Playlist Selected"
+                elif self.search_type == "albums":
+                    title = "✅ Album Selected"
+
+                embed = discord.Embed(
+                    title=title, description=f"Selected: **{item_name}**", color=0x1DB954
+                )
+                if hasattr(self.selected_item, "image_url") and self.selected_item.image_url:
+                    embed.set_thumbnail(url=self.selected_item.image_url)
+
                 await interaction.response.edit_message(
-                    content=f"✅ Selected: **{item_name}**",
+                    content=None,
+                    embed=embed,
                     view=None,
                 )
                 self.stop()
@@ -539,8 +577,22 @@ class PaginatedSpotifyView(discord.ui.View):
             item_name = getattr(self.selected_item, "display_name", None) or getattr(
                 self.selected_item, "name", "Unknown"
             )
+
+            title = "✅ Selection Confirmed"
+            if isinstance(self.selected_item, SpotifyTrack):
+                title = "✅ Track Selected"
+            elif isinstance(self.selected_item, SpotifyPlaylist):
+                title = "✅ Playlist Selected"
+
+            embed = discord.Embed(
+                title=title, description=f"Selected: **{item_name}**", color=0x1DB954
+            )
+            if hasattr(self.selected_item, "image_url") and self.selected_item.image_url:
+                embed.set_thumbnail(url=self.selected_item.image_url)
+
             await interaction.response.edit_message(
-                content=f"✅ Selected: **{item_name}**",
+                content=None,
+                embed=embed,
                 view=None,
             )
             self.stop()
@@ -896,6 +948,63 @@ class PaginatedQueueView(discord.ui.View):
         return embed
 
 
+class PlaybackControlView(discord.ui.View):
+    """View for playback controls (Play/Pause, Skip, Stop, Loop)."""
+
+    def __init__(self, music_service, guild_id, timeout: int = 900):  # 15 minutes
+        super().__init__(timeout=timeout)
+        self.music = music_service
+        self.guild_id = guild_id
+
+    @discord.ui.button(label="⏯️", style=discord.ButtonStyle.primary)
+    async def play_pause(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        """Toggle play/pause."""
+        if self.music.is_paused(self.guild_id):
+            success = await self.music.resume(self.guild_id)
+            status = "▶️ Resumed" if success else "❌ Error"
+        else:
+            success = await self.music.pause(self.guild_id)
+            status = "⏸️ Paused" if success else "❌ Error (Already paused?)"
+
+        await interaction.response.send_message(status, ephemeral=True, delete_after=5)
+
+    @discord.ui.button(label="⏭️", style=discord.ButtonStyle.secondary)
+    async def skip(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Skip the current track."""
+        success = await self.music.skip(self.guild_id)
+        status = "⏭️ Skipped" if success else "❌ Nothing playing"
+        await interaction.response.send_message(status, ephemeral=True, delete_after=5)
+
+    @discord.ui.button(label="⏹️", style=discord.ButtonStyle.danger)
+    async def stop(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Stop and clear queue."""
+        success = await self.music.stop(self.guild_id)
+        status = "⏹️ Stopped & Cleared" if success else "❌ Error"
+        await interaction.response.send_message(status, ephemeral=True, delete_after=5)
+
+    @discord.ui.button(label="🔁", style=discord.ButtonStyle.secondary)
+    async def cycle_mode(
+        self, interaction: discord.Interaction, button: discord.ui.Button
+    ):
+        """Cycle through loop modes."""
+        current_mode = self.music.get_queue_mode(self.guild_id)
+        modes = [
+            QueueMode.NORMAL,
+            QueueMode.LOOP_TRACK,
+            QueueMode.LOOP_QUEUE,
+            QueueMode.SHUFFLE,
+        ]
+        next_mode = modes[(modes.index(current_mode) + 1) % len(modes)]
+        self.music.set_queue_mode(self.guild_id, next_mode)
+        await interaction.response.send_message(
+            f"🔄 Mode set to: **{next_mode.value.replace('_', ' ').title()}**",
+            ephemeral=True,
+            delete_after=5,
+        )
+
+
 class SpotifyMusicCog(BaseCommand):
     """Discord cog for Spotify music commands."""
 
@@ -909,6 +1018,9 @@ class SpotifyMusicCog(BaseCommand):
                 "Spotify services not available - music commands disabled"
             )
             return
+
+        # Track the last interaction channel per guild for automatic notifications
+        self._last_interaction_channels: Dict[int, discord.abc.Messageable] = {}
 
         # Set up event callbacks
         self.music.set_callbacks(
@@ -928,6 +1040,9 @@ class SpotifyMusicCog(BaseCommand):
     )
     async def join(self, interaction: discord.Interaction):
         """Join the user's voice channel."""
+        # Store interaction channel
+        self._last_interaction_channels[interaction.guild_id] = interaction.channel
+
         if not interaction.user.voice:
             await interaction.response.send_message(
                 "❌ You need to be in a voice channel!", ephemeral=True
@@ -984,6 +1099,9 @@ class SpotifyMusicCog(BaseCommand):
     )
     async def search(self, interaction: discord.Interaction, query: str):
         """Search for tracks on Spotify with lazy loading."""
+        # Store interaction channel
+        self._last_interaction_channels[interaction.guild_id] = interaction.channel
+
         await interaction.response.defer()
 
         # Create lazy loading view for track selection
@@ -1020,6 +1138,9 @@ class SpotifyMusicCog(BaseCommand):
     )
     async def play(self, interaction: discord.Interaction, query: str):
         """Search and play the first result."""
+        # Store interaction channel
+        self._last_interaction_channels[interaction.guild_id] = interaction.channel
+
         if not interaction.user.voice:
             await interaction.response.send_message(
                 "❌ You need to be in a voice channel!", ephemeral=True
@@ -1028,7 +1149,7 @@ class SpotifyMusicCog(BaseCommand):
 
         await interaction.response.defer()
 
-        tracks = self.spotify.search_tracks(query, limit=1)
+        tracks = self.spotify.search_tracks(query, limit=10)
 
         if not tracks:
             await interaction.followup.send(f"❌ No tracks found for: **{query}**")
@@ -1059,6 +1180,9 @@ class SpotifyMusicCog(BaseCommand):
     )
     async def playlist(self, interaction: discord.Interaction, query: str):
         """Search and select a playlist with lazy loading."""
+        # Store interaction channel
+        self._last_interaction_channels[interaction.guild_id] = interaction.channel
+
         if not interaction.user.voice:
             await interaction.response.send_message(
                 "❌ You need to be in a voice channel!", ephemeral=True
@@ -1202,6 +1326,9 @@ class SpotifyMusicCog(BaseCommand):
     )
     async def queue(self, interaction: discord.Interaction):
         """Show the current music queue with pagination."""
+        # Store interaction channel
+        self._last_interaction_channels[interaction.guild_id] = interaction.channel
+
         guild_id = interaction.guild_id
         current = self.music.get_current_track(guild_id)
 
@@ -1523,6 +1650,9 @@ class SpotifyMusicCog(BaseCommand):
             name="Requested by", value=current.requested_by.mention, inline=True
         )
 
+        if current.track.image_url:
+            embed.set_thumbnail(url=current.track.image_url)
+
         if current.track.external_url:
             embed.add_field(
                 name="Spotify Link",
@@ -1530,7 +1660,8 @@ class SpotifyMusicCog(BaseCommand):
                 inline=False,
             )
 
-        await interaction.response.send_message(embed=embed)
+        view = PlaybackControlView(self.music, guild_id)
+        await interaction.response.send_message(embed=embed, view=view)
 
     @app_commands.command(
         name="spotify_status",
@@ -1600,6 +1731,44 @@ class SpotifyMusicCog(BaseCommand):
         self.logger.info(
             f"Track started in guild {guild_id}: {item.track.display_name}"
         )
+
+        # Get the last used channel or fallback
+        channel = self._last_interaction_channels.get(guild_id)
+
+        if not channel:
+            # Fallback: Find a channel to send the notification to
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                return
+
+            # Try to find any appropriate text channel
+            for v_channel in guild.voice_channels:
+                if guild.me in v_channel.members:
+                    channel = guild.system_channel or guild.text_channels[0]
+                    break
+
+        if channel:
+            try:
+                embed = discord.Embed(
+                    title="🎶 Now Playing",
+                    description=f"**{item.track.display_name}**",
+                    color=0x1DB954,
+                )
+                embed.add_field(name="Album", value=item.track.album, inline=True)
+                embed.add_field(
+                    name="Duration", value=item.track.duration_formatted, inline=True
+                )
+                embed.add_field(
+                    name="Requested by", value=item.requested_by.mention, inline=True
+                )
+
+                if item.track.image_url:
+                    embed.set_thumbnail(url=item.track.image_url)
+
+                view = PlaybackControlView(self.music, guild_id)
+                await channel.send(embed=embed, view=view)
+            except Exception as e:
+                self.logger.error(f"Failed to send track start notification: {e}")
 
     async def _on_track_end(self, guild_id: int, item: QueueItem):
         """Handle track end event."""
