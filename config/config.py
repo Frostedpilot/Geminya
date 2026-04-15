@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from services.llm.types import ProviderConfig, ModelInfo
 from .models import (
+    DEEPSEEK_V3_2,
     MODEL_NAMES,
     MODEL_INFOS,
     DEEPSEEK_V3_0324,
@@ -75,10 +76,10 @@ class Config:
     debug: bool = False
 
     # Model configuration
-    default_model: str = DEEPSEEK_V3_0324
+    default_model: str = DEEPSEEK_V3_2
     default_models: Dict[str, str] = field(
         default_factory=lambda: {
-            "GEMINYA": DEEPSEEK_V3_0324,
+            "GEMINYA": DEEPSEEK_V3_2,
             "NIGLER": DOLPHIN_MISTRAL_24B,
             "DEV": GEMINI_2_5_FLASH_LITE_GG,
         }
@@ -185,9 +186,7 @@ class Config:
             },
             "google-search": {
                 "command": "node",
-                "args": [
-                    "mcp_servers/mcp-google-custom-search-server/build/index.js"
-                ],
+                "args": ["mcp_servers/mcp-google-custom-search-server/build/index.js"],
                 "env": {
                     "GOOGLE_API_KEY": "",  # Will be set in __post_init__
                     "GOOGLE_SEARCH_ENGINE_ID": "",  # Will be set in __post_init__
