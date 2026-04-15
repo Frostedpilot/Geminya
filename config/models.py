@@ -4,6 +4,7 @@ from typing import Dict
 from services.llm.types import ModelInfo
 
 # Model ID constants
+DEEPSEEK_V3_2 = "openrouter/deepseek/deepseek-v3.2"
 DEEPSEEK_V3_0324 = "openrouter/deepseek/deepseek-chat-v3-0324:free"
 DEEPSEEK_V3_0324_PAID = "openrouter/deepseek/deepseek-chat-v3-0324"
 DEEPSEEK_V3_0324_SHORT = "deepseek/deepseek-chat-v3-0324:free"
@@ -28,6 +29,7 @@ GEMINI_2_5_PRO_GG = "aistudio/gemini-2.5-pro"
 DEEPSEEK_V3_NAME = "DeepSeek V3 0324"
 DEEPSEEK_V3_PAID_NAME = "DeepSeek V3 0324 (paid)"
 DEEPSEEK_V3_1_NAME = "DeepSeek V3.1"
+DEEPSEEK_V3_2_NAME = "DeepSeek V3.2"
 KIMI_K2_NAME = "Kimi K2"
 DEEPSEEK_CHIMERA_NAME = "DeepSeek Chimera"
 DEEPSEEK_R1_NAME = "DeepSeek R1 0528"
@@ -47,6 +49,7 @@ MODEL_NAMES = {
     DEEPSEEK_V3_NAME: DEEPSEEK_V3_0324,
     DEEPSEEK_V3_PAID_NAME: DEEPSEEK_V3_0324_PAID,
     DEEPSEEK_V3_1_NAME: DEEPSEEK_V3_1,
+    DEEPSEEK_V3_2_NAME: DEEPSEEK_V3_2,
     KIMI_K2_NAME: KIMI_K2,
     DEEPSEEK_CHIMERA_NAME: DEEPSEEK_CHIMERA,
     DEEPSEEK_R1_NAME: DEEPSEEK_R1_0528,
@@ -70,6 +73,15 @@ MODEL_INFOS: Dict[str, ModelInfo] = {
         supports_tools=True,
         cost_per_million_tokens={"in": 0, "out": 0},
         description="DeepSeek V3, a 685B-parameter, mixture-of-experts model, is the latest iteration of the flagship chat model family from the DeepSeek team. It succeeds the DeepSeek V3 model and performs really well on a variety of tasks.",
+    ),
+    DEEPSEEK_V3_2_NAME: ModelInfo(
+        id=DEEPSEEK_V3_2,
+        name="DeepSeek V3.2",
+        provider="openrouter",
+        context_length=163840,
+        supports_tools=True,
+        cost_per_million_tokens={"in": 0.26, "out": 0.38},
+        description="DeepSeek V3.2 is the latest iteration of the DeepSeek V3 model, offering improved performance and capabilities.",
     ),
     DEEPSEEK_V3_PAID_NAME: ModelInfo(
         id=DEEPSEEK_V3_0324_PAID,
