@@ -21,6 +21,8 @@ DEEPSEEK_V3_1 = "openrouter/deepseek/deepseek-chat-v3.1:free"
 ZAI_GLM_4_5_AIR = "openrouter/z-ai/glm-4.5-air:free"
 GEMINI_2_5_FLASH_IMAGE_PREVIEW = "openrouter/google/gemini-2.5-flash-image-preview:free"
 
+QWEN_3_5_FLASH = "openrouter/qwen/qwen3.5-flash-02-23"
+
 GEMINI_2_5_FLASH_GG = "aistudio/gemini-2.5-flash"
 GEMINI_2_5_FLASH_LITE_GG = "aistudio/gemini-2.5-flash-lite"
 GEMINI_2_5_PRO_GG = "aistudio/gemini-2.5-pro"
@@ -30,6 +32,7 @@ DEEPSEEK_V3_NAME = "DeepSeek V3 0324"
 DEEPSEEK_V3_PAID_NAME = "DeepSeek V3 0324 (paid)"
 DEEPSEEK_V3_1_NAME = "DeepSeek V3.1"
 DEEPSEEK_V3_2_NAME = "DeepSeek V3.2"
+QWEN_3_5_FLASH_NAME = "Qwen 3.5 Flash"
 KIMI_K2_NAME = "Kimi K2"
 DEEPSEEK_CHIMERA_NAME = "DeepSeek Chimera"
 DEEPSEEK_R1_NAME = "DeepSeek R1 0528"
@@ -50,6 +53,7 @@ MODEL_NAMES = {
     DEEPSEEK_V3_PAID_NAME: DEEPSEEK_V3_0324_PAID,
     DEEPSEEK_V3_1_NAME: DEEPSEEK_V3_1,
     DEEPSEEK_V3_2_NAME: DEEPSEEK_V3_2,
+    QWEN_3_5_FLASH_NAME: QWEN_3_5_FLASH,
     KIMI_K2_NAME: KIMI_K2,
     DEEPSEEK_CHIMERA_NAME: DEEPSEEK_CHIMERA,
     DEEPSEEK_R1_NAME: DEEPSEEK_R1_0528,
@@ -100,6 +104,15 @@ MODEL_INFOS: Dict[str, ModelInfo] = {
         supports_tools=True,
         cost_per_million_tokens={"in": 0.00, "out": 0.00},
         description="DeepSeek-V3.1 is a large hybrid reasoning model (671B parameters, 37B active) that supports both thinking and non-thinking modes via prompt templates. It extends the DeepSeek-V3 base with a two-phase long-context training process, reaching up to 128K tokens, and uses FP8 microscaling for efficient inference. Users can control the reasoning behaviour with the reasoning enabled boolean. Learn more in our docs. The model improves tool use, code generation, and reasoning efficiency, achieving performance comparable to DeepSeek-R1 on difficult benchmarks while responding more quickly. It supports structured tool calling, code agents, and search agents, making it suitable for research, coding, and agentic workflows. It succeeds the DeepSeek V3-0324 model and performs well on a variety of tasks.",
+    ),
+    QWEN_3_5_FLASH_NAME: ModelInfo(
+        id=QWEN_3_5_FLASH,
+        name="Qwen 3.5 Flash",
+        provider="openrouter",
+        context_length=32768,
+        supports_tools=True,
+        cost_per_million_tokens={"in": 0.065, "out": 0.26},
+        description="Qwen 3.5 Flash is a large language model developed by Alibaba, designed for a wide range of natural language processing tasks. It features advanced capabilities in understanding and generating human-like text, making it suitable for applications such as chatbots, content creation, and more.",
     ),
     ZAI_GLM_4_5_AIR_NAME: ModelInfo(
         id=ZAI_GLM_4_5_AIR,

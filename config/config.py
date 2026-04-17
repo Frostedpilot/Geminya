@@ -16,6 +16,7 @@ from .models import (
     DEEPSEEK_V3_2,
     MODEL_NAMES,
     MODEL_INFOS,
+    QWEN_3_5_FLASH,
     DEEPSEEK_V3_0324,
     DEEPSEEK_V3_0324_PAID,
     QWEN_3_235B_A22B_2507,
@@ -84,10 +85,10 @@ class Config:
             "DEV": GEMINI_2_5_FLASH_LITE_GG,
         }
     )
-    default_tool_model: str = GEMINI_2_5_FLASH_GG
+    default_tool_model: str = QWEN_3_5_FLASH
     fall_back_models: Dict[str, str] = field(
         default_factory=lambda: {
-            "GEMINYA": DEEPSEEK_V3_0324_PAID,
+            "GEMINYA": QWEN_3_5_FLASH,
             "NIGLER": MISTRAL_NEMO,
             "DEV": DEEPSEEK_V3_0324_PAID,
         }
