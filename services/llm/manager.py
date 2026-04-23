@@ -1,8 +1,8 @@
-"""LLM Manager - Provider-focused service for managing multiple LLM providers."""
+"""LLM Manager - Unified LLM interface using LiteLLM."""
 
 from __future__ import annotations
 import logging
-from typing import Dict, Any, List, Optional, Type, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 import asyncio
 
 if TYPE_CHECKING:
@@ -10,7 +10,6 @@ if TYPE_CHECKING:
 
 from services.state_manager import StateManager
 
-from .provider import LLMProvider
 from .types import LLMRequest, LLMResponse, ModelInfo, ImageRequest, ImageResponse
 from .exceptions import (
     LLMError,
@@ -19,12 +18,14 @@ from .exceptions import (
     ProviderError,
     RetriableError,
 )
-from .providers import OpenRouterProvider
-from .providers.aistudio import AIStudioProvider
+
+# Import litellm for unified LLM interface
+import litellm
+from litellm import acompletion, aimage_generation
 
 
 class LLMManager:
-    """Manager for multiple LLM providers with unified API."""
+    """Manager for LLM operations using LiteLLM as a unified interface."""
 
     def __init__(
         self,
@@ -36,24 +37,22 @@ class LLMManager:
         self.state_manager = state_manager
         self.logger = logger
 
-        self.providers: Dict[str, LLMProvider] = {}
-        self.default_provider: Optional[str] = None
         self._initialized = False
-
-        self.provider_mapping: Dict[str, Type[LLMProvider]] = {
-            "openrouter": OpenRouterProvider,
-            "aistudio": AIStudioProvider,
-        }
+        
+        # Store API keys for different providers
+        self.api_keys: Dict[str, str] = {}
+        
+        # Configure litellm settings
+        litellm.set_verbose = False
+        litellm.drop_params = True
 
     async def initialize(self) -> None:
-        """Initialize the LLM Manager and all providers."""
+        """Initialize the LLM Manager and configure API keys."""
         try:
-            self.logger.info("Initializing LLM Manager...")
+            self.logger.info("Initializing LLM Manager with LiteLLM...")
 
-            await self._initialize_providers()
-
-            # Set default provider
-            self.default_provider = "openrouter"
+            # Extract and store API keys from config
+            await self._setup_api_keys()
 
             self._initialized = True
             self.logger.info("LLM Manager initialized successfully")
@@ -62,23 +61,31 @@ class LLMManager:
             self.logger.error(f"Failed to initialize LLM Manager: {e}")
             raise ConfigurationError(f"LLM Manager initialization failed: {str(e)}")
 
+    async def _setup_api_keys(self) -> None:
+        """Setup API keys for different providers from config."""
+        # Setup OpenRouter API key
+        if "openrouter" in self.config.llm_providers:
+            openrouter_config = self.config.llm_providers["openrouter"]
+            api_key = openrouter_config.api_key if hasattr(openrouter_config, 'api_key') else openrouter_config.get("api_key")
+            if api_key:
+                self.api_keys["openrouter"] = api_key
+                self.logger.info("OpenRouter API key configured")
+
+        # Setup Google AI Studio API key
+        if "aistudio" in self.config.llm_providers:
+            aistudio_config = self.config.llm_providers["aistudio"]
+            api_key = aistudio_config.api_key if hasattr(aistudio_config, 'api_key') else aistudio_config.get("api_key")
+            if api_key:
+                self.api_keys["aistudio"] = api_key
+                litellm.google_ai_studio_api_key = api_key
+                self.logger.info("Google AI Studio API key configured")
+
     async def cleanup(self) -> None:
-        """Cleanup the LLM Manager and all providers."""
+        """Cleanup the LLM Manager."""
         self.logger.info("Cleaning up LLM Manager...")
 
         try:
-            # Cleanup all providers
-            for provider_name, provider in self.providers.items():
-                try:
-                    await provider.cleanup()
-                    self.logger.debug(f"Provider {provider_name} cleaned up")
-                except Exception as e:
-                    self.logger.error(
-                        f"Error cleaning up provider {provider_name}: {e}"
-                    )
-
-            self.providers.clear()
-            self.default_provider = None
+            self.api_keys.clear()
             self._initialized = False
 
             self.logger.info("LLM Manager cleanup completed")
@@ -87,33 +94,104 @@ class LLMManager:
             self.logger.error(f"Error during LLM Manager cleanup: {e}")
 
     async def _generate_with_provider(self, request: LLMRequest) -> LLMResponse:
-        """Generate response using the appropriate provider."""
+        """Generate response using LiteLLM's unified interface."""
         if not self._initialized:
             raise LLMError("LLM Manager not initialized")
 
-        # Extract provider from model name (e.g., "openrouter/model-name")
-        provider_name = self._extract_provider_name(request.model)
+        # Resolve the model name to litellm format
+        litellm_model = self._resolve_model_for_litellm(request.model)
 
-        self.logger.debug(f"Using provider {provider_name} for model {request.model}")
-
-        if provider_name not in self.providers:
-            if self.default_provider and self.default_provider in self.providers:
-                provider_name = self.default_provider
-            else:
-                raise ModelNotFoundError(f"No provider found for model {request.model}")
-
-        provider = self.providers[provider_name]
+        self.logger.debug(f"Using LiteLLM model: {litellm_model}")
 
         try:
+            # Prepare the request for litellm
+            completion_kwargs = {
+                "model": litellm_model,
+                "messages": request.messages,
+                "temperature": request.temperature,
+            }
+
+            # Add optional parameters
+            if request.max_tokens:
+                completion_kwargs["max_tokens"] = request.max_tokens
+
+            # Add tools if provided (convert to litellm format)
+            if request.tools and len(request.tools) > 0:
+                tools = self._convert_tools_for_litellm(request.tools)
+                completion_kwargs["tools"] = tools
+
+            # Add API key based on provider
+            provider_name = self._extract_provider_name(request.model)
+            if provider_name == "openrouter" and "openrouter" in self.api_keys:
+                completion_kwargs["api_key"] = self.api_keys["openrouter"]
+                # Set base URL for OpenRouter
+                litellm.api_base = "https://openrouter.ai/api/v1"
+            elif provider_name == "aistudio":
+                # Google AI Studio uses the globally set key
+                pass
+
+            # Make the API call using litellm
             self.logger.debug(
-                f"Generating with provider {provider_name} for model {request.model}"
+                f"Making LiteLLM API request for model {request.model}"
             )
-            response = await provider.generate_response(request)
-            return response
+            
+            response = await acompletion(**completion_kwargs)
+
+            if not response.choices or not response.choices[0].message:
+                raise ProviderError("litellm", "Empty response from API")
+
+            choice = response.choices[0]
+            message = choice.message
+
+            # Extract content
+            content = message.content or ""
+
+            # Extract tool calls if present
+            tool_calls = None
+            if hasattr(message, 'tool_calls') and message.tool_calls:
+                tool_calls = []
+                for tool_call in message.tool_calls:
+                    tool_calls.append(
+                        {
+                            "id": tool_call.id,
+                            "type": tool_call.type,
+                            "function": {
+                                "name": tool_call.function.name,
+                                "arguments": tool_call.function.arguments,
+                            },
+                        }
+                    )
+
+            # Check if response is truly empty (no content AND no tool calls)
+            if not content and not tool_calls:
+                raise ProviderError("litellm", "Empty response from API")
+
+            # Extract usage information
+            usage = None
+            if hasattr(response, 'usage') and response.usage:
+                usage = {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                }
+
+            self.logger.info(f"Generated LiteLLM response ({len(content)} chars)")
+
+            return LLMResponse(
+                content=content,
+                model_used=request.model,
+                provider_used=provider_name,
+                tool_calls=tool_calls,
+                usage=usage,
+                metadata={
+                    "finish_reason": choice.finish_reason,
+                    "response_id": getattr(response, 'id', None),
+                },
+            )
 
         except RetriableError as e:
             self.logger.warning(
-                f"Retriable error from provider {provider_name} for model {request.model}: {e}"
+                f"Retriable error from LiteLLM for model {request.model}: {e}"
             )
 
             # Try fallback model
@@ -125,8 +203,13 @@ class LLMManager:
             raise e
 
         except Exception as e:
-            self.logger.error(f"Error generating with provider {provider_name}: {e}")
-            raise ProviderError(provider_name, f"Provider failed: {str(e)}", e)
+            # Check if this is a retriable error
+            if RetriableError.is_retriable_error(e):
+                status_code = RetriableError.extract_status_code(e)
+                raise RetriableError("litellm", str(e), status_code, e)
+
+            self.logger.error(f"Error generating LiteLLM response: {e}")
+            raise ProviderError("litellm", f"Generation failed: {str(e)}", e) from e
 
     async def _try_fallback_model(
         self, original_request: LLMRequest
@@ -141,6 +224,7 @@ class LLMManager:
             fallback_model = self.config.fall_back_tool_model
         else:
             fallback_model = self.config.fall_back_model
+            
         if not fallback_model or fallback_model == original_request.model:
             self.logger.warning("No fallback model configured or same as current model")
             return None
@@ -157,23 +241,7 @@ class LLMManager:
         )
 
         try:
-            # Determine provider for fallback model
-            fallback_provider_name = self._extract_provider_name(fallback_model)
-            if fallback_provider_name not in self.providers:
-                fallback_provider_name = self.default_provider
-
-            if (
-                not fallback_provider_name
-                or fallback_provider_name not in self.providers
-            ):
-                self.logger.error("No fallback provider available")
-                return None
-
-            fallback_provider = self.providers[fallback_provider_name]
-            self.logger.debug(
-                f"Retrying with fallback provider {fallback_provider_name} for model {fallback_model}"
-            )
-            return await fallback_provider.generate_response(fallback_request)
+            return await self._generate_with_provider(fallback_request)
 
         except Exception as fallback_error:
             self.logger.error(f"Fallback model also failed: {fallback_error}")
@@ -183,74 +251,199 @@ class LLMManager:
         """Extract provider name from model string."""
         if "/" in model:
             return model.split("/")[0]
-        return self.default_provider or "openrouter"
+        return "openrouter"  # Default provider
+
+    def _resolve_model_for_litellm(self, model: str) -> str:
+        """Resolve model name to litellm format.
+        
+        LiteLLM expects model names in format: 'provider/model_id'
+        For example: 'openrouter/deepseek/deepseek-chat-v3-0324:free'
+                     'gemini/gemini-2.5-flash-lite'
+        """
+        # Get model info from config to resolve the actual model ID
+        model_infos = self._get_all_model_infos()
+        
+        # Check if model_id is a display name (key in models dict)
+        if model in model_infos:
+            model_info = model_infos[model]
+            # Return in litellm format: provider/model_id
+            return f"{model_info.provider}/{model_info.id}"
+        
+        # Check if model already has provider prefix
+        if "/" in model:
+            parts = model.split("/", 1)
+            provider = parts[0]
+            model_id = parts[1] if len(parts) > 1 else model
+            
+            # Check if this matches any known model
+            for info in model_infos.values():
+                if info.provider == provider and (info.id == model_id or info.id.endswith(model_id)):
+                    return f"{provider}/{info.id}"
+            
+            # Return as-is if no match found
+            return model
+        
+        # Default: assume openrouter provider
+        return f"openrouter/{model}"
+
+    def _get_all_model_infos(self) -> Dict[str, ModelInfo]:
+        """Get all model infos from config."""
+        all_models = {}
+        for provider_name, provider_config in self.config.llm_providers.items():
+            model_infos = (
+                provider_config.model_infos 
+                if hasattr(provider_config, 'model_infos') 
+                else provider_config.get("model_infos", {})
+            )
+            all_models.update(model_infos)
+        return all_models
+
+    def _convert_tools_for_litellm(self, tools: List[Any]) -> List[Dict[str, Any]]:
+        """Convert MCP Tool objects to litellm/OpenAI format."""
+        from mcp.types import Tool
+        
+        converted_tools = []
+        
+        for tool in tools:
+            try:
+                if isinstance(tool, Tool):
+                    # Extract properties and required fields safely
+                    properties = {}
+                    required = []
+
+                    name = tool.name
+                    description = tool.description or "No description"
+                    if tool.inputSchema and "properties" in tool.inputSchema:
+                        properties = tool.inputSchema["properties"]
+                        required = tool.inputSchema.get("required", [])
+
+                    tool_dict = {
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "description": description,
+                            "parameters": {
+                                "type": "object",
+                                "properties": properties,
+                                "required": required,
+                            },
+                        },
+                    }
+                    converted_tools.append(tool_dict)
+                elif isinstance(tool, dict):
+                    # Already in dict format, use as-is
+                    converted_tools.append(tool)
+                    
+            except Exception as e:
+                self.logger.error(f"Error converting tool: {e}", exc_info=True)
+                continue
+
+        self.logger.debug(f"Converted {len(converted_tools)} tools for LiteLLM")
+        return converted_tools
 
     async def get_available_models(self) -> List[ModelInfo]:
-        """Get all available models from all providers."""
-        models = []
-        for provider in self.providers.values():
-            try:
-                provider_models = await provider.get_available_models()
-                models.extend(provider_models)
-            except Exception as e:
-                self.logger.warning(f"Failed to get models from provider: {e}")
-
-        return models
+        """Get all available models from config."""
+        return list(self._get_all_model_infos().values())
 
     def get_provider_info(self) -> Dict[str, Any]:
-        """Get information about all providers."""
+        """Get information about configured providers."""
         return {
             name: {
-                "initialized": provider.is_initialized(),
-                "models_count": (
-                    len(provider.models) if hasattr(provider, "models") else 0
-                ),
+                "initialized": self._initialized,
+                "api_key_configured": name in self.api_keys,
             }
-            for name, provider in self.providers.items()
+            for name in self.config.llm_providers.keys()
         }
 
     def get_model_info(self, model: str) -> ModelInfo:
         """Get information about a specific model."""
-        for provider in self.providers.values():
-            try:
-                model_info = provider.get_model_info(model)
-                if model_info:
-                    return model_info
-            except Exception as e:
-                self.logger.warning(f"Failed to get model info from provider: {str(e)}")
+        model_infos = self._get_all_model_infos()
+        
+        # Check direct match
+        if model in model_infos:
+            return model_infos[model]
+        
+        # Check by model ID
+        for model_info in model_infos.values():
+            if model_info.id == model:
+                return model_info
+        
         raise ModelNotFoundError(f"Model {model} not found")
 
-    async def _initialize_providers(self) -> None:
-        """Initialize all configured LLM providers."""
-        self.logger.info("Initializing LLM providers...")
+    async def generate_image(self, request: ImageRequest) -> ImageResponse:
+        """Generate an image using LiteLLM's unified interface."""
+        if not self._initialized:
+            return ImageResponse(
+                error="LLM Manager not initialized",
+                image_url=None,
+                model_used=None,
+                user_id=request.user_id,
+            )
+
+        # Resolve the model name to litellm format
+        litellm_model = self._resolve_model_for_litellm(request.model)
+        provider_name = self._extract_provider_name(request.model)
 
         try:
-            for provider_name in self.config.available_providers:
-                self.logger.info(f"Initializing provider: {provider_name}")
-                provider_class = self.provider_mapping.get(provider_name)
+            # Prepare message content based on whether we have an input image
+            if request.input_image_url:
+                # Use multimodal format with image input
+                message_content = [
+                    {"type": "text", "text": request.prompt},
+                    {"type": "image_url", "image_url": {"url": request.input_image_url}},
+                ]
+            else:
+                # Text-only prompt
+                message_content = request.prompt
 
-                if provider_class:
-                    provider = provider_class(
-                        self.config.llm_providers[provider_name], self.logger
-                    )
-                    await provider.initialize()
-                    self.providers[provider_name] = provider
-                    self.logger.info(
-                        f"Provider {provider_name} initialized successfully"
-                    )
-                else:
-                    self.logger.warning(f"No provider class found for {provider_name}")
+            # Prepare the request for litellm image generation
+            image_kwargs = {
+                "model": litellm_model,
+                "prompt": request.prompt,
+            }
+
+            # Add API key based on provider
+            if provider_name == "openrouter" and "openrouter" in self.api_keys:
+                image_kwargs["api_key"] = self.api_keys["openrouter"]
+
+            # Make the API call using litellm
+            response = await aimage_generation(**image_kwargs)
+
+            # Extract image URL from response
+            image_url = None
+            if hasattr(response, 'data') and response.data and len(response.data) > 0:
+                image_data = response.data[0]
+                if hasattr(image_data, 'url'):
+                    image_url = image_data.url
+                elif isinstance(image_data, dict) and 'url' in image_data:
+                    image_url = image_data['url']
+
+            if not image_url:
+                return ImageResponse(
+                    error="No image URL in response",
+                    image_url=None,
+                    model_used=request.model,
+                    user_id=request.user_id,
+                )
+
+            # Extract base64 if it's a data URL
+            image_base64 = None
+            if image_url.startswith("data:image"):
+                image_base64 = image_url.split(",", 1)[1].encode("utf-8") if "," in image_url else None
+
+            return ImageResponse(
+                error=None,
+                image_url=image_url,
+                model_used=request.model,
+                user_id=request.user_id,
+                image_base64=image_base64,
+            )
 
         except Exception as e:
-            self.logger.error(f"Failed to initialize LLM providers: {e}")
-            raise ConfigurationError(f"LLM providers initialization failed: {str(e)}")
-
-    async def generate_image(self, request: ImageRequest) -> ImageResponse:
-        """Generate an image using the specified model."""
-        provider_name = self._extract_provider_name(request.model)
-        if provider_name not in self.providers:
-            self.logger.error(f"Provider not found: {provider_name}")
-            return ImageResponse.error("Provider not found")
-
-        provider = self.providers[provider_name]
-        return await provider.generate_image(request)
+            self.logger.error(f"Error generating image: {e}")
+            return ImageResponse(
+                error=f"Image generation failed: {str(e)}",
+                image_url=None,
+                model_used=request.model,
+                user_id=request.user_id,
+            )

@@ -80,3 +80,4 @@ websockets==15.0.1
 yarl==1.20.1
 zeroconf==0.147.0
 mcp-server-fetch
+litellm>=1.0.0
