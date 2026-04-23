@@ -1,6 +1,6 @@
-"""Provider implementations."""
+"""Provider module - now using LiteLLM directly."""
 
-from .openrouter import OpenRouterProvider
-from .aistudio import AIStudioProvider
+# All provider functionality is now handled by LiteLLM in manager.py
+# No separate provider classes needed
 
-__all__ = ["OpenRouterProvider", "AIStudioProvider"]
+__all__ = []

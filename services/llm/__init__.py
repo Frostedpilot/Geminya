@@ -1,4 +1,4 @@
-"""LLM service package for managing multiple AI providers."""
+"""LLM service package using LiteLLM as a unified interface."""
 
 from .manager import LLMManager
 from .types import LLMRequest, LLMResponse, ModelInfo, ToolCall, ToolResult
