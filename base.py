@@ -48,7 +48,6 @@ class GeminyaBot(commands.Bot):
             #         "cogs.commands.dad_joke",
             #         "cogs.commands.yo_mama",
             #         "cogs.commands.useless_fact",
-            #         "cogs.commands.saucenao",
             #     }
 
             # Filter command cogs

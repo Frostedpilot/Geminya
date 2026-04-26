@@ -48,7 +48,6 @@ class Config:
     discord_token: str
     discord_tokens: Dict[str, str]
     openrouter_api_key: str
-    saucenao_api_key: str
     tavily_api_key: str
     google_console_api_key: str
     google_search_engine_id: str
@@ -288,7 +287,6 @@ class Config:
             "DEV": discord_token_dev,
         }
         openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
-        saucenao_key = os.getenv("SAUCENAO_API_KEY", "")
         tavily_key = os.getenv("TAVILY_API_KEY", "")
         google_console_api_key = os.getenv("GOOGLE_CONSOLE_API_KEY", "")
         google_search_engine_id = os.getenv("GOOGLE_SEARCH_ENGINE_ID", "")
@@ -309,7 +307,6 @@ class Config:
             discord_token=discord_token_dev,
             discord_tokens=discord_tokens,
             openrouter_api_key=openrouter_key,
-            saucenao_api_key=saucenao_key,
             tavily_api_key=tavily_key,
             google_console_api_key=google_console_api_key,
             google_search_engine_id=google_search_engine_id,
@@ -378,7 +375,6 @@ class Config:
             "DEV": discord_token_dev,
         }
         openrouter_key = secrets.get("OPENROUTER_API_KEY")
-        saucenao_key = secrets.get("SAUCENAO_API_KEY")
         tavily_key = secrets.get("TAVILY_API_KEY", "")
         google_console_api_key = secrets.get("GOOGLE_CONSOLE_API_KEY", "")
         google_search_engine_id = secrets.get("GOOGLE_SEARCH_ENGINE_ID", "")
@@ -433,7 +429,6 @@ class Config:
             discord_token=discord_token_dev,
             discord_tokens=discord_tokens,
             openrouter_api_key=openrouter_key,
-            saucenao_api_key=saucenao_key,
             tavily_api_key=tavily_key,
             google_console_api_key=google_console_api_key,
             google_search_engine_id=google_search_engine_id,

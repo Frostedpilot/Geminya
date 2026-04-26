@@ -38,8 +38,6 @@ A modern Discord AI chatbot with integrated waifu collection system, powered by 
 
 ```bash
 pip install -r requirements.txt
-# Saucenao-api require low version of these module although it works just fine with newer version.
-pip install --upgrade requests, aiohttp, urllib3
 ```
 
 2. **Configure secrets:**
@@ -155,7 +153,6 @@ You can add some intructions for tool using in `lang/<language>.json`:
 - `/dad_joke` - Random dad jokes
 - `/yo_mama` - Random "yo mama" jokes
 - `/useless_fact` - Random useless facts
-- `/saucenao` - Find image source
 - `/currency` - Money exchange rate calculator
 
 ### Anime & Character Commands
@@ -212,7 +209,6 @@ Check the `logs/` directory for:
 │   │   ├── shop.py          # NWNL shop system
 │   │   ├── anime_image.py   # Anime image search
 │   │   ├── guess_anime.py   # Anime guessing game
-│   │   ├── saucenao.py      # Image source finding
 │   │   └── ...              # Other commands
 │   └── events/              # Event handlers
 │       ├── on_message.py    # Message processing

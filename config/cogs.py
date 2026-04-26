@@ -21,7 +21,6 @@ COG_RULES = {
         "include": [r".*"],
         "exclude": [
             REGEX_MUSIC, # Assuming Geminya is the AI chat bot and doesn't need music/game
-            r"cogs\.commands\.saucenao",  # Maybe exclude tools?
         ],  # Loads everything
     },
     "DEV": {
