@@ -30,7 +30,6 @@ def check_dependencies():
     """Check if all required dependencies are installed."""
     required_packages = [
         "discord.py",
-        "openai",
         "yaml",
     ]
 
